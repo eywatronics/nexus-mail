@@ -11,7 +11,15 @@ import (
 
 func sanitize(t *testing.T, raw string, allowRemote bool) Result {
 	t.Helper()
-	res, err := Sanitize(raw, allowRemote)
+
+	opts := Options{Mode: ModeBlock}
+	if allowRemote {
+		opts = Options{
+			Mode:     ModeProxy,
+			ProxyURL: func(token string) string { return "wails://mail-asset/1/" + token },
+		}
+	}
+	res, err := Sanitize(raw, opts)
 	if err != nil {
 		t.Fatalf("Sanitize() error: %v", err)
 	}
@@ -178,13 +186,62 @@ func TestLinkHrefsAreKept(t *testing.T) {
 	}
 }
 
-func TestRemoteContentIsRestoredOnConsent(t *testing.T) {
+// Consent does not mean "let the renderer fetch it". The image is routed
+// through the host, so the sender still learns nothing about the reader — no
+// IP address, no Referer, no user agent.
+func TestConsentRoutesRemoteContentThroughTheProxy(t *testing.T) {
 	res := sanitize(t, `<img src="https://example.com/pic.png">`, true)
-	if !strings.Contains(res.HTML, "https://example.com/pic.png") {
-		t.Errorf("output %q did not restore the image", res.HTML)
+
+	if strings.Contains(res.HTML, "https://example.com/pic.png") {
+		t.Errorf("output %q hands the original URL to the renderer", res.HTML)
+	}
+	if !strings.Contains(res.HTML, "wails://mail-asset/1/") {
+		t.Errorf("output %q does not point at the proxy", res.HTML)
 	}
 	if res.BlockedRemoteCount != 0 {
 		t.Errorf("BlockedRemoteCount = %d with consent given, want 0", res.BlockedRemoteCount)
+	}
+	if len(res.RemoteURLs) != 1 {
+		t.Fatalf("RemoteURLs holds %d entries, want 1", len(res.RemoteURLs))
+	}
+	for token, original := range res.RemoteURLs {
+		if original != "https://example.com/pic.png" {
+			t.Errorf("token %s maps to %q", token, original)
+		}
+		if !strings.Contains(res.HTML, token) {
+			t.Errorf("token %s is not referenced by the document", token)
+		}
+	}
+}
+
+func TestProxyModeCoversEveryVector(t *testing.T) {
+	raw := strings.Join([]string{
+		`<img src="https://a.example/1.png">`,
+		`<img srcset="https://b.example/2.png 1x, https://b.example/3.png 2x">`,
+		`<div background="https://c.example/4.png">x</div>`,
+		`<div style="background:url('https://d.example/5.png')">x</div>`,
+		`<style>.e{background:url("https://e.example/6.png")}</style>`,
+	}, "\n")
+
+	res := sanitize(t, raw, true)
+
+	// Every remote reference must be represented, or consent would silently
+	// drop part of the message.
+	if len(res.RemoteURLs) != 6 {
+		t.Errorf("RemoteURLs holds %d entries, want 6: %v", len(res.RemoteURLs), res.RemoteURLs)
+	}
+	for _, host := range []string{"a.example", "b.example", "c.example", "d.example", "e.example"} {
+		if strings.Contains(res.HTML, host) {
+			t.Errorf("output still names %s; the renderer would contact it directly", host)
+		}
+	}
+}
+
+func TestProxyModeRequiresAProxyFunction(t *testing.T) {
+	// Falling back to the original URL here would silently turn consent into a
+	// direct fetch, which is the one thing proxying exists to prevent.
+	if _, err := Sanitize(`<img src="https://x.example/a.png">`, Options{Mode: ModeProxy}); err == nil {
+		t.Error("Sanitize() accepted ModeProxy with no ProxyURL function")
 	}
 }
 
@@ -230,7 +287,7 @@ func TestRobustness(t *testing.T) {
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Sanitize(raw, false); err != nil {
+			if _, err := Sanitize(raw, Options{Mode: ModeBlock}); err != nil {
 				t.Errorf("Sanitize() error: %v", err)
 			}
 		})
@@ -241,5 +298,25 @@ func TestTurkishContentSurvives(t *testing.T) {
 	got := sanitize(t, `<p>Şubat ayı faturanız ilişiktedir.</p>`, false).HTML
 	if !strings.Contains(got, "Şubat ayı faturanız") {
 		t.Errorf("output %q mangled the Turkish text", got)
+	}
+}
+
+// The host scheme is ours to emit, never the message's to ask for. A sender
+// writing one could point the iframe at another message's body, or at the
+// asset proxy with a token of their choosing.
+func TestSenderSuppliedHostSchemeIsDropped(t *testing.T) {
+	cases := []string{
+		`<img src="wails://mail-body/1">`,
+		`<img src="WAILS://mail-asset/1/deadbeef">`,
+		`<a href="wails://mail-body/2">read another message</a>`,
+		`<div style="background:url('wails://mail-body/3')">x</div>`,
+	}
+	for _, raw := range cases {
+		for _, allowRemote := range []bool{false, true} {
+			got := sanitize(t, raw, allowRemote).HTML
+			if strings.Contains(strings.ToLower(got), "wails://mail-body") {
+				t.Errorf("output %q kept a sender-supplied host URL (allowRemote=%v)", got, allowRemote)
+			}
+		}
 	}
 }
