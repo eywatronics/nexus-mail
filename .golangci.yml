@@ -69,8 +69,11 @@ linters:
 
         # mailhtml sanitises untrusted HTML. It is a pure transformation and
         # must not reach for the database or the network.
+        # !$test exempts test files: the rule exists so production sanitising
+        # never fetches anything, while the test that proves no request is made
+        # legitimately needs a probe server.
         mailhtml-layer:
-          files: ["**/internal/mailhtml/**"]
+          files: ["**/internal/mailhtml/**", "!$test"]
           deny:
             - pkg: "nexusmail/internal/store"
               desc: "mailhtml is a pure transformation over a string"
