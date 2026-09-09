@@ -14,12 +14,15 @@ import (
 // Turkish Outlook uses YNT (yanıt) and İLT (ilet); without them a single
 // corporate Turkish conversation splits into two threads. The others cover the
 // common European clients.
+// Entries must be written as strings.ToLower would produce them. Turkish "İLT"
+// lowercases to "i" followed by a combining dot above, not to a plain "i",
+// which is why the Turkish entries look doubled here.
 var replyPrefixes = []string{
 	"re:", "fwd:", "fw:", // English
-	"ynt:", "ilt:", "i̇lt:", "yan:", // Turkish
+	"ynt:", "yan:", "ilt:", "i̇lt:", // Turkish
 	"aw:", "wg:", // German
 	"sv:", "vs:", // Nordic
-	"rif:", "r:", // Italian
+	"rif:", // Italian
 }
 
 // maxDateSkew is how far ahead of INTERNALDATE a Date: header may legitimately
@@ -50,14 +53,18 @@ func ThreadKey(messageID, inReplyTo string, references []string, subject string)
 }
 
 func normaliseSubject(s string) string {
-	out := strings.TrimSpace(s)
+	// Lowercase FIRST, then strip. Slicing the original string by the length
+	// of a lowercased prefix is a trap in Turkish: strings.ToLower("İ")
+	// produces "i" plus a combining dot above, so the lowercase form is a byte
+	// longer than what it came from and the slice cuts in the wrong place.
+	// Working on one string throughout removes the mismatch entirely.
+	out := strings.TrimSpace(strings.ToLower(s))
 
 	// Strip repeatedly: "Re: Fwd: Re: x" is one conversation, not three.
 	for changed := true; changed; {
 		changed = false
-		lower := strings.ToLower(out)
 		for _, p := range replyPrefixes {
-			if strings.HasPrefix(lower, p) {
+			if strings.HasPrefix(out, p) {
 				out = strings.TrimSpace(out[len(p):])
 				changed = true
 				break
@@ -65,7 +72,7 @@ func normaliseSubject(s string) string {
 		}
 	}
 	// Collapse whitespace so wrapped subjects match their unwrapped form.
-	return strings.ToLower(strings.Join(strings.Fields(out), " "))
+	return strings.Join(strings.Fields(out), " ")
 }
 
 // reconcileDate picks a trustworthy timestamp.

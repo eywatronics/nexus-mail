@@ -7,6 +7,10 @@ import (
 	"strings"
 
 	"github.com/emersion/go-message"
+	// Registers the non-UTF-8 charset decoders. Without this import only
+	// UTF-8 and US-ASCII are recognised, and the ISO-8859-9 mail Turkish
+	// corporate systems still send would fall through to the raw fallback.
+	_ "github.com/emersion/go-message/charset"
 	"github.com/emersion/go-message/mail"
 )
 
@@ -20,9 +24,9 @@ func splitBodyParts(raw []byte) (html, text string, err error) {
 	mr, err := mail.CreateReader(bytes.NewReader(raw))
 	if err != nil {
 		// A message we cannot parse as MIME is not necessarily worthless: fall
-		// back to showing it as plain text rather than nothing at all.
+		// back to showing its body as plain text rather than nothing at all.
 		if message.IsUnknownCharset(err) {
-			return "", string(raw), nil
+			return "", bodyAfterHeaders(raw), nil
 		}
 		return "", "", err
 	}
@@ -68,4 +72,16 @@ func splitBodyParts(raw []byte) (html, text string, err error) {
 		}
 	}
 	return html, text, nil
+}
+
+// bodyAfterHeaders returns everything past the header/body separator, so a
+// message we could not parse still shows its content rather than a wall of
+// raw IMAP headers.
+func bodyAfterHeaders(raw []byte) string {
+	for _, sep := range []string{"\r\n\r\n", "\n\n"} {
+		if i := strings.Index(string(raw), sep); i >= 0 {
+			return string(raw[i+len(sep):])
+		}
+	}
+	return string(raw)
 }
