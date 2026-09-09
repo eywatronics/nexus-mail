@@ -1,87 +1,141 @@
+// Command nexus-mail is a local-first, privacy-focused desktop mail client.
 package main
 
 import (
 	"embed"
-
+	"flag"
 	"log"
-	"time"
+	"net/http"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-)
 
-// Wails uses Go's `embed` package to embed the frontend files into the binary.
-// Any files in the frontend/dist folder will be embedded into the binary and
-// made available to the frontend.
-// See https://pkg.go.dev/embed for more information.
+	"nexusmail/internal/app"
+	"nexusmail/internal/auth"
+	"nexusmail/internal/logging"
+	"nexusmail/internal/paths"
+	"nexusmail/internal/store"
+	imapsync "nexusmail/internal/sync"
+)
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-func init() {
-	// Register a custom event whose associated data type is string.
-	// This is not required, but the binding generator will pick up registered events
-	// and provide a strongly typed JS/TS API for them.
-	application.RegisterEvent[string]("time")
+func main() {
+	debug := flag.Bool("debug", false, "log at debug level")
+	flag.Parse()
+
+	if err := run(*debug); err != nil {
+		log.Fatal(err)
+	}
 }
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
-func main() {
+func run(debug bool) error {
+	dataDir, err := paths.DataDir()
+	if err != nil {
+		return err
+	}
+	logDir, err := paths.LogDir()
+	if err != nil {
+		return err
+	}
 
-	// Create a new Wails application by providing the necessary options.
-	// Variables 'Name' and 'Description' are for application metadata.
-	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
-	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
-	// 'Mac' options tailor the application when running an macOS.
-	app := application.New(application.Options{
-		Name:        "nexus-mail",
-		Description: "A demo of using raw HTML & CSS",
+	logger, closeLogs, err := logging.Setup(logDir, debug)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closeLogs() }()
+
+	db, err := store.Open(dataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("closing the database", "err", err)
+		}
+	}()
+
+	secrets, err := auth.Default(dataDir)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := app.LoadConfig(dataDir)
+	if err != nil {
+		return err
+	}
+	cfg.LogDir = paths.LogDir
+
+	// The Wails application is needed to emit events, and the service is
+	// needed to build the application. The closure breaks the cycle: nothing
+	// emits until Run starts, by which point wailsApp is set.
+	var wailsApp *application.App
+	cfg.Emit = func(name string, data any) {
+		if wailsApp != nil {
+			wailsApp.Event.Emit(name, data)
+		}
+	}
+
+	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
+	service := app.NewMailService(db, secrets, engine, cfg)
+	bodies := app.NewBodyHandler(service)
+
+	wailsApp = application.New(application.Options{
+		Name:        "Nexus Mail",
+		Description: "Local-first, privacy-focused mail client",
 		Services: []application.Service{
-			application.NewService(&GreetService{}),
+			application.NewService(service),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler:    application.AssetFileServerFS(assets),
+			Middleware: mailContentMiddleware(bodies),
 		},
 		Mac: application.MacOptions{
+			// Closing the window quits. Running in the tray is a cluster of
+			// platform-specific behaviour — tray icon, unread badge, native
+			// notifications, launch-at-login — that belongs after live sync
+			// works, not tangled up with it.
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 
-	// Create a new window with the necessary options.
-	// 'Title' is the title of the window.
-	// 'Mac' options tailor the window when running on macOS.
-	// 'BackgroundColour' is the background colour of the window.
-	// 'URL' is the URL that will be loaded into the webview.
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Window 1",
-		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
-		Width:  1000,
-		Height: 618,
-		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
-			Backdrop:                application.MacBackdropTranslucent,
-			TitleBar:                application.MacTitleBarHiddenInset,
-		},
-		BackgroundColour: application.NewRGB(6, 7, 15),
+	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:  "Nexus Mail",
+		Width:  1280,
+		Height: 800,
+		// A mail client is dense by nature; below this the three columns stop
+		// being usable.
+		MinWidth:         900,
+		MinHeight:        600,
+		BackgroundColour: application.NewRGB(255, 255, 255),
 		URL:              "/",
 	})
 
-	// Create a goroutine that emits an event containing the current time every second.
-	// The frontend can listen to this event and update the UI accordingly.
-	go func() {
-		for {
-			now := time.Now().Format(time.RFC1123)
-			app.Event.Emit("time", now)
-			time.Sleep(time.Second)
-		}
-	}()
+	logger.Info("starting", "data_dir", dataDir, "debug", debug)
 
-	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
+	if err := wailsApp.Run(); err != nil {
+		logger.Error("application exited with an error", "err", err)
+		return err
+	}
+	return nil
+}
 
-	// If an error occurred while running the application, log it and exit.
-	if err != nil {
-		log.Fatal(err)
+// mailContentMiddleware routes message bodies and proxied images to the body
+// handler, leaving everything else to the embedded frontend.
+//
+// Serving bodies here rather than over the Wails bridge keeps an
+// eight-megabyte newsletter out of an IPC message, and lets the response carry
+// a real Content-Security-Policy header — which srcdoc cannot.
+func mailContentMiddleware(bodies http.Handler) application.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/mail-body/") ||
+				strings.HasPrefix(r.URL.Path, "/mail-asset/") {
+				bodies.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

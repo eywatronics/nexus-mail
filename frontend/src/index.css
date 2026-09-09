@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: the theme toggle sets .dark on <html>, and a
+   "system" setting follows the OS by adding or removing that class. Relying on
+   the media query alone would leave no way to override the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

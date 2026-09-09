@@ -39,8 +39,10 @@ var (
 	// quoting styles are spelled out rather than captured and matched.
 	cssURL = regexp.MustCompile(`(?i)url\(\s*(?:'([^']*)'|"([^"]*)"|([^'")\s]*))\s*\)`)
 
-	// hostScheme matches the scheme the app serves its own content on.
-	hostScheme = regexp.MustCompile(`(?i)^\s*wails:`)
+	// hostScheme matches the schemes Wails serves the app on, across
+	// platforms. A sender writing one could point the frame at another
+	// message's body.
+	hostScheme = regexp.MustCompile(`(?i)^\s*(?:wails:|https?://wails\.localhost)`)
 )
 
 // blockedPrefix marks an attribute we removed, so the UI can restore it when
@@ -309,12 +311,10 @@ func policy() *bluemonday.Policy {
 	p.AllowAttrs("color", "face", "size").OnElements("font")
 	p.AllowDataAttributes()
 
-	// cid: refers to a part already inside the message, so it is not a network
-	// fetch; the renderer resolves it locally.
-	// wails is included because proxied images are rewritten to it. A wails
-	// URL written by the sender never reaches here: cleanElement drops those
-	// before the whitelist runs.
-	p.AllowURLSchemes("http", "https", "mailto", "tel", "cid", "data", "wails")
+	// cid: refers to a part already inside the message, so resolving it is not
+	// a network fetch. Proxied images are rewritten to ordinary http(s) URLs
+	// on the app's own origin, which is why no bespoke scheme is listed here.
+	p.AllowURLSchemes("http", "https", "mailto", "tel", "cid", "data")
 	p.AllowAttrs("src", "alt", "title", "srcset").OnElements("img")
 	p.RequireNoFollowOnLinks(true)
 	p.AddTargetBlankToFullyQualifiedLinks(true)

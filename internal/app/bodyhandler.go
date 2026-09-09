@@ -29,15 +29,36 @@ const (
 // cannot be displaced by markup the message controls.
 //
 // default-src 'none' means nothing loads unless a later directive allows it.
-// Images are limited to data:, cid: and our own scheme — never the network
-// directly, so even a bug in the rewriting cannot turn into a request to the
-// sender.
-const contentSecurityPolicy = "default-src 'none'; " +
-	"img-src data: cid: wails:; " +
-	"style-src 'unsafe-inline'; " +
-	"font-src data:; " +
-	"form-action 'none'; " +
-	"base-uri 'none'"
+// Images are limited to data:, cid: and this app's own origin — never the
+// network directly, so even a bug in the rewriting cannot become a request to
+// the sender.
+//
+// The origin is computed per request rather than hardcoded: Wails serves the
+// asset server on a different host on each platform, and 'self' does not help
+// because the sandbox gives the frame an opaque origin that matches nothing.
+func contentSecurityPolicy(origin string) string {
+	return "default-src 'none'; " +
+		"img-src data: cid: " + origin + "; " +
+		"style-src 'unsafe-inline'; " +
+		"font-src data:; " +
+		"form-action 'none'; " +
+		"base-uri 'none'"
+}
+
+// requestOrigin reconstructs the scheme and host this request arrived on.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+		scheme = forwarded
+	}
+	if r.URL != nil && r.URL.Scheme != "" {
+		scheme = r.URL.Scheme
+	}
+	return scheme + "://" + r.Host
+}
 
 // Limits on what the proxy will fetch on the user's behalf.
 const (
@@ -95,7 +116,7 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 		mode = mailhtml.ModeProxy
 	}
 
-	rendered, err := h.render(r.Context(), id, mode)
+	rendered, err := h.render(r.Context(), id, mode, requestOrigin(r))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			// The user moved on before this finished. Holding the arrow keys
@@ -108,7 +129,7 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(requestOrigin(r)))
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
@@ -119,7 +140,7 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 
 // render produces the sanitised body for a message, fetching and caching it if
 // necessary. Cancellation is honoured before each expensive step.
-func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode) (*renderedBody, error) {
+func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode, origin string) (*renderedBody, error) {
 	if cached := h.lookup(id, mode); cached != nil {
 		return cached, nil
 	}
@@ -151,7 +172,7 @@ func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode) 
 	res, err := mailhtml.Sanitize(raw, mailhtml.Options{
 		Mode: mode,
 		ProxyURL: func(token string) string {
-			return fmt.Sprintf("wails://nexus%s%d/%s", assetPath, id, token)
+			return fmt.Sprintf("%s%s%d/%s", origin, assetPath, id, token)
 		},
 	})
 	if err != nil {

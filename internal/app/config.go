@@ -32,6 +32,10 @@ type Config struct {
 	// clients. Set it only where security software blocks binding arbitrary
 	// ports, and register the same port with the provider.
 	OAuthRedirectPort int
+
+	// LogDir reports where the log files live. Injected rather than resolved
+	// here so tests can point the export at a temporary directory.
+	LogDir func() (string, error)
 }
 
 // LoadConfig reads config.json from the data directory, creating an empty one

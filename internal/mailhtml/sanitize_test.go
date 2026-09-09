@@ -16,7 +16,7 @@ func sanitize(t *testing.T, raw string, allowRemote bool) Result {
 	if allowRemote {
 		opts = Options{
 			Mode:     ModeProxy,
-			ProxyURL: func(token string) string { return "wails://mail-asset/1/" + token },
+			ProxyURL: func(token string) string { return "http://wails.localhost/mail-asset/1/" + token },
 		}
 	}
 	res, err := Sanitize(raw, opts)
@@ -195,7 +195,7 @@ func TestConsentRoutesRemoteContentThroughTheProxy(t *testing.T) {
 	if strings.Contains(res.HTML, "https://example.com/pic.png") {
 		t.Errorf("output %q hands the original URL to the renderer", res.HTML)
 	}
-	if !strings.Contains(res.HTML, "wails://mail-asset/1/") {
+	if !strings.Contains(res.HTML, "/mail-asset/1/") {
 		t.Errorf("output %q does not point at the proxy", res.HTML)
 	}
 	if res.BlockedRemoteCount != 0 {
@@ -310,11 +310,14 @@ func TestSenderSuppliedHostSchemeIsDropped(t *testing.T) {
 		`<img src="WAILS://mail-asset/1/deadbeef">`,
 		`<a href="wails://mail-body/2">read another message</a>`,
 		`<div style="background:url('wails://mail-body/3')">x</div>`,
+		// The same attack wearing the host the asset server actually uses.
+		`<img src="http://wails.localhost/mail-body/4">`,
+		`<div style="background:url('https://wails.localhost/mail-body/5')">x</div>`,
 	}
 	for _, raw := range cases {
 		for _, allowRemote := range []bool{false, true} {
 			got := sanitize(t, raw, allowRemote).HTML
-			if strings.Contains(strings.ToLower(got), "wails://mail-body") {
+			if strings.Contains(strings.ToLower(got), "mail-body") {
 				t.Errorf("output %q kept a sender-supplied host URL (allowRemote=%v)", got, allowRemote)
 			}
 		}
