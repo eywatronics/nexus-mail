@@ -1,0 +1,101 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  settings:
+    depguard:
+      rules:
+        # model is a leaf: pure data types, imports nothing from the project.
+        model-layer:
+          files: ["**/internal/model/**"]
+          deny:
+            - pkg: "nexusmail/internal/store"
+              desc: "model is a leaf package and must import nothing from the project"
+            - pkg: "nexusmail/internal/sync"
+              desc: "model is a leaf package and must import nothing from the project"
+            - pkg: "nexusmail/internal/imapx"
+              desc: "model is a leaf package and must import nothing from the project"
+            - pkg: "nexusmail/internal/auth"
+              desc: "model is a leaf package and must import nothing from the project"
+            - pkg: "nexusmail/internal/app"
+              desc: "model is a leaf package and must import nothing from the project"
+
+        store-layer:
+          files: ["**/internal/store/**"]
+          deny:
+            - pkg: "nexusmail/internal/sync"
+              desc: "store is a bottom layer; it must not depend on sync"
+            - pkg: "nexusmail/internal/imapx"
+              desc: "store is a bottom layer; it must not depend on imapx"
+            - pkg: "nexusmail/internal/app"
+              desc: "store is a bottom layer; it must not depend on app"
+
+        imapx-layer:
+          files: ["**/internal/imapx/**"]
+          deny:
+            - pkg: "nexusmail/internal/sync"
+              desc: "imapx must not depend on sync"
+            - pkg: "nexusmail/internal/app"
+              desc: "imapx must not depend on app"
+            - pkg: "nexusmail/internal/store"
+              desc: "imapx speaks IMAP only; persistence belongs to sync"
+
+        sync-layer:
+          files: ["**/internal/sync/**"]
+          deny:
+            - pkg: "nexusmail/internal/app"
+              desc: "sync must not depend on app"
+            - pkg: "github.com/emersion/go-imap/v2"
+              desc: "sync must go through the MailBackend interface so it stays testable against a fake server"
+
+        auth-layer:
+          files: ["**/internal/auth/**"]
+          deny:
+            - pkg: "nexusmail/internal/sync"
+              desc: "auth is a bottom layer; it must not depend on sync"
+            - pkg: "nexusmail/internal/store"
+              desc: "auth must not depend on store; secrets never reach the database"
+            - pkg: "nexusmail/internal/app"
+              desc: "auth is a bottom layer; it must not depend on app"
+            - pkg: "nexusmail/internal/imapx"
+              desc: "auth is a bottom layer; it must not depend on imapx"
+
+        # mailhtml sanitises untrusted HTML. It is a pure transformation and
+        # must not reach for the database or the network.
+        mailhtml-layer:
+          files: ["**/internal/mailhtml/**"]
+          deny:
+            - pkg: "nexusmail/internal/store"
+              desc: "mailhtml is a pure transformation over a string"
+            - pkg: "nexusmail/internal/sync"
+              desc: "mailhtml is a pure transformation over a string"
+            - pkg: "nexusmail/internal/app"
+              desc: "mailhtml is a pure transformation over a string"
+            - pkg: "net/http"
+              desc: "sanitising must not fetch anything; the caller proxies remote content"
+
+        # Time-dependent logic is tested with testing/synctest (stable in Go
+        # 1.25). Injected-clock libraries deform production code for the
+        # tests' benefit; see design doc section 10.1.
+        no-clock-libraries:
+          files: ["**/internal/**", "main.go"]
+          deny:
+            - pkg: "github.com/jonboulle/clockwork"
+              desc: "use testing/synctest; injected clocks deform production code"
+            - pkg: "github.com/benbjohnson/clock"
+              desc: "use testing/synctest; injected clocks deform production code"
+
+issues:
+  # The architecture rules must hold for the whole tree, not just new code.
+  new: false
+
+formatters:
+  enable:
+    - gofmt

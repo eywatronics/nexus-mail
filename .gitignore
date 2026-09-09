@@ -1,77 +1,111 @@
 # ==========================================
-# 1. NEXUS MAIL YEREL VERİ VE GİZLİLİK
+# 1. YEREL VERİ VE GİZLİLİK
 # ==========================================
-# Geliştirme aşamasında oluşan yerel veritabanları ve loglar kesinlikle GitHub'a gitmemeli!
+# Geliştirme sırasında oluşan yerel veritabanı, log ve kimlik dosyaları
+# hiçbir koşulda depoya girmemeli.
 *.db
 *.db-shm
 *.db-wal
 /data/
 /logs/
 /attachments/
-config.json
+/config.json
+secrets.enc
 secret.json
 .env
 .env.*
 !.env.example
 
 # ==========================================
-# 2. WAILS & DERLEME ÇIKTILARI (BUILD)
+# 2. WAILS VE DERLEME ÇIKTILARI
 # ==========================================
-# Wails'in oluşturduğu .exe, .app veya Linux binary dosyaları
+/bin/
 /build/bin/
 /build/obj/
+.task/
 *.exe
 *.app
 *.dmg
 *.AppImage
 *.deb
 *.rpm
+*.syso
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
 # ==========================================
-# 3. GO (ARKA PLAN MOTORU)
+# 3. GO
 # ==========================================
-# Go test çıktıları, önbellekler ve bağımlılıklar
 /vendor/
 go.work
 go.work.sum
 *.test
 *.prof
 *.out
-*.cgo1.go
-*.cgo2.c
+coverage.txt
 
 # ==========================================
-# 4. FRONTEND (REACT / VITE / NODE.JS)
+# 4. FRONTEND (REACT / VITE / NODE)
 # ==========================================
-# NPM paketleri ve Vite derleme çıktıları
-/frontend/node_modules/
+node_modules/
 /frontend/dist/
 /frontend/build/
+# Wails bu dizini Go kaynagindan uretir. Depoda tutmak, Go tarafi
+# degistiginde eskimis binding'lerin sessizce kalmasina yol acar;
+# uretme adimi README ve CI'da tanimli.
+/frontend/bindings/
+.pnpm-store/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .eslintcache
+vite.config.ts.timestamp-*
 
 # ==========================================
-# 5. İŞLETİM SİSTEMİ & IDE (EDİTÖR) ARTIKLARI
+# 5. IDE VE EDİTÖR AYARLARI
 # ==========================================
-# macOS
+# Editör yapılandırması kişiseldir; depoya girmez. Alt dosyalar için
+# istisna da tanımlanmaz — biri girerse hepsi girmeye başlar.
+.vscode/
+.vscode-shared/
+.idea/
+.fleet/
+.zed/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ==========================================
+# 6. YAPAY ZEKÂ ARAÇLARININ YEREL KLASÖRLERİ
+# ==========================================
+# Bu dizinler makineye özgü oturum, önbellek ve kimlik verisi tutar.
+# CLAUDE.md bilerek listelenmemiştir: proje kuralları depoda durur.
+.claude/
+.cursor/
+.aider*/
+.aider.*
+.copilot/
+.github/copilot-instructions.md
+.gemini/
+.codex/
+.antigravity/
+.windsurf/
+.continue/
+.kiro/
+.agents/
+.cline/
+.roo/
+.specstory/
+.tabnine/
+
+# ==========================================
+# 7. İŞLETİM SİSTEMİ ARTIKLARI
+# ==========================================
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-
-# Editörler (VS Code, JetBrains, vim)
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.idea/
-*.swp
-*.swo
