@@ -1,0 +1,77 @@
+# ==========================================
+# 1. NEXUS MAIL YEREL VERİ VE GİZLİLİK
+# ==========================================
+# Geliştirme aşamasında oluşan yerel veritabanları ve loglar kesinlikle GitHub'a gitmemeli!
+*.db
+*.db-shm
+*.db-wal
+/data/
+/logs/
+/attachments/
+config.json
+secret.json
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# 2. WAILS & DERLEME ÇIKTILARI (BUILD)
+# ==========================================
+# Wails'in oluşturduğu .exe, .app veya Linux binary dosyaları
+/build/bin/
+/build/obj/
+*.exe
+*.app
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# ==========================================
+# 3. GO (ARKA PLAN MOTORU)
+# ==========================================
+# Go test çıktıları, önbellekler ve bağımlılıklar
+/vendor/
+go.work
+go.work.sum
+*.test
+*.prof
+*.out
+*.cgo1.go
+*.cgo2.c
+
+# ==========================================
+# 4. FRONTEND (REACT / VITE / NODE.JS)
+# ==========================================
+# NPM paketleri ve Vite derleme çıktıları
+/frontend/node_modules/
+/frontend/dist/
+/frontend/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# ==========================================
+# 5. İŞLETİM SİSTEMİ & IDE (EDİTÖR) ARTIKLARI
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editörler (VS Code, JetBrains, vim)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
