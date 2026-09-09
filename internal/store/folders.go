@@ -17,10 +17,13 @@ const defaultDelimiter = "/"
 // UpsertFolders writes the folder list for an account. Server-reported counts
 // overwrite local ones.
 //
-// UIDVALIDITY handling is deliberately NOT done here: detecting a change and
-// discarding the folder's messages is the sync engine's decision, taken
-// through ResetFolder. Doing it implicitly on every folder write would make an
-// ordinary refresh capable of wiping a mailbox.
+// uid_validity is set on INSERT and never on UPDATE, so ResetFolder is the
+// only thing that can change it once a folder exists. This is structural, not
+// stylistic: the sync engine detects a recreated mailbox by comparing the
+// stored value against what SELECT reports, and an ordinary folder refresh
+// that overwrote the column first would make that comparison always find them
+// equal. The change would go unnoticed and stale UIDs would be treated as
+// valid — which is how a client ends up acting on the wrong message.
 func (s *Store) UpsertFolders(ctx context.Context, accountID int64, folders []model.Folder) error {
 	if len(folders) == 0 {
 		return nil
@@ -41,7 +44,6 @@ func (s *Store) UpsertFolders(ctx context.Context, accountID int64, folders []mo
 		   name           = excluded.name,
 		   delimiter      = excluded.delimiter,
 		   attributes     = excluded.attributes,
-		   uid_validity   = excluded.uid_validity,
 		   uid_next       = excluded.uid_next,
 		   highest_modseq = excluded.highest_modseq,
 		   total_count    = excluded.total_count,
