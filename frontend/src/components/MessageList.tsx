@@ -3,7 +3,7 @@ import type { Icon } from '@phosphor-icons/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
-import { ICON, SELECTED, SURFACE, TEXT, UNSELECTED_BAR } from '../lib/ui'
+import { ICON, ROW_DIVIDER, SELECTED, TEXT, UNSELECTED_BAR } from '../lib/ui'
 
 const ROW_HEIGHT = 74
 
@@ -83,14 +83,30 @@ export function MessageList({ onLoadMore }: MessageListProps) {
   // selection off the bottom of the window and the reader loses their place.
   // 'auto' scrolls only when the row is out of view, which leaves a row picked
   // with the mouse exactly where it was clicked.
+  //
+  // The virtualiser is reached through a ref rather than listed as a
+  // dependency: its identity changes on every render, so as a dependency this
+  // effect re-runs on every render — including the ones the virtualiser itself
+  // triggers while scrolling — and re-scrolls to a row that is already in
+  // view. Tracking the last selection scrolled to reduces that to one call per
+  // selection change, which is the number of times it means anything.
+  const virtualizerRef = useRef(virtualizer)
+  virtualizerRef.current = virtualizer
+  const lastScrolledTo = useRef<number | null>(null)
+
   useEffect(() => {
-    if (selectedMessageId === null) return
+    if (selectedMessageId === null) {
+      lastScrolledTo.current = null
+      return
+    }
+    if (lastScrolledTo.current === selectedMessageId) return
 
     const index = messages.findIndex((m) => m.id === selectedMessageId)
-    if (index >= 0) {
-      virtualizer.scrollToIndex(index, { align: 'auto' })
-    }
-  }, [selectedMessageId, messages, virtualizer])
+    if (index < 0) return
+
+    lastScrolledTo.current = selectedMessageId
+    virtualizerRef.current.scrollToIndex(index, { align: 'auto' })
+  }, [selectedMessageId, messages])
 
   if (searching) {
     if (searchPending && messages.length === 0) {
@@ -135,8 +151,8 @@ export function MessageList({ onLoadMore }: MessageListProps) {
                 // Rows are separated by a hairline rather than boxed into
                 // cards: at this density, card chrome costs more space than
                 // the grouping is worth.
-                'absolute left-0 flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left transition-colors',
-                SURFACE.divider,
+                'absolute left-0 flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors',
+                ROW_DIVIDER,
                 selected
                   ? SELECTED
                   : `${UNSELECTED_BAR} hover:bg-neutral-100 dark:hover:bg-neutral-900`,

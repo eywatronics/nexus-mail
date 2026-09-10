@@ -84,9 +84,21 @@ export const SURFACE = {
  * selecting a row would shift its text sideways.
  */
 export const SELECTED =
-  'border-l-2 border-[var(--color-accent)] ' +
+  'border-l-2 border-l-[var(--color-accent)] ' +
   'bg-[var(--color-surface-selected)] dark:bg-[var(--color-surface-selected-dark)]'
-export const UNSELECTED_BAR = 'border-l-2 border-transparent'
+export const UNSELECTED_BAR = 'border-l-2 border-l-transparent'
+
+/**
+ * Separator between rows in a list.
+ *
+ * Colours the bottom edge only. `border-neutral-200` sets all four sides, and
+ * a row that also carries a left accent bar then has two rules of equal
+ * specificity both writing the left border's colour — which one wins comes
+ * down to the order Tailwind happens to emit them in. It emitted the neutral
+ * one last, so every selected row in the message list drew its accent bar in
+ * the divider's grey and the selection was invisible.
+ */
+export const ROW_DIVIDER = 'border-b border-b-neutral-200 dark:border-b-neutral-800'
 
 /** One icon size and weight for the whole app, per the icon policy. */
 export const ICON = { size: 16, weight: 'regular' } as const

@@ -111,3 +111,50 @@ describe('pagination', () => {
     expect(onLoadMore).not.toHaveBeenCalled()
   })
 })
+
+describe('selection is visible', () => {
+  // The accent bar was drawn in the divider's grey and nobody could see which
+  // row was selected. `border-neutral-200` sets the colour of all four sides
+  // and `border-l-2` only sets a width, so two rules of equal specificity were
+  // both writing the left border's colour and Tailwind's emission order
+  // decided the winner. jsdom does not resolve the stylesheet, so this asserts
+  // the shape of the classes instead: a row must colour its bottom edge
+  // specifically, never all four.
+  it('colours the left bar with the accent and the divider only on the bottom', () => {
+    useMailStore.setState({
+      selectedFolderId: 1,
+      messages: makeMessages(3),
+      selectedMessageId: 1,
+    })
+
+    const { container } = render(<MessageList onLoadMore={() => {}} />)
+    const rows = container.querySelectorAll('[data-testid="message-row"]')
+    const selected = container.querySelector('[aria-current="true"]') as HTMLElement
+
+    expect(selected).toBeTruthy()
+    expect(selected.className).toContain('border-l-[var(--color-accent)]')
+
+    for (const row of rows) {
+      // border-neutral-* would colour every side, including the one the accent
+      // bar needs. border-b-neutral-* is the correct, single-sided form.
+      expect(row.className).not.toMatch(/(?<!-[a-z])border-neutral-/)
+      expect(row.className).toContain('border-b-neutral-')
+    }
+  })
+
+  // Unselected rows reserve the same 2px, otherwise selecting a row shifts its
+  // text sideways.
+  it('reserves the bar width on unselected rows', () => {
+    useMailStore.setState({
+      selectedFolderId: 1,
+      messages: makeMessages(3),
+      selectedMessageId: 1,
+    })
+
+    const { container } = render(<MessageList onLoadMore={() => {}} />)
+    const unselected = container.querySelector('[aria-current="false"]') as HTMLElement
+
+    expect(unselected.className).toContain('border-l-2')
+    expect(unselected.className).toContain('border-l-transparent')
+  })
+})
