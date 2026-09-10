@@ -277,16 +277,42 @@ renderer ayrı ayrı görünür; tek süreci ölçmek gerçeğin bir kısmını 
 
 Bütçe **süreç ağacının toplamı** olarak tanımlanır:
 
-| Durum | Hedef (süreç ağacı toplamı) |
+| Durum | Hedef (süreç ağacı toplamı, private working set) |
 |---|---|
 | Boşta, 1 hesap, 10.000 mesaj senkronize | ≤ 250 MB |
 | Aktif kullanım (liste kaydırma, mail açma) | ≤ 400 MB |
 
 Bu sayılar orijinal plandaki 30-150 MB'dan yüksek; sebebi WebView2 renderer'ının
-kendi başına ~100 MB taban maliyeti olması. Yine de Electron tabanlı rakiplerin
-belirgin altında kalır. Ölçüm süreç ağacını toplayan bir script ile yapılır ve
-sonuç bir referans değere karşı raporlanır — CI'da katı bir eşik olarak
-zorlanmaz (runner'lar arası varyans yüksek), ancak sürüm öncesi elle doğrulanır.
+kendi başına ~100 MB taban maliyeti olması. Ölçüm süreç ağacını toplayan bir
+script ile yapılır ve sonuç bir referans değere karşı raporlanır — CI'da katı
+bir eşik olarak zorlanmaz (runner'lar arası varyans yüksek), ancak sürüm öncesi
+elle doğrulanır.
+
+#### İlk gerçek ölçüm (2026-09-10, Windows 11, hesap eklenmemiş)
+
+Tabloyu yazarken atlanan şey, **hangi bellek metriği** olduğuydu. Ölçünce iki
+metrik arasında 3,5 kat fark çıktı, yani metrik belirtmeyen bir bütçe aslında
+bir şey söylemiyor:
+
+| | Private working set | Working set |
+|---|---|---|
+| Go süreci | 12 MB | 42 MB |
+| WebView2 (6 süreç) | 105 MB | 372 MB |
+| **Toplam** | **117 MB** | **414 MB** |
+
+Fark paylaşılan sayfalardan geliyor: Edge çalışma zamanının kod sayfaları altı
+sürecin her birinde ayrı ayrı sayılıyor, üstelik makinedeki diğer WebView2
+uygulamalarıyla da paylaşılıyorlar. Bu ölçüm sırasında makinede zaten 26 tane
+başka WebView2 süreci vardı; uygulamanın payı, açılıştan önceki ve sonraki
+listenin farkı alınarak hesaplandı.
+
+**Bütçe bundan böyle private working set üzerinden tanımlanır.** Working set,
+uygulamanın gerçekten sahip olduğu belleği değil, sistemin başka yerlerde de
+duran sayfalarını ona fatura eder.
+
+Bu sayı henüz tablonun karşılığı değil: ölçüm **hiç hesap eklenmeden**, hesap
+ekleme ekranı açıkken yapıldı. Yani 117 MB bir taban, bütçelenen "1 hesap,
+10.000 mesaj" durumu değil. O satır gerçek bir hesapla doldurulmayı bekliyor.
 
 ---
 
