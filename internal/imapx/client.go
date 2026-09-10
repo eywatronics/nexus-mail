@@ -184,6 +184,47 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 }
 
 // FetchBody pulls one whole message and extracts its text and HTML parts.
+// FetchFlags asks only for UIDs and flags.
+//
+// Two jobs in one call. With CONDSTORE (changedSince non-zero) the server
+// answers with just what changed, which is what makes a delta sync cheap on a
+// mailbox with fifty thousand messages. Without it, the full range comes back
+// and the returned UID list is also the set of messages that still exist —
+// the caller diffs it against the local set to find what was expunged.
+//
+// ModSeq is deliberately not requested. The caller records the HIGHESTMODSEQ
+// that SELECT reported, and only after the whole pass succeeded; a per-message
+// value would tempt it into recording progress mid-fetch, and an interrupted
+// pass would then skip everything it had not reached.
+func (cl *client) FetchFlags(_ context.Context, r UIDRange, changedSince uint64) ([]model.FlagUpdate, error) {
+	set := imap.UIDSet{imap.UIDRange{
+		Start: imap.UID(r.Start),
+		Stop:  imap.UID(r.End), // zero means "to the end", which matches UIDRange
+	}}
+
+	buffers, err := cl.c.Fetch(set, &imap.FetchOptions{
+		UID:          true,
+		Flags:        true,
+		ChangedSince: changedSince,
+	}).Collect()
+	if err != nil {
+		return nil, fmt.Errorf("imapx: FETCH flags failed: %w", err)
+	}
+
+	out := make([]model.FlagUpdate, 0, len(buffers))
+	for _, buf := range buffers {
+		// A message with no flags is a real state, and the store writes it as
+		// an empty list rather than null. Starting from a non-nil slice keeps
+		// that distinction from depending on whether the loop below ran.
+		u := model.FlagUpdate{UID: uint32(buf.UID), Flags: []string{}}
+		for _, f := range buf.Flags {
+			u.Flags = append(u.Flags, string(f))
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
 func (cl *client) FetchBody(_ context.Context, uid uint32) (Body, error) {
 	set := imap.UIDSet{imap.UIDRange{Start: imap.UID(uid), Stop: imap.UID(uid)}}
 	opts := &imap.FetchOptions{

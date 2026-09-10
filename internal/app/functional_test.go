@@ -26,6 +26,7 @@ import (
 
 	"nexusmail/internal/auth"
 	"nexusmail/internal/imapx"
+	"nexusmail/internal/model"
 	"nexusmail/internal/store"
 	imapsync "nexusmail/internal/sync"
 )
@@ -495,4 +496,127 @@ func TestTheRealDialerRefusesAnythingButVerifiedTLS(t *testing.T) {
 			t.Errorf("error was %v, want a certificate verification failure", err)
 		}
 	})
+}
+
+// TestDeltaSyncAgainstARealServer runs the incremental path over a real
+// socket. The fake backend in the sync package drives the awkward server
+// behaviours; this proves the ordinary ones survive an actual FETCH.
+//
+// Expunge is missing here on purpose: the memory server only removes messages
+// already flagged \Deleted, and setting that flag needs a STORE the backend
+// does not have until the outgoing operations queue exists. Deletion detection
+// is covered against the fake.
+func TestDeltaSyncAgainstARealServer(t *testing.T) {
+	ctx := context.Background()
+	host, port, user := startIMAPServer(t, nil)
+
+	deliver(t, user, "INBOX", "From: Muhasebe <muhasebe@example.com>\r\n"+
+		"To: "+fnUser+"\r\n"+
+		"Subject: Ilk mesaj\r\n"+
+		"Message-ID: <ilk@example.com>\r\n"+
+		"Date: Mon, 02 Feb 2026 09:30:00 +0300\r\n"+
+		"Content-Type: text/plain; charset=utf-8\r\n\r\nBir.\r\n")
+
+	svc, db := newLiveService(t, host, port)
+	acct, err := svc.AddPasswordAccount(fnUser, "Test", host, port, "", 0, fnPass)
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	folders, err := svc.ListFolders(acct.ID)
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+	if inbox.ID == 0 {
+		t.Fatal("no inbox")
+	}
+
+	before, err := db.ListMessageUIDs(ctx, inbox.ID)
+	if err != nil {
+		t.Fatalf("ListMessageUIDs() error: %v", err)
+	}
+	if len(before) != 1 {
+		t.Fatalf("precondition failed: inbox holds %v", before)
+	}
+
+	// --- something arrives, and something is read elsewhere ------------------
+	deliver(t, user, "INBOX", "From: Zeynep <zeynep@example.com>\r\n"+
+		"To: "+fnUser+"\r\n"+
+		"Subject: Ikinci mesaj\r\n"+
+		"Message-ID: <ikinci@example.com>\r\n"+
+		"Date: Tue, 03 Feb 2026 11:00:00 +0300\r\n"+
+		"Content-Type: text/plain; charset=utf-8\r\n\r\nIki.\r\n")
+
+	// Reading a body is what makes a real server set \Seen, which is the same
+	// thing that happens when someone opens the message on their phone.
+	handler := NewBodyHandler(svc)
+	messages, err := svc.ListMessages(inbox.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/mail-body/"+strconv.FormatInt(messages[0].ID, 10), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reading the body returned %d", rec.Code)
+	}
+
+	// --- the delta pass -----------------------------------------------------
+	stored, err := db.GetAccount(ctx, acct.ID)
+	if err != nil {
+		t.Fatalf("GetAccount() error: %v", err)
+	}
+	folder, err := folderByID(ctx, db, acct.ID, inbox.ID)
+	if err != nil {
+		t.Fatalf("folder lookup: %v", err)
+	}
+	if err := svc.engine.DeltaSync(ctx, stored, folder); err != nil {
+		t.Fatalf("DeltaSync() error: %v", err)
+	}
+
+	after, err := db.ListMessageUIDs(ctx, inbox.ID)
+	if err != nil {
+		t.Fatalf("ListMessageUIDs() error: %v", err)
+	}
+	if len(after) != 2 {
+		t.Errorf("inbox holds %v after the delta pass, want two messages", after)
+	}
+
+	final, err := svc.ListMessages(inbox.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	var read int
+	for _, m := range final {
+		if m.IsRead {
+			read++
+		}
+	}
+	if read != 1 {
+		t.Errorf("%d messages are marked read, want exactly the one that was opened", read)
+	}
+}
+
+// folderByID re-reads a folder with its stored sync state, which is what
+// DeltaSync needs and the DTO deliberately does not carry.
+func folderByID(ctx context.Context, db *store.Store, accountID, folderID int64) (model.Folder, error) {
+	folders, err := db.ListFolders(ctx, accountID)
+	if err != nil {
+		return model.Folder{}, err
+	}
+	for _, f := range folders {
+		if f.ID == folderID {
+			return f, nil
+		}
+	}
+	return model.Folder{}, errors.New("folder not found")
 }

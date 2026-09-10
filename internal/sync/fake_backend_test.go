@@ -28,6 +28,17 @@ type fakeBackend struct {
 	messages    map[string][]model.Message
 	bodies      map[uint32]imapx.Body
 
+	// modseq tracks a CONDSTORE modification sequence per message, and
+	// highestModSeq what SELECT reports. A real server bumps these on every
+	// change; the fake bumps them wherever a test changes something.
+	modseq        map[string]map[uint32]uint64
+	highestModSeq map[string]uint64
+
+	// flagFetches records what FetchFlags was asked for. The only observable
+	// difference between the CONDSTORE path and the fallback is the argument
+	// the engine passes, so a test has to be able to look at it.
+	flagFetches []flagFetch
+
 	// failFetchAfter makes FetchHeaders fail once it has served this many
 	// messages, simulating a connection drop mid-sync. Zero disables it.
 	failFetchAfter int
@@ -41,12 +52,21 @@ type fakeBackend struct {
 	closed      bool
 }
 
+// flagFetch is one recorded call to FetchFlags.
+type flagFetch struct {
+	path         string
+	rng          imapx.UIDRange
+	changedSince uint64
+}
+
 func newFakeBackend() *fakeBackend {
 	return &fakeBackend{
-		caps:        imapx.Capabilities{CondStore: true, QResync: true, Move: true, Idle: true},
-		uidValidity: map[string]uint32{},
-		messages:    map[string][]model.Message{},
-		bodies:      map[uint32]imapx.Body{},
+		caps:          imapx.Capabilities{CondStore: true, QResync: true, Move: true, Idle: true},
+		uidValidity:   map[string]uint32{},
+		messages:      map[string][]model.Message{},
+		bodies:        map[uint32]imapx.Body{},
+		modseq:        map[string]map[uint32]uint64{},
+		highestModSeq: map[string]uint64{},
 	}
 }
 
@@ -81,7 +101,63 @@ func (f *fakeBackend) addMessages(path string, uids ...uint32) {
 			HTML: fmt.Sprintf("<p>body %d</p>", uid),
 			Text: fmt.Sprintf("body %d", uid),
 		}
+		f.bumpModSeqLocked(path, uid)
 	}
+}
+
+// bumpModSeqLocked advances the mailbox's modification sequence and stamps one
+// message with it, the way a server does on any change to that message.
+func (f *fakeBackend) bumpModSeqLocked(path string, uid uint32) {
+	f.highestModSeq[path]++
+	if f.modseq[path] == nil {
+		f.modseq[path] = map[uint32]uint64{}
+	}
+	f.modseq[path][uid] = f.highestModSeq[path]
+}
+
+// setFlags is the server-side change a delta sync is supposed to notice: a
+// message read on a phone, a star added in a webmail.
+func (f *fakeBackend) setFlags(path string, uid uint32, flags ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for i := range f.messages[path] {
+		if f.messages[path][i].UID == uid {
+			f.messages[path][i].Flags = flags
+			f.bumpModSeqLocked(path, uid)
+			return
+		}
+	}
+}
+
+// expunge removes messages server-side. Note it does NOT bump a modseq:
+// CONDSTORE alone does not report deletions, which is exactly why the engine
+// cannot rely on CHANGEDSINCE to find them.
+func (f *fakeBackend) expunge(path string, uids ...uint32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	gone := map[uint32]bool{}
+	for _, uid := range uids {
+		gone[uid] = true
+	}
+	kept := f.messages[path][:0]
+	for _, m := range f.messages[path] {
+		if !gone[m.UID] {
+			kept = append(kept, m)
+		}
+	}
+	f.messages[path] = kept
+}
+
+// recordedFlagFetches returns a copy of what FetchFlags was asked for.
+func (f *fakeBackend) recordedFlagFetches() []flagFetch {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	out := make([]flagFetch, len(f.flagFetches))
+	copy(out, f.flagFetches)
+	return out
 }
 
 // setUIDValidity simulates the server recreating a mailbox: same name, brand
@@ -139,11 +215,17 @@ func (f *fakeBackend) Select(_ context.Context, path string) (imapx.SelectResult
 			next = m.UID + 1
 		}
 	}
+	// A server without CONDSTORE reports no modification sequence at all;
+	// mirroring that is what lets a test drive the fallback path.
+	var highest uint64
+	if f.caps.CondStore {
+		highest = f.highestModSeq[path]
+	}
 	return imapx.SelectResult{
 		UIDValidity:   v,
 		UIDNext:       next,
 		NumMessages:   uint32(len(f.messages[path])),
-		HighestModSeq: 1,
+		HighestModSeq: highest,
 	}, nil
 }
 
@@ -171,6 +253,40 @@ func (f *fakeBackend) FetchHeaders(_ context.Context, r imapx.UIDRange) ([]model
 		out = append(out, m)
 	}
 	f.served += len(out)
+	return out, nil
+}
+
+func (f *fakeBackend) FetchFlags(_ context.Context, r imapx.UIDRange, changedSince uint64) ([]model.FlagUpdate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.flagFetches = append(f.flagFetches, flagFetch{
+		path: f.selected, rng: r, changedSince: changedSince,
+	})
+
+	if f.fetchErr != nil {
+		return nil, f.fetchErr
+	}
+
+	var out []model.FlagUpdate
+	for _, m := range f.messages[f.selected] {
+		if m.UID < r.Start {
+			continue
+		}
+		if r.End != 0 && m.UID > r.End {
+			continue
+		}
+		// CHANGEDSINCE: the server sends only messages whose modseq moved
+		// past the given value.
+		if changedSince > 0 && f.modseq[f.selected][m.UID] <= changedSince {
+			continue
+		}
+		flags := m.Flags
+		if flags == nil {
+			flags = []string{}
+		}
+		out = append(out, model.FlagUpdate{UID: m.UID, Flags: flags})
+	}
 	return out, nil
 }
 

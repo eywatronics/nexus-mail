@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/emersion/go-imap/v2"
+
+	"nexusmail/internal/model"
 )
 
 func dialTestBackend(t *testing.T, addr, password string) MailBackend {
@@ -273,5 +275,125 @@ func TestFetchBodyReportsAMissingMessage(t *testing.T) {
 
 	if _, err := be.FetchBody(ctx, 9999); err == nil {
 		t.Error("FetchBody() succeeded for a UID that does not exist")
+	}
+}
+
+// FetchFlags is the cheap half of a delta sync: it asks what changed without
+// pulling envelopes. A message going from unread to read produces no new
+// header data, and refetching the envelope to learn that would multiply the
+// traffic the delta path exists to avoid.
+func TestFetchFlagsReturnsUIDsAndFlagsWithoutEnvelopes(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("First", "a@example.com", "<p>1</p>"))
+	appendMessage(t, user, "INBOX", htmlMessage("Second", "b@example.com", "<p>2</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	updates, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("FetchFlags() returned %d updates, want 2", len(updates))
+	}
+	for _, u := range updates {
+		if u.UID == 0 {
+			t.Error("UID = 0; the store keys the update on it")
+		}
+	}
+}
+
+// The UID list this returns is the other half of detecting a deletion: what
+// the server still has, against what we hold. A range that under-reports would
+// make the caller delete mail that is still there.
+func TestFetchFlagsHonoursTheUIDRange(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	for i := 0; i < 4; i++ {
+		appendMessage(t, user, "INBOX", htmlMessage("Msg", "a@example.com", "<p>x</p>"))
+	}
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	all, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags(all) error: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("the whole mailbox has %d messages, want 4", len(all))
+	}
+
+	narrowed, err := be.FetchFlags(ctx, UIDRange{Start: all[1].UID, End: all[2].UID}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags(range) error: %v", err)
+	}
+	if len(narrowed) != 2 {
+		t.Errorf("the narrowed range returned %d updates, want 2", len(narrowed))
+	}
+}
+
+// An empty mailbox is not an error. Delta sync runs against every folder on
+// every pass, including the ones nobody has ever put a message in.
+func TestFetchFlagsOnAnEmptyMailbox(t *testing.T) {
+	addr, _ := startFakeServer(t, serverCaps())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	updates, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(updates) != 0 {
+		t.Errorf("FetchFlags() returned %d updates for an empty mailbox", len(updates))
+	}
+}
+
+// Flags the server actually set must survive the round trip; the whole point
+// of the call is learning that something is now read.
+func TestFetchFlagsReportsSystemFlags(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Read me", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	// Reading the body is what makes the server set \Seen.
+	updates, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("got %d updates, want 1", len(updates))
+	}
+	if _, err := be.FetchBody(ctx, updates[0].UID); err != nil {
+		t.Fatalf("FetchBody() error: %v", err)
+	}
+
+	after, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("second FetchFlags() error: %v", err)
+	}
+	seen := false
+	for _, f := range after[0].Flags {
+		if strings.EqualFold(f, model.FlagSeen) {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Errorf("flags = %v, want the seen flag after the body was read", after[0].Flags)
 	}
 }

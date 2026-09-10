@@ -29,6 +29,9 @@ type Store interface {
 	ResetFolder(ctx context.Context, folderID int64, newUIDValidity uint32) error
 	UpsertMessages(ctx context.Context, folderID int64, msgs []model.Message) error
 	ListMessages(ctx context.Context, folderID int64, limit, offset int) ([]model.Message, error)
+	ListMessageUIDs(ctx context.Context, folderID int64) ([]uint32, error)
+	SetMessageFlags(ctx context.Context, folderID int64, updates []model.FlagUpdate) error
+	DeleteMessagesByUID(ctx context.Context, folderID int64, uids []uint32) error
 	SetMessageBody(ctx context.Context, messageID int64, html, text string) error
 	GetMessageBody(ctx context.Context, messageID int64) (html, text string, err error)
 }

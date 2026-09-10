@@ -75,6 +75,16 @@ type MailBackend interface {
 	// mailbox. Bodies are deliberately not fetched.
 	FetchHeaders(ctx context.Context, r UIDRange) ([]model.Message, error)
 
+	// FetchFlags returns UIDs and their current flags for a range, without
+	// envelopes or bodies. This is the cheap half of a delta sync.
+	//
+	// changedSince is a CONDSTORE modification sequence: non-zero asks the
+	// server for only what changed after it, which turns a scan of a large
+	// mailbox into a short answer. Zero means "everything in range" — the
+	// fallback for servers with no CONDSTORE, where the returned UID list
+	// doubles as the set of messages that still exist.
+	FetchFlags(ctx context.Context, r UIDRange, changedSince uint64) ([]model.FlagUpdate, error)
+
 	// FetchBody returns the HTML and plain-text parts of one message.
 	FetchBody(ctx context.Context, uid uint32) (Body, error)
 

@@ -497,3 +497,7 @@ func TestSearchMessagesReturnsNothingForABlankQuery(t *testing.T) {
 		}
 	}
 }
+
+func (stubBackend) FetchFlags(context.Context, imapx.UIDRange, uint64) ([]model.FlagUpdate, error) {
+	return nil, nil
+}

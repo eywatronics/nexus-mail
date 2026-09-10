@@ -114,6 +114,16 @@ type Message struct {
 	BodyFetched    bool
 }
 
+// FlagUpdate is one message's UID and the flags the server now reports for it.
+//
+// Delta sync carries flags without headers: a message going from unread to
+// read produces no new header data, and refetching the envelope to learn that
+// would multiply the traffic the whole delta path exists to avoid.
+type FlagUpdate struct {
+	UID   uint32
+	Flags []string
+}
+
 // HasFlag reports whether f is present, case-insensitively, since servers vary
 // in how they capitalise system flags.
 func (m Message) HasFlag(f string) bool {

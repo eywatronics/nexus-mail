@@ -71,20 +71,49 @@ func (e *Engine) syncFolderHeaders(ctx context.Context, be imapx.MailBackend, ac
 		return fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
 	}
 
-	// A zero stored value means this folder has never been synced, so there is
-	// nothing to invalidate.
-	if folder.UIDValidity != 0 && sel.UIDValidity != folder.UIDValidity {
-		if err := e.store.ResetFolder(ctx, folder.ID, sel.UIDValidity); err != nil {
-			return fmt.Errorf("sync: resetting %q after a UIDVALIDITY change: %w", folder.Path, err)
-		}
-		folder.UIDValidity = sel.UIDValidity
+	folder, _, err = e.reconcileUIDValidity(ctx, folder, sel)
+	if err != nil {
+		return err
 	}
+	return e.fullHeaderPass(ctx, be, accountID, folder, sel)
+}
 
+// reconcileUIDValidity detects a recreated mailbox and clears what we hold for
+// it. The returned bool says whether a reset happened, so callers that would
+// otherwise apply a delta know they must not.
+//
+// A zero stored value means this folder has never been synced, so there is
+// nothing to invalidate.
+func (e *Engine) reconcileUIDValidity(ctx context.Context, folder model.Folder, sel imapx.SelectResult) (model.Folder, bool, error) {
+	if folder.UIDValidity == 0 || sel.UIDValidity == folder.UIDValidity {
+		return folder, false, nil
+	}
+	if err := e.store.ResetFolder(ctx, folder.ID, sel.UIDValidity); err != nil {
+		return folder, false, fmt.Errorf("sync: resetting %q after a UIDVALIDITY change: %w", folder.Path, err)
+	}
+	folder.UIDValidity = sel.UIDValidity
+	folder.UIDNext = 0
+	folder.HighestModSeq = 0
+	folder.TotalCount = 0
+	return folder, true, nil
+}
+
+// fullHeaderPass fetches the recent window of a folder from scratch. Used on
+// first sync and whenever a delta cannot be trusted.
+func (e *Engine) fullHeaderPass(ctx context.Context, be imapx.MailBackend, accountID int64, folder model.Folder, sel imapx.SelectResult) error {
 	msgs, err := be.FetchHeaders(ctx, initialRange(sel.UIDNext))
 	if err != nil {
 		return fmt.Errorf("sync: fetching headers for %q: %w", folder.Path, err)
 	}
+	if err := e.storeHeaders(ctx, accountID, folder, msgs); err != nil {
+		return err
+	}
+	return e.recordSyncState(ctx, accountID, folder, sel)
+}
 
+// storeHeaders stamps ownership onto fetched messages and writes them. The
+// backend does not know local ids, so this is where they are attached.
+func (e *Engine) storeHeaders(ctx context.Context, accountID int64, folder model.Folder, msgs []model.Message) error {
 	for i := range msgs {
 		msgs[i].AccountID = accountID
 		msgs[i].FolderID = folder.ID
@@ -92,10 +121,19 @@ func (e *Engine) syncFolderHeaders(ctx context.Context, be imapx.MailBackend, ac
 	if err := e.store.UpsertMessages(ctx, folder.ID, msgs); err != nil {
 		return fmt.Errorf("sync: storing headers for %q: %w", folder.Path, err)
 	}
+	return nil
+}
 
+// recordSyncState writes where this pass got to.
+//
+// Called only after everything else in the pass succeeded. Recording progress
+// a pass did not make is how a sync silently skips changes: the next run asks
+// the server what changed since a point it never actually reached.
+func (e *Engine) recordSyncState(ctx context.Context, accountID int64, folder model.Folder, sel imapx.SelectResult) error {
 	updated := folder
 	updated.UIDNext = sel.UIDNext
 	updated.HighestModSeq = sel.HighestModSeq
+	updated.TotalCount = int(sel.NumMessages)
 	updated.LastSyncedAt = time.Now()
 	if err := e.store.UpsertFolders(ctx, accountID, []model.Folder{updated}); err != nil {
 		return fmt.Errorf("sync: recording sync state for %q: %w", folder.Path, err)
