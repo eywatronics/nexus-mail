@@ -30,6 +30,7 @@ işlevseldir; yapılan değişiklikler kuyruğa alınır ve bağlantı geldiğin
 | Şifreleme | Yalnızca kimlik bilgileri (OS anahtarlığı) | SQLCipher cgo gerektirir → çapraz platform ve saf Go hedefiyle çelişir. Thunderbird/Apple Mail de bu modeli kullanır. |
 | Senkron mimarisi | Yerel-önce + giden işlem kuyruğu | Çevrimdışı çalışma ayrı bir özellik değil, mimarinin doğal sonucu olur. |
 | JMAP | Uygulanmayacak | 2026'da Gmail/Outlook/Yahoo desteklemiyor; yalnızca Fastmail/Cyrus/Stalwart. Gelecekte eklenebilmesi için `sync` motoru `imapx`'e doğrudan değil, `MailBackend` arayüzü üzerinden bağlanır. |
+| Yeni protokol arka uçları | Hepsi arayüz üzerinden | `MailBackend` deseni takvim ve kişiler için de tekrarlanır (`CalendarBackend`, `ContactsBackend`). Microsoft Graph/EWS bu arayüzlerin ikinci uygulaması olarak girer, motorlar somut protokolü hiç görmez. Thunderbird de aynı yere vardı: `IExchangeClient.idl` arayüzünü hem EWS hem Graph uyguluyor. |
 
 ### Reddedilen alternatifler
 
@@ -740,30 +741,57 @@ kuralların otomatik zorlanması ayrı bir dokümanda:
 
 ## 11. P0 Kapsam Dışı (bilinçli YAGNI)
 
-Gönderme ve SMTP, composer/editör, arama arayüzü, akıllı kurallar, snooze, etiketler,
+Gönderme ve SMTP, composer/editör, akıllı kurallar, snooze, etiketler,
 AI entegrasyonu, CalDAV takvim, CardDAV kişiler, ek dosya indirme, çoklu pencere,
 otomatik güncelleme, kod imzalama.
 
 Ayrıca §8.1 uyarınca **sistem tepsisi, arka planda çalışma ve işletim sistemi
 bildirimleri** — bunlar M4'e (P1) alınmıştır.
 
-FTS5 indeksi P0'da oluşturulur ve başlık/gönderen/snippet için **eksiksiz dolar**;
-yalnızca arama arayüzü ertelenir. Gövde indeksi §5.2 uyarınca P3'e aittir.
+FTS5 indeksi P0'da oluşturulur ve başlık/gönderen/snippet için **eksiksiz dolar**.
+Arama arayüzü de M1'de yapıldı (özgün planda P2'ye bırakılmıştı; indeksi yazıp
+hiç okumamak tutarsızdı). Gövde indeksi §5.2 uyarınca hâlâ ileri bir taşta.
 
 Saklama penceresi (§6.7) politikası P0'da belgelenir, temizlik işi M2'de gelir.
 
+**Yukarıdakilerin çoğu artık "asla" değil, "sonra".** Hangisinin hangi
+kilometre taşında olduğu [yol haritasında](../plans/roadmap.md); *neden*
+kapsamda olduğu (ya da kalıcı olarak dışarıda kaldığı)
+[özellik envanterinde](feature-inventory.md).
+
 ---
 
-## 12. İç Kilometre Taşları
+## 12. Kilometre Taşları
 
-Geniş P0 kapsamı seçildiği için üç doğrulama noktasına bölünür. Her nokta kendi
-başına çalışır durumda kalır:
+Her taş kendi başına çalışır durumda kalır. Ayrıntılı kapsam ve kabul
+kriterleri [yol haritasında](../plans/roadmap.md); burada yalnızca sıra ve
+tanım var.
+
+**P0 — çekirdek istemci**
 
 - **M1 — Salt okunur istemci.** Hesap bağlama (3 auth yolu), klasör ve başlık çekme,
-  üç sütunlu UI, izole HTML render, karanlık tema.
-- **M2 — Canlı senkron.** IDLE döngüsü, delta senkron (her iki yol), yeniden bağlanma.
+  üç sütunlu UI, izole HTML render, karanlık tema, arama, klavye navigasyonu.
+- **M2 — Canlı senkron.** IDLE döngüsü, delta senkron (her iki yol), QRESYNC,
+  yeniden bağlanma, saklama penceresi.
 - **M3 — Durum yazma.** İşlem kuyruğu: okundu/okunmadı, yıldız, klasöre taşı, sil;
   çevrimdışı dayanıklı.
+
+**P1 ve sonrası**
+
+- **M4 — Tepsi ve bildirimler.** §8.1 uyarınca ertelenen küme.
+- **M5 — Okuma deneyimini tamamla.** Ekler, konuşma gruplama, kaynak/yazdır/kaydet,
+  kodlama onarımı.
+- **M6 — Gönderme.** SMTP, çoklu kimlik, imza, taslak, outbox, composer.
+- **M7 — Kişiler.** Yerel defter, vCard, CardDAV, LDAP.
+- **M8 — Organizasyon, arama olgunluğu, otomasyon.** Üç parça: M8a etiket/arşiv/
+  birleşik kutu, M8b gövde indeksi ve gelişmiş arama, M8c kural motoru ve junk.
+- **M9 — Şifreleme ve takvim.** M9a OpenPGP/S-MIME, M9b CalDAV takvim,
+  M9c iTIP/iMIP davetler. M9a diğer ikisinden bağımsız.
+- **M10 — Microsoft Graph / Exchange.** M365 takvim ve kişileri.
+- **M11 — Göç.** Thunderbird/Outlook/Apple Mail içe aktarma, profil dışa aktarma.
+- **M12 — Yerelleştirme ve erişilebilirlik.** i18n altyapısı, Türkçe/İngilizce.
+- **M13 — Sohbet.** Matrix ve XMPP, uçtan uca şifreli.
+- **M14 — Ürünleşme.** Otomatik güncelleme, kod imzalama, paketleme.
 
 ---
 

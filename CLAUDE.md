@@ -89,6 +89,22 @@ Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:
 - `internal/sync`, `github.com/emersion/go-imap/v2`'yi **doğrudan import
   etmez**. Motor `imapx.MailBackend` arayüzü üzerinden çalışır; sahte sunucuya
   karşı test edilebilirliği buna bağlıdır.
+- **Yeni protokol arka uçları arayüz üzerinden bağlanır.** `imapx.MailBackend`
+  deseni takvim ve kişiler için de geçerlidir: motor somut protokolü değil
+  arayüzü görür, protokol kütüphanesi yalnızca kendi paketinde import edilir.
+  Yeni bir katman eklenince `.golangci.yml` içindeki `depguard` kuralı da
+  eklenir — kural yazılmamışsa mimari kural yok demektir.
+
+  | Katman | Sorumluluk | Arayüz |
+  |---|---|---|
+  | `internal/imapx` | IMAP | `MailBackend` |
+  | `internal/carddavx` | CardDAV, LDAP (M7) | `ContactsBackend` |
+  | `internal/caldavx` | CalDAV, ICS (M9b) | `CalendarBackend` |
+  | `internal/graphx` | Microsoft Graph (M10) | yukarıdakilerin ikinci uygulaması |
+
+- **Her yeni protokol kendi sahte sunucusuyla gelir.** IMAP için
+  `imapmemserver` kullanılıyor; SMTP için `go-smtp`'nin sunucu tarafı, diğerleri
+  için eşdeğeri. Gerçek hesaba karşı elle deneme test yerine geçmez.
 - `internal/mailhtml` saf bir dönüşümdür, `net/http` import edemez.
 - Uygulama kodu `fts_messages` tablosuna **doğrudan yazmaz**. İndeks
   tetikleyicilerle korunur; CI bunu kontrol eder.

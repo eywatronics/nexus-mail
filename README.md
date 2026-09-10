@@ -54,10 +54,25 @@ Geliştirme aşamasında. Şu an **M1 (salt okunur istemci)** üzerinde çalış
 
 | Kilometre taşı | Kapsam | Durum |
 |---|---|---|
-| **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma | Devam ediyor |
+| **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Devam ediyor |
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Planlandı |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Planlandı |
-| **P2+** | Gönderme ve SMTP, arama arayüzü, kurallar, takvim, kişiler | Yol haritasında |
+| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Planlandı |
+| **M5** | Ekler, konuşma gruplama, kaynak/yazdır/kaydet, kodlama onarımı | Planlandı |
+| **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
+| **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
+| **M8** | Etiket, arşiv, birleşik gelen kutusu, gövde araması, kural motoru, junk | Planlandı |
+| **M9** | OpenPGP/S-MIME; CalDAV takvim ve toplantı davetleri | Planlandı |
+| **M10** | Microsoft Graph: M365 takvim ve kişileri | Planlandı |
+| **M11** | Thunderbird / Outlook / Apple Mail'den içe aktarma | Planlandı |
+| **M12** | Türkçe arayüz, erişilebilirlik, özelleştirilebilir kısayollar | Planlandı |
+| **M13** | Sohbet: Matrix ve XMPP, uçtan uca şifreli | Planlandı |
+| **M14** | Otomatik güncelleme, kod imzalama, kurulum paketleri | Planlandı |
+
+Yol haritasının nasıl çıkarıldığı, hangi özelliğin neden kapsamda olduğu ve
+neyin **bilerek dışarıda** bırakıldığı:
+[docs/plans/roadmap.md](docs/plans/roadmap.md) ve
+[docs/design/feature-inventory.md](docs/design/feature-inventory.md).
 
 ## Desteklenen hesaplar
 
