@@ -420,3 +420,80 @@ func fmtError(msg string) error { return &simpleError{msg} }
 type simpleError struct{ msg string }
 
 func (e *simpleError) Error() string { return e.msg }
+
+func TestSearchMessagesSpansFoldersAndClampsTheLimit(t *testing.T) {
+	svc, _, s := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+	folders, err := svc.ListFolders(acct.ID)
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+
+	// Put a message in the folder the user is *not* looking at. Searching only
+	// the open folder would find nothing, which is the failure this method
+	// exists to avoid.
+	var other FolderDTO
+	for _, f := range folders {
+		if !f.IsInbox {
+			other = f
+		}
+	}
+	if other.ID == 0 {
+		t.Fatal("fixture has no non-inbox folder")
+	}
+	if err := s.UpsertMessages(context.Background(), other.ID, []model.Message{{
+		AccountID: acct.ID, FolderID: other.ID, UID: 77,
+		Subject:      "Mutabakat dosyası",
+		From:         model.Address{Addr: "muhasebe@example.com"},
+		InternalDate: time.Unix(1700000002, 0),
+	}}); err != nil {
+		t.Fatalf("UpsertMessages() error: %v", err)
+	}
+
+	got, err := svc.SearchMessages(acct.ID, "mutabakat", 50)
+	if err != nil {
+		t.Fatalf("SearchMessages() error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("search found %d messages, want 1", len(got))
+	}
+	if got[0].FolderID != other.ID {
+		t.Errorf("result is in folder %d, want %d", got[0].FolderID, other.ID)
+	}
+
+	// Same clamp as the list: a runaway limit would materialise the whole
+	// mailbox on both sides of the bridge.
+	for _, limit := range []int{0, -1, 100000} {
+		if _, err := svc.SearchMessages(acct.ID, "mutabakat", limit); err != nil {
+			t.Errorf("SearchMessages(limit=%d) error: %v", limit, err)
+		}
+	}
+}
+
+// An empty box is the state the UI sits in most of the time, and it must not
+// be an error path.
+func TestSearchMessagesReturnsNothingForABlankQuery(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	for _, query := range []string{"", "   ", "!!!"} {
+		got, err := svc.SearchMessages(acct.ID, query, 50)
+		if err != nil {
+			t.Fatalf("SearchMessages(%q) error: %v", query, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("SearchMessages(%q) returned %d messages, want 0", query, len(got))
+		}
+	}
+}

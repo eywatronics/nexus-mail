@@ -1,4 +1,5 @@
-import { Paperclip, Tray } from '@phosphor-icons/react'
+import { MagnifyingGlass, Paperclip, Tray } from '@phosphor-icons/react'
+import type { Icon } from '@phosphor-icons/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
@@ -29,10 +30,13 @@ function formatDate(unixSeconds: number): string {
 }
 
 /** Shared shell so every empty state sits in the same place on screen. */
-function Placeholder({ children }: { children: React.ReactNode }) {
+function Placeholder({ icon: PlaceholderIcon = Tray, children }: {
+  icon?: Icon
+  children: React.ReactNode
+}) {
   return (
     <div className={`flex h-full flex-col items-center justify-center gap-3 p-8 text-center`}>
-      <Tray size={28} weight="light" className={TEXT.muted} />
+      <PlaceholderIcon size={28} weight="light" className={TEXT.muted} />
       <p className={`max-w-[28ch] text-sm ${TEXT.secondary}`}>{children}</p>
     </div>
   )
@@ -41,7 +45,14 @@ function Placeholder({ children }: { children: React.ReactNode }) {
 export function MessageList({ onLoadMore }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const messages = useMailStore((s) => s.messages)
+  // Search results and a folder's messages are two sources for one column.
+  // Which one is showing is decided in the store so this component and the
+  // keyboard navigation cannot disagree about what "the next message" means.
+  const messages = useMailStore((s) => s.visibleMessages())
+  const searching = useMailStore((s) => s.searching)
+  const searchPending = useMailStore((s) => s.searchPending)
+  const folders = useMailStore((s) => s.folders)
+
   const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessage = useMailStore((s) => s.setSelectedMessage)
@@ -61,22 +72,48 @@ export function MessageList({ onLoadMore }: MessageListProps) {
   const lastRenderedIndex = items.length > 0 ? items[items.length - 1].index : -1
 
   useEffect(() => {
-    if (!hasMore || loading || messages.length === 0) return
+    // Results are a single capped page, so there is nothing further to fetch.
+    if (searching || !hasMore || loading || messages.length === 0) return
     if (lastRenderedIndex >= messages.length - 1) {
       onLoadMore()
     }
-  }, [hasMore, loading, lastRenderedIndex, messages.length, onLoadMore])
+  }, [searching, hasMore, loading, lastRenderedIndex, messages.length, onLoadMore])
 
-  if (selectedFolderId === null) {
-    return <Placeholder>Select a folder to see its messages.</Placeholder>
-  }
+  // Keyboard selection has to bring its row with it, or holding j walks the
+  // selection off the bottom of the window and the reader loses their place.
+  // 'auto' scrolls only when the row is out of view, which leaves a row picked
+  // with the mouse exactly where it was clicked.
+  useEffect(() => {
+    if (selectedMessageId === null) return
 
-  if (messages.length === 0) {
-    return (
-      <Placeholder>
-        {loading ? 'Loading messages…' : 'No messages in this folder.'}
-      </Placeholder>
-    )
+    const index = messages.findIndex((m) => m.id === selectedMessageId)
+    if (index >= 0) {
+      virtualizer.scrollToIndex(index, { align: 'auto' })
+    }
+  }, [selectedMessageId, messages, virtualizer])
+
+  if (searching) {
+    if (searchPending && messages.length === 0) {
+      return <Placeholder icon={MagnifyingGlass}>Searching…</Placeholder>
+    }
+    if (messages.length === 0) {
+      return (
+        <Placeholder icon={MagnifyingGlass}>
+          Nothing matches. Only folders that have been opened are searchable.
+        </Placeholder>
+      )
+    }
+  } else {
+    if (selectedFolderId === null) {
+      return <Placeholder>Select a folder to see its messages.</Placeholder>
+    }
+    if (messages.length === 0) {
+      return (
+        <Placeholder>
+          {loading ? 'Loading messages…' : 'No messages in this folder.'}
+        </Placeholder>
+      )
+    }
   }
 
   return (
@@ -137,7 +174,23 @@ export function MessageList({ onLoadMore }: MessageListProps) {
                 )}
               </div>
 
-              <span className={`truncate text-xs ${TEXT.muted}`}>{message.snippet}</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className={`min-w-0 flex-1 truncate text-xs ${TEXT.muted}`}>
+                  {message.snippet}
+                </span>
+
+                {/* Results cross folders, so without this a row cannot say
+                    where it came from. Muted rather than a coloured badge: a
+                    status colour used for emphasis is a second accent. */}
+                {searching && (
+                  <span
+                    data-testid="result-folder"
+                    className={`shrink-0 text-xs ${TEXT.muted}`}
+                  >
+                    {folders.find((f) => f.id === message.folderId)?.name ?? ''}
+                  </span>
+                )}
+              </div>
             </button>
           )
         })}

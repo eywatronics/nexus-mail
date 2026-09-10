@@ -285,6 +285,33 @@ func (s *MailService) ListMessages(folderID int64, limit, offset int) ([]Message
 	return out, nil
 }
 
+// SearchMessages finds messages across all of an account's folders.
+//
+// Search deliberately spans folders while the list does not. Someone reaching
+// for search has already failed to find the message by browsing, and the most
+// common reason is that it is not where they expected. Scoping results to the
+// folder they happen to be standing in would reproduce the failure.
+//
+// Only synced headers are searchable. A folder nobody has opened has no rows
+// yet, so its mail cannot appear here — the honest consequence of syncing
+// lazily, and the reason OpenFolder exists.
+func (s *MailService) SearchMessages(accountID int64, query string, limit int) ([]MessageDTO, error) {
+	if limit <= 0 || limit > maxPageSize {
+		limit = 100
+	}
+
+	msgs, err := s.store.SearchMessages(context.Background(), accountID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]MessageDTO, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, messageToDTO(m))
+	}
+	return out, nil
+}
+
 func (s *MailService) locateFolder(ctx context.Context, folderID int64) (model.Folder, model.Account, error) {
 	var accountID int64
 	row := s.store.Read().QueryRowContext(ctx,

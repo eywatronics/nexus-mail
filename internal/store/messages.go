@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -96,6 +97,15 @@ func (s *Store) ListMessages(ctx context.Context, folderID int64, limit, offset 
 	}
 	defer func() { _ = rows.Close() }()
 
+	return scanMessageRows(rows)
+}
+
+// scanMessageRows decodes rows selected with messageColumns.
+//
+// Shared by every read path rather than copied into each one: the scan order
+// has to match the column list exactly, and a second copy is a place for the
+// two to drift the first time a field is added.
+func scanMessageRows(rows *sql.Rows) ([]model.Message, error) {
 	var out []model.Message
 	for rows.Next() {
 		var (

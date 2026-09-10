@@ -59,6 +59,9 @@ export const listMessages = (folderId: number, limit: number, offset: number) =>
 export const openFolder = (folderId: number, limit: number) =>
   MailService.OpenFolder(folderId, limit) as Promise<Message[]>
 
+export const searchMessages = (accountId: number, query: string, limit: number) =>
+  MailService.SearchMessages(accountId, query, limit) as Promise<Message[]>
+
 export const syncAccount = (accountId: number) => MailService.SyncAccount(accountId)
 
 export const exportLogs = () => MailService.ExportLogs() as Promise<LogBundle>

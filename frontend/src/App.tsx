@@ -6,13 +6,29 @@ import { FolderList } from './components/FolderList'
 import { Layout } from './components/Layout'
 import { MessageList } from './components/MessageList'
 import { MessageView } from './components/MessageView'
+import { SearchBox } from './components/SearchBox'
 import { ThemeToggle } from './components/ThemeToggle'
-import { listAccounts, listFolders, listMessages, openFolder } from './lib/api'
+import {
+  listAccounts,
+  listFolders,
+  listMessages,
+  openFolder,
+  searchMessages,
+} from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
+import { useMessageShortcuts } from './lib/keyboard'
 import { useMailStore } from './store/useMailStore'
 import { BUTTON_GHOST, ICON, SURFACE, TEXT } from './lib/ui'
 
 const PAGE_SIZE = 100
+const SEARCH_LIMIT = 200
+
+/**
+ * Typing is faster than a round trip. Without this, every keystroke starts a
+ * query whose results arrive after the next keystroke has already made them
+ * wrong, and the list flickers through answers to half-typed words.
+ */
+const SEARCH_DEBOUNCE_MS = 180
 
 export default function App() {
   const [adding, setAdding] = useState(false)
@@ -26,6 +42,19 @@ export default function App() {
   const applySyncEvent = useMailStore((s) => s.applySyncEvent)
   const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const messageCount = useMailStore((s) => s.messages.length)
+  const folders = useMailStore((s) => s.folders)
+  const searchQuery = useMailStore((s) => s.searchQuery)
+  const searching = useMailStore((s) => s.searching)
+  const startSearch = useMailStore((s) => s.startSearch)
+  const setSearchResults = useMailStore((s) => s.setSearchResults)
+
+  useMessageShortcuts()
+
+  // Search is scoped to the account the user is looking at. Merging every
+  // account's results into one list would put work mail in front of someone
+  // going through their personal inbox.
+  const activeAccountId =
+    folders.find((f) => f.id === selectedFolderId)?.accountId ?? accounts[0]?.id ?? null
 
   const refreshAccounts = useCallback(async () => {
     const list = await listAccounts()
@@ -64,6 +93,19 @@ export default function App() {
       .then((page) => appendMessages(page, page.length === PAGE_SIZE))
       .catch(() => appendMessages([], false))
   }, [selectedFolderId, startMessageLoad, appendMessages])
+
+  useEffect(() => {
+    if (!searching || activeAccountId === null) return
+
+    startSearch()
+    const timer = setTimeout(() => {
+      searchMessages(activeAccountId, searchQuery, SEARCH_LIMIT)
+        .then(setSearchResults)
+        .catch(() => setSearchResults([]))
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => clearTimeout(timer)
+  }, [searching, searchQuery, activeAccountId, startSearch, setSearchResults])
 
   const loadMore = useCallback(() => {
     if (selectedFolderId === null) return
@@ -116,7 +158,14 @@ export default function App() {
           </div>
         </div>
       }
-      list={<MessageList onLoadMore={loadMore} />}
+      list={
+        <div className="flex h-full flex-col">
+          <SearchBox />
+          <div className="min-h-0 flex-1">
+            <MessageList onLoadMore={loadMore} />
+          </div>
+        </div>
+      }
       reader={<MessageView />}
     />
   )
