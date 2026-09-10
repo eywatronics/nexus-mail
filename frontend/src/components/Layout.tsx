@@ -1,5 +1,6 @@
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import type { ReactNode } from 'react'
+import { SURFACE } from '../lib/ui'
 
 interface LayoutProps {
   sidebar: ReactNode
@@ -24,8 +25,10 @@ export function Layout({ sidebar, list, reader }: LayoutProps) {
     storage: typeof localStorage === 'undefined' ? undefined : localStorage,
   })
 
+  // The separator picks up the accent on hover so the drag affordance uses the
+  // same colour as every other interactive cue in the app.
   const separator =
-    'w-px shrink-0 cursor-col-resize bg-neutral-200 transition-colors hover:bg-blue-500 dark:bg-neutral-800'
+    'w-px shrink-0 cursor-col-resize bg-neutral-200 transition-colors hover:bg-[var(--color-accent)] dark:bg-neutral-800'
 
   return (
     <Group
@@ -37,7 +40,7 @@ export function Layout({ sidebar, list, reader }: LayoutProps) {
       <Panel id="folders" defaultSize="18%" minSize="12%" maxSize="32%">
         <aside
           aria-label="Folders"
-          className="h-full overflow-hidden border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900"
+          className={`h-full overflow-hidden border-r ${SURFACE.divider} ${SURFACE.panel}`}
         >
           {sidebar}
         </aside>
@@ -48,7 +51,7 @@ export function Layout({ sidebar, list, reader }: LayoutProps) {
       <Panel id="messages" defaultSize="32%" minSize="22%">
         <section
           aria-label="Messages"
-          className="h-full overflow-hidden border-r border-neutral-200 dark:border-neutral-800"
+          className={`h-full overflow-hidden border-r ${SURFACE.divider}`}
         >
           {list}
         </section>
@@ -57,7 +60,7 @@ export function Layout({ sidebar, list, reader }: LayoutProps) {
       <Separator className={separator} />
 
       <Panel id="reader" defaultSize="50%" minSize="30%">
-        <main aria-label="Message" className="h-full overflow-hidden bg-white dark:bg-neutral-950">
+        <main aria-label="Message" className={`h-full overflow-hidden ${SURFACE.page}`}>
           {reader}
         </main>
       </Panel>

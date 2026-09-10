@@ -26,6 +26,59 @@ projeye aittir.
 - Her iş kendi dalında yapılır, PR ile birleştirilir.
 - PR açıklamalarında da yapay zekâ aracı adı veya imzası bulunmaz.
 
+## Arayüz tasarımı
+
+**Her yeni ekran ve her arayüz değişikliğinde `design-taste-frontend` skill'i
+kullanılır.** Bu bir tercih değil, proje kuralı.
+
+Skill'in kendi kapsam kuralı (§13) geçerlidir: skill landing page ve portfolyo
+içindir, yoğun ürün arayüzü için değil. Nexus Mail'in üç sütunlu ana ekranı
+yoğun ürün arayüzüdür. Dolayısıyla:
+
+- **Uygulanmaz:** hero disiplini, eyebrow sayımı, bento ritmi, marquee limiti,
+  zigzag capı, scroll-hijack kalıpları. Bu projede karşılığı olan ekran yok.
+  İleride bir tanıtım sayfası yapılırsa devreye girer.
+- **Uygulanır:** AI Tells (§9), tipografi disiplini (§4.1), Color ve Shape
+  Consistency Lock (§4.2, §4.4), kontrast kontrolleri, ikon politikası (§3.C),
+  emoji yasağı (§3.D), dark mode protokolü (§8), reduced motion (§6.B).
+- **Tam uygulanır:** hesap ekleme gibi tam pencere kaplayan, ikna ve kompozisyon
+  işi olan ekranlar.
+
+### Bu projenin dial değerleri
+
+Landing baseline'ı değil, ürün arayüzü değerleri:
+
+| Dial | Değer | Gerekçe |
+|---|---|---|
+| `DESIGN_VARIANCE` | 3 | Mail istemcisinde asimetrik düzen kullanıcıya düşmanca. Öngörülebilirlik özellik. |
+| `MOTION_INTENSITY` | 2 | Anında hissettirmeli. Hover ve basma geri bildirimi var, giriş animasyonu yok. |
+| `VISUAL_DENSITY` | 7 | Mail istemcisi yoğundur. §4.4 gereği kart yerine 1px çizgi, sayılarda `font-mono`. |
+
+### Tasarım token'ları
+
+Tek kaynak: `frontend/src/index.css` (`@theme` bloğu) ve
+`frontend/src/lib/ui.ts` (paylaşılan sınıf dizileri).
+
+- **Tek vurgu rengi:** `--color-accent` (teal). Seçim, birincil eylem ve odak
+  halkası. Bileşen içinde ham `bg-blue-600` gibi bir sınıf yazılmaz.
+- **Durum renkleri** (`--color-danger`, `--color-warn`) dekorasyon değildir;
+  yalnızca o anlamı taşıdıkları yerde kullanılır. Vurgu için kullanılan bir
+  durum rengi, ikinci bir accent'tir.
+- **Tek yarıçap:** `--radius-ui` (6px), tüm etkileşimli öğe ve konteynerlerde.
+  Paneller, ayraçlar ve pencere kenarı köşesizdir.
+- **Tipografi:** Geist (arayüz), Geist Mono (sayı ve tarih). Kendi paketimizde
+  barındırılır; gizlilik odaklı bir istemci her açılışta üçüncü tarafa haber
+  vermez.
+- **Kontrast:** açık zeminde `text-neutral-400` kullanılmaz (~2.8:1, AA'yı
+  geçmez). Açık taraf 500'ün altına inmez; koyu tarafta aynı değer 7:1 üzeridir,
+  bu yüzden iki taraf simetrik değildir.
+
+### İkonlar
+
+`@phosphor-icons/react`, tek aile, tek boyut ve ağırlık (`ui.ts` içindeki
+`ICON`). Elle SVG path çizilmez. Arayüzde, kodda ve görünen metinde emoji
+kullanılmaz.
+
 ## Mimari kurallar
 
 Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:

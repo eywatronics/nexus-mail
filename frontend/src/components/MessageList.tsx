@@ -1,6 +1,8 @@
+import { Paperclip, Tray } from '@phosphor-icons/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
+import { ICON, SELECTED, SURFACE, TEXT } from '../lib/ui'
 
 const ROW_HEIGHT = 74
 
@@ -8,6 +10,11 @@ interface MessageListProps {
   onLoadMore: () => void
 }
 
+/**
+ * Dates shorten as they age: a message from today needs a time, one from this
+ * year needs a day, an older one needs a year. Showing the full date on every
+ * row would waste the width the subject needs.
+ */
 function formatDate(unixSeconds: number): string {
   const date = new Date(unixSeconds * 1000)
   const now = new Date()
@@ -19,6 +26,16 @@ function formatDate(unixSeconds: number): string {
     return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
   }
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' })
+}
+
+/** Shared shell so every empty state sits in the same place on screen. */
+function Placeholder({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={`flex h-full flex-col items-center justify-center gap-3 p-8 text-center`}>
+      <Tray size={28} weight="light" className={TEXT.muted} />
+      <p className={`max-w-[28ch] text-sm ${TEXT.secondary}`}>{children}</p>
+    </div>
+  )
 }
 
 export function MessageList({ onLoadMore }: MessageListProps) {
@@ -51,18 +68,14 @@ export function MessageList({ onLoadMore }: MessageListProps) {
   }, [hasMore, loading, lastRenderedIndex, messages.length, onLoadMore])
 
   if (selectedFolderId === null) {
-    return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-neutral-500">
-        Select a folder to see its messages.
-      </div>
-    )
+    return <Placeholder>Select a folder to see its messages.</Placeholder>
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-neutral-500">
-        {loading ? 'Loading…' : 'No messages in this folder.'}
-      </div>
+      <Placeholder>
+        {loading ? 'Loading messages…' : 'No messages in this folder.'}
+      </Placeholder>
     )
   }
 
@@ -81,42 +94,50 @@ export function MessageList({ onLoadMore }: MessageListProps) {
               data-unread={!message.isRead}
               onClick={() => setSelectedMessage(message.id)}
               aria-current={selected}
-              className={`absolute left-0 flex w-full flex-col gap-0.5 border-b border-neutral-100 px-3 py-2 text-left dark:border-neutral-800 ${
+              className={[
+                // Rows are separated by a hairline rather than boxed into
+                // cards: at this density, card chrome costs more space than
+                // the grouping is worth.
+                'absolute left-0 flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left transition-colors',
+                SURFACE.divider,
                 selected
-                  ? 'bg-blue-50 dark:bg-blue-950'
-                  : 'hover:bg-neutral-50 dark:hover:bg-neutral-900'
-              }`}
+                  ? SELECTED
+                  : 'hover:bg-neutral-100 dark:hover:bg-neutral-900',
+              ].join(' ')}
               style={{ top: item.start, height: item.size }}
             >
               <div className="flex items-baseline justify-between gap-2">
                 <span
                   className={`truncate text-sm ${
-                    message.isRead
-                      ? 'text-neutral-600 dark:text-neutral-400'
-                      : 'font-semibold text-neutral-900 dark:text-neutral-100'
+                    message.isRead ? TEXT.secondary : `font-semibold ${TEXT.primary}`
                   }`}
                 >
                   {message.fromName || message.fromAddr}
                 </span>
-                <span className="shrink-0 text-xs text-neutral-400">
+                <span className={`tabular shrink-0 font-mono text-xs ${TEXT.muted}`}>
                   {formatDate(message.internalDateUnix)}
                 </span>
               </div>
 
-              <span
-                className={`truncate text-sm ${
-                  message.isRead ? 'text-neutral-600 dark:text-neutral-400' : 'font-medium'
-                }`}
-              >
-                {message.subject || '(no subject)'}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`min-w-0 flex-1 truncate text-sm ${
+                    message.isRead ? TEXT.secondary : `font-medium ${TEXT.primary}`
+                  }`}
+                >
+                  {message.subject || '(no subject)'}
+                </span>
                 {message.hasAttachments && (
-                  <span aria-label="Has attachments" className="ml-1 text-neutral-400">
-                    📎
-                  </span>
+                  <Paperclip
+                    size={ICON.size}
+                    weight={ICON.weight}
+                    aria-label="Has attachments"
+                    className={`shrink-0 ${TEXT.muted}`}
+                  />
                 )}
-              </span>
+              </div>
 
-              <span className="truncate text-xs text-neutral-400">{message.snippet}</span>
+              <span className={`truncate text-xs ${TEXT.muted}`}>{message.snippet}</span>
             </button>
           )
         })}

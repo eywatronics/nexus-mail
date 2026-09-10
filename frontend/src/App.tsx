@@ -1,3 +1,4 @@
+import { Plus } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import { useCallback, useEffect, useState } from 'react'
 import { AddAccount } from './components/AddAccount'
@@ -9,6 +10,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { listAccounts, listFolders, listMessages, openFolder } from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
 import { useMailStore } from './store/useMailStore'
+import { BUTTON_GHOST, ICON, SURFACE, TEXT } from './lib/ui'
 
 const PAGE_SIZE = 100
 
@@ -74,8 +76,8 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-neutral-500">
-        Starting…
+      <div className={`flex h-screen items-center justify-center ${SURFACE.page}`}>
+        <p className={`text-sm ${TEXT.secondary}`}>Starting…</p>
       </div>
     )
   }
@@ -96,13 +98,16 @@ export default function App() {
     <Layout
       sidebar={
         <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between gap-2 border-b border-neutral-200 p-2 dark:border-neutral-800">
+          <div
+            className={`flex items-center justify-between gap-2 border-b p-2 ${SURFACE.divider}`}
+          >
             <button
               type="button"
               onClick={() => setAdding(true)}
-              className="rounded px-2 py-1 text-xs hover:bg-neutral-200 dark:hover:bg-neutral-800"
+              className={`${BUTTON_GHOST} inline-flex items-center gap-1.5`}
             >
-              + Account
+              <Plus size={ICON.size} weight={ICON.weight} aria-hidden />
+              Account
             </button>
             <ThemeToggle />
           </div>

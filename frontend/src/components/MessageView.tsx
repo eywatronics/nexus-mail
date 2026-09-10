@@ -1,6 +1,8 @@
+import { Envelope, EyeSlash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL } from '../lib/api'
 import { useMailStore } from '../store/useMailStore'
+import { BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
 
 /**
  * The sandbox attribute is deliberately minimal.
@@ -46,16 +48,19 @@ export function MessageView() {
 
   if (selectedMessageId === null) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-neutral-500">
-        Select a message to read it.
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        <Envelope size={28} weight="light" className={TEXT.muted} />
+        <p className={`max-w-[28ch] text-sm ${TEXT.secondary}`}>
+          Select a message to read it.
+        </p>
       </div>
     )
   }
 
   if (src === null) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-neutral-500">
-        Loading…
+      <div className="flex h-full items-center justify-center p-8">
+        <p className={`text-sm ${TEXT.secondary}`}>Loading…</p>
       </div>
     )
   }
@@ -63,18 +68,29 @@ export function MessageView() {
   return (
     <div className="flex h-full flex-col">
       {!allowRemote && (
-        <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs dark:border-amber-900 dark:bg-amber-950">
-          <span className="text-amber-900 dark:text-amber-200">
-            Remote content is blocked so the sender cannot learn that you opened this
-            message.
-          </span>
+        <div
+          className={`flex items-center justify-between gap-3 border-b px-4 py-2 ${SURFACE.divider} ${SURFACE.panel}`}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <EyeSlash
+              size={ICON.size}
+              weight={ICON.weight}
+              aria-hidden
+              className={`shrink-0 ${TEXT.muted}`}
+            />
+            <p className={`min-w-0 text-xs ${TEXT.secondary}`}>
+              Remote content is blocked, so the sender cannot tell you opened this
+              message.
+            </p>
+          </div>
+
           <button
             type="button"
             data-testid="load-remote"
             onClick={() => setAllowRemote(true)}
-            className="shrink-0 rounded border border-amber-400 px-2 py-1 font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900"
+            className={`${BUTTON_SECONDARY} shrink-0 whitespace-nowrap px-3 py-1 text-xs`}
           >
-            Load remote content
+            Load images
           </button>
         </div>
       )}

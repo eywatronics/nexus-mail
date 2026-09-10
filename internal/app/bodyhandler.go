@@ -396,11 +396,33 @@ func (s *MailService) locateMessage(ctx context.Context, messageID int64) (model
 	return m, folder, acct, nil
 }
 
+// wrapDocument frames the sanitised body in a minimal document.
+//
+// The type stack and link colour match the surrounding application on purpose:
+// the reading pane is the largest surface in the window, and a frame that
+// renders in a different font with a different blue reads as a foreign page
+// embedded in the app rather than as part of it.
+//
+// The frame follows the OS setting rather than the app's theme control, since
+// a sandboxed document cannot see the class we set on the host page. In
+// practice the two agree, because the app defaults to the system setting too.
 func wrapDocument(bodyHTML string) string {
-	return `<!doctype html><html><head><meta charset="utf-8"><style>` +
-		`html,body{margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;color:#111;background:#fff}` +
-		`img{max-width:100%;height:auto}table{max-width:100%}a{color:#1a56db}` +
-		`@media (prefers-color-scheme: dark){html,body{color:#e5e5e5;background:#0a0a0a}a{color:#7aa2f7}}` +
+	const style = `
+html,body{margin:0;padding:20px;background:#fff;color:#171717;
+  font:14px/1.6 "Geist Variable",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+img{max-width:100%;height:auto}
+table{max-width:100%}
+pre{white-space:pre-wrap;word-wrap:break-word;
+  font:13px/1.6 "Geist Mono Variable",ui-monospace,Menlo,monospace}
+blockquote{margin:0 0 0 8px;padding-left:12px;border-left:2px solid #e5e5e5;color:#525252}
+a{color:#0f7490;text-underline-offset:2px}
+@media (prefers-color-scheme:dark){
+  html,body{background:#0a0a0a;color:#e5e5e5}
+  blockquote{border-left-color:#262626;color:#a3a3a3}
+  a{color:#4bb4cc}
+}`
+	return `<!doctype html><html><head><meta charset="utf-8"><style>` + style +
 		`</style></head><body>` + bodyHTML + `</body></html>`
 }
 

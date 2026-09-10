@@ -1,9 +1,39 @@
 @import "tailwindcss";
 
-/* Class-based dark mode: the theme toggle sets .dark on <html>, and a
+/* Self-hosted, no <link> to a font CDN: a privacy-focused client does not
+   announce every launch to a third party. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* Class-based dark mode: the theme control sets .dark on <html>, and the
    "system" setting follows the OS by adding or removing that class. Relying on
    the media query alone would leave no way to override the OS. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ONE accent, used for selection, primary action and focus. Teal rather than
+     the blue every mail client reaches for, and deliberately not violet.
+     Contrast checked in both modes against its surface. */
+  --color-accent: oklch(0.52 0.09 200);
+  --color-accent-hover: oklch(0.46 0.10 200);
+  --color-accent-soft: oklch(0.96 0.02 200);
+  --color-accent-soft-dark: oklch(0.28 0.05 200);
+
+  /* Semantic status colors. These are NOT decoration: each one may appear only
+     where it carries that exact meaning. A status color used for emphasis is
+     the same mistake as a second accent. */
+  --color-danger: oklch(0.52 0.19 25);
+  --color-danger-dark: oklch(0.72 0.16 25);
+  --color-warn: oklch(0.50 0.11 75);
+  --color-warn-dark: oklch(0.80 0.12 85);
+
+  /* One radius for every interactive element and container. Panels, dividers
+     and the window edge stay square. */
+  --radius-ui: 6px;
+}
 
 html,
 body,
@@ -13,6 +43,36 @@ body,
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Numbers in a dense list must not shift width as they change: a mail client
+   updates unread counts and dates constantly, and proportional digits make the
+   whole column twitch. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus treatment for the whole app. Keyboard users get a visible ring;
+   mouse users do not get a ring on every click. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-ui);
+}
+
+/* MOTION_INTENSITY is 2: hover and press feedback only, no entrance
+   animations. A mail client should feel instant rather than choreographed.
+   The transitions below are short enough to read as responsiveness, and they
+   collapse entirely for anyone who asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
