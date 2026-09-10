@@ -11,7 +11,7 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { useMailStore } from '../store/useMailStore'
-import { ICON, RADIUS, SELECTED, TEXT } from '../lib/ui'
+import { ICON, RADIUS, SELECTED, TEXT, UNSELECTED_BAR } from '../lib/ui'
 import type { Folder as MailFolder } from '../lib/api'
 
 /**
@@ -103,7 +103,7 @@ export function FolderList() {
                           'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors',
                           selected
                             ? `${SELECTED} font-medium ${TEXT.primary}`
-                            : `${TEXT.secondary} hover:bg-neutral-200/70 dark:hover:bg-neutral-800`,
+                            : `${UNSELECTED_BAR} ${TEXT.secondary} hover:bg-neutral-200/70 dark:hover:bg-neutral-800`,
                         ].join(' ')}
                       >
                         <FolderIcon

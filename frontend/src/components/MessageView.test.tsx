@@ -90,3 +90,49 @@ describe('placeholder', () => {
     expect(container.textContent).toMatch(/select a message/i)
   })
 })
+
+describe('message header', () => {
+  // Once the reader is in the body the list may be scrolled far away. Without
+  // a header there is nothing on screen saying who wrote this or what it is
+  // about.
+  it('shows subject, sender and date above the body', async () => {
+    useMailStore.setState({
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          subject: 'Şubat mutabakat dosyası',
+          fromName: 'Zeynep Aydoğan',
+          fromAddr: 'zeynep.aydogan@example.com',
+          snippet: 'preview',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+        },
+      ],
+    })
+
+    const { container } = await renderSelected(1)
+    const header = container.querySelector('header')
+
+    expect(header).toBeTruthy()
+    expect(header?.textContent).toContain('Şubat mutabakat dosyası')
+    expect(header?.textContent).toContain('Zeynep Aydoğan')
+    expect(header?.textContent).toContain('zeynep.aydogan@example.com')
+  })
+
+  // A message the list has not loaded still has to render its body rather than
+  // crashing on the missing header data.
+  it('renders the body even when the message is not in the loaded page', async () => {
+    useMailStore.setState({ messages: [] })
+
+    const { container, iframe } = await renderSelected(42)
+
+    expect(container.querySelector('header')).toBeNull()
+    expect(iframe.getAttribute('src')).toBe('/mail-body/42')
+  })
+})

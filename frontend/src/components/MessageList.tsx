@@ -2,7 +2,7 @@ import { Paperclip, Tray } from '@phosphor-icons/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
-import { ICON, SELECTED, SURFACE, TEXT } from '../lib/ui'
+import { ICON, SELECTED, SURFACE, TEXT, UNSELECTED_BAR } from '../lib/ui'
 
 const ROW_HEIGHT = 74
 
@@ -102,7 +102,7 @@ export function MessageList({ onLoadMore }: MessageListProps) {
                 SURFACE.divider,
                 selected
                   ? SELECTED
-                  : 'hover:bg-neutral-100 dark:hover:bg-neutral-900',
+                  : `${UNSELECTED_BAR} hover:bg-neutral-100 dark:hover:bg-neutral-900`,
               ].join(' ')}
               style={{ top: item.start, height: item.size }}
             >

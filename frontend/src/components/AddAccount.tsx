@@ -18,7 +18,6 @@ import {
   ICON,
   INPUT,
   RADIUS,
-  SELECTED,
   SURFACE,
   TEXT,
 } from '../lib/ui'
@@ -156,7 +155,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                       RADIUS,
                       'flex cursor-pointer items-center gap-3 border p-2.5 transition-colors',
                       active
-                        ? `border-[var(--color-accent)] ${SELECTED}`
+                        ? 'border-[var(--color-accent)] bg-[var(--color-surface-selected)] dark:bg-[var(--color-surface-selected-dark)]'
                         : `${SURFACE.divider} hover:bg-neutral-100 dark:hover:bg-neutral-800`,
                     ].join(' ')}
                   >

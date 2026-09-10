@@ -30,6 +30,18 @@
   --color-warn: oklch(0.50 0.11 75);
   --color-warn-dark: oklch(0.80 0.12 85);
 
+  /* Surface a selected list row sits on. A faint lift in both modes: the
+     accent bar is what says "this one", and a heavier fill only pushes the
+     muted snippet line back toward failing contrast.
+
+     Declared as variables rather than palette utilities because a plain
+     `bg-neutral-50` and a `dark:bg-neutral-800` carry the same specificity
+     under the zero-specificity dark variant, so which one wins comes down to
+     emission order. In dark mode the light value was winning and the selected
+     row rendered near-white with near-white text on it. */
+  --color-surface-selected: oklch(0.985 0 0);
+  --color-surface-selected-dark: oklch(0.269 0 0);
+
   /* One radius for every interactive element and container. Panels, dividers
      and the window edge stay square. */
   --radius-ui: 6px;

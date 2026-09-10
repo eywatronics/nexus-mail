@@ -55,8 +55,8 @@ export const INPUT = [
  */
 export const TEXT = {
   primary: 'text-neutral-900 dark:text-neutral-100',
-  secondary: 'text-neutral-600 dark:text-neutral-400',
-  muted: 'text-neutral-500 dark:text-neutral-500',
+  secondary: 'text-neutral-600 dark:text-neutral-300',
+  muted: 'text-neutral-500 dark:text-neutral-400',
 } as const
 
 /** Panel and divider surfaces. Square edges; only content inside is rounded. */
@@ -66,9 +66,27 @@ export const SURFACE = {
   divider: 'border-neutral-200 dark:border-neutral-800',
 } as const
 
-/** Selected row in a list. The only place the accent tints a background. */
+/**
+ * Selected row in a list: a neutral lift plus a left accent bar.
+ *
+ * An accent-tinted fill was the first attempt and it failed in dark mode. Text
+ * tones are contrast-checked against the surface they sit on, and a tinted row
+ * is a different surface: the muted snippet line dropped to roughly 2.4:1 on
+ * the selected row while passing everywhere else. A neutral lift keeps every
+ * row's text on nearly the same background, so the contrast math holds, and
+ * the bar carries the accent without getting under the type.
+ *
+ * The lift is deliberately faint. The bar is what says "this one"; a heavier
+ * background only moves the muted text closer to failing again, which is how
+ * the first two attempts at this went.
+ *
+ * Unselected rows reserve the same 2px with a transparent border, otherwise
+ * selecting a row would shift its text sideways.
+ */
 export const SELECTED =
-  'bg-[var(--color-accent-soft)] dark:bg-[var(--color-accent-soft-dark)]'
+  'border-l-2 border-[var(--color-accent)] ' +
+  'bg-[var(--color-surface-selected)] dark:bg-[var(--color-surface-selected-dark)]'
+export const UNSELECTED_BAR = 'border-l-2 border-transparent'
 
 /** One icon size and weight for the whole app, per the icon policy. */
 export const ICON = { size: 16, weight: 'regular' } as const
