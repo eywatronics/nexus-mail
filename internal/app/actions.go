@@ -106,3 +106,9 @@ func (s *MailService) nudgeWatchers() {
 		s.engine.Nudge(id)
 	}
 }
+
+// AcknowledgeChangeFailures clears the record of changes that were dropped or
+// permanently failed, so the notice about them goes away.
+func (s *MailService) AcknowledgeChangeFailures(accountID int64) error {
+	return s.store.ForgetFinishedOperations(context.Background(), accountID)
+}

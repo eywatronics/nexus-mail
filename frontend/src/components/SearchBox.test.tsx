@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { useMailStore } from '../store/useMailStore'
 import { useMessageShortcuts } from '../lib/keyboard'
 import { MessageList } from './MessageList'
+import { ChangeFailureNotice } from './ChangeFailureNotice'
 import { SearchBox } from './SearchBox'
 import type { Folder, Message } from '../lib/api'
 
@@ -285,5 +286,41 @@ describe('message actions', () => {
     fireEvent.keyDown(input, { key: 's' })
 
     expect(useMailStore.getState().messages[0].isStarred).toBe(false)
+  })
+})
+
+describe('change failure notice', () => {
+  const account = { id: 1, email: 'u@example.com', displayName: 'U', provider: 'imap', authKind: 'password' }
+
+  it('says nothing when every change went through', () => {
+    useMailStore.setState({
+      accounts: [account],
+      pendingChanges: { 1: { pending: 2, dropped: 0, failed: 0 } },
+    })
+
+    const { queryByTestId } = render(<ChangeFailureNotice />)
+    expect(queryByTestId('change-failure')).toBeNull()
+  })
+
+  // The whole point of dropping an operation instead of applying it is that
+  // the user is told. Silence would make it invisible data loss.
+  it('reports changes that were dropped', () => {
+    useMailStore.setState({
+      accounts: [account],
+      pendingChanges: { 1: { pending: 0, dropped: 3, failed: 0 } },
+    })
+
+    const { getByTestId } = render(<ChangeFailureNotice />)
+    expect(getByTestId('change-failure').textContent).toContain('3 changes could not be applied')
+  })
+
+  it('counts permanent failures too', () => {
+    useMailStore.setState({
+      accounts: [account],
+      pendingChanges: { 1: { pending: 0, dropped: 1, failed: 1 } },
+    })
+
+    const { getByTestId } = render(<ChangeFailureNotice />)
+    expect(getByTestId('change-failure').textContent).toContain('2 changes')
   })
 })

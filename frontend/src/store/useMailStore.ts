@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { EVENTS, type ErrorClass, type SyncEventPayload } from '../lib/events'
-import type { Account, Folder, Message } from '../lib/api'
+import type { Account, Folder, Message, PendingChanges } from '../lib/api'
 
 export type SyncStatus =
   | { status: 'idle' }
@@ -26,7 +26,12 @@ interface MailState {
   searchResults: Message[]
   searchPending: boolean
 
+  /** Per account: how much of the user's intent has not reached the server. */
+  pendingChanges: Record<number, PendingChanges>
+
   setAccounts: (accounts: Account[]) => void
+  setPendingChanges: (accountId: number, counts: PendingChanges) => void
+  clearPendingChanges: (accountId: number) => void
   setFolders: (folders: Folder[]) => void
   startMessageLoad: () => void
   appendMessages: (messages: Message[], hasMore: boolean) => void
@@ -73,6 +78,7 @@ const initialState = {
   searchResults: [] as Message[],
   searchPending: false,
   searching: false,
+  pendingChanges: {} as Record<number, PendingChanges>,
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
@@ -84,6 +90,14 @@ export const useMailStore = create<MailState>((set, get) => ({
   },
 
   setAccounts: (accounts) => set({ accounts }),
+
+  setPendingChanges: (accountId, counts) =>
+    set((state) => ({ pendingChanges: { ...state.pendingChanges, [accountId]: counts } })),
+
+  clearPendingChanges: (accountId) =>
+    set((state) => ({
+      pendingChanges: { ...state.pendingChanges, [accountId]: { pending: 0, dropped: 0, failed: 0 } },
+    })),
   setFolders: (folders) => set({ folders }),
 
   startMessageLoad: () => set({ loadingMessages: true }),

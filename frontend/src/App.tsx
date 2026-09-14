@@ -6,6 +6,7 @@ import { FolderList } from './components/FolderList'
 import { Layout } from './components/Layout'
 import { MessageList } from './components/MessageList'
 import { MessageView } from './components/MessageView'
+import { ChangeFailureNotice } from './components/ChangeFailureNotice'
 import { SearchBox } from './components/SearchBox'
 import { ThemeToggle } from './components/ThemeToggle'
 import {
@@ -13,6 +14,7 @@ import {
   listFolders,
   listMessages,
   openFolder,
+  pendingChanges,
   searchMessages,
 } from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
@@ -62,6 +64,17 @@ export default function App() {
 
     const folders = (await Promise.all(list.map((a) => listFolders(a.id)))).flat()
     setFolders(folders)
+
+    // Changes the server will never hear about are the user's business, and
+    // nothing else would ever tell them.
+    const setPendingChanges = useMailStore.getState().setPendingChanges
+    await Promise.all(
+      list.map((a) =>
+        pendingChanges(a.id)
+          .then((counts) => setPendingChanges(a.id, counts))
+          .catch(() => {}),
+      ),
+    )
   }, [setAccounts, setFolders])
 
   // A live sync just wrote to the database; without this the new mail sits
@@ -175,6 +188,7 @@ export default function App() {
       }
       list={
         <div className="flex h-full flex-col">
+          <ChangeFailureNotice />
           <SearchBox />
           <div className="min-h-0 flex-1">
             <MessageList onLoadMore={loadMore} />

@@ -344,3 +344,52 @@ func TestEnqueueRejectsAnOperationWithNoUIDs(t *testing.T) {
 		t.Error("EnqueueOperation() accepted an operation with no folder")
 	}
 }
+
+// The banner that tells the user about dropped changes needs a way to go
+// away, and the only honest way is to stop the count being true.
+func TestForgettingFinishedOperationsClearsTheRecord(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	acct, inbox := seedInbox(t, s)
+
+	dropped := queueOp(t, s, model.Operation{
+		AccountID: acct, FolderID: inbox, Kind: model.OpDelete, UIDs: []uint32{1},
+	})
+	failed := queueOp(t, s, model.Operation{
+		AccountID: acct, FolderID: inbox, Kind: model.OpDelete, UIDs: []uint32{2},
+	})
+	pending := queueOp(t, s, model.Operation{
+		AccountID: acct, FolderID: inbox, Kind: model.OpDelete, UIDs: []uint32{3},
+	})
+	if err := s.MarkOperationDropped(ctx, dropped); err != nil {
+		t.Fatalf("MarkOperationDropped() error: %v", err)
+	}
+	if err := s.MarkOperationPermanentlyFailed(ctx, failed, "read-only"); err != nil {
+		t.Fatalf("MarkOperationPermanentlyFailed() error: %v", err)
+	}
+
+	if err := s.ForgetFinishedOperations(ctx, acct); err != nil {
+		t.Fatalf("ForgetFinishedOperations() error: %v", err)
+	}
+
+	for _, state := range []model.OperationState{model.OpDropped, model.OpFailed} {
+		n, err := s.CountOperations(ctx, acct, state)
+		if err != nil {
+			t.Fatalf("CountOperations(%s) error: %v", state, err)
+		}
+		if n != 0 {
+			t.Errorf("CountOperations(%s) = %d, want 0", state, n)
+		}
+	}
+
+	// Work still on its way must survive: acknowledging a failure is not the
+	// same as cancelling everything else the user asked for.
+	var left int
+	if err := s.Read().QueryRowContext(ctx,
+		`SELECT count(*) FROM operations WHERE id = ?`, pending).Scan(&left); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if left != 1 {
+		t.Error("acknowledging failures also threw away pending work")
+	}
+}

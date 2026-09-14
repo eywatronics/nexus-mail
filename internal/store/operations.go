@@ -188,3 +188,23 @@ func (s *Store) CountOperations(ctx context.Context, accountID int64, state mode
 	}
 	return n, nil
 }
+
+// ForgetFinishedOperations removes an account's dropped, failed and completed
+// operations.
+//
+// This is what makes the "N changes could not be applied" notice dismissible.
+// Hiding it in the interface while the rows stayed would mean the window and
+// the database disagreed about whether the user had been told; deleting the
+// rows makes the count itself the answer.
+//
+// Pending work is untouched. Acknowledging a failure is not the same as
+// cancelling everything else the user asked for.
+func (s *Store) ForgetFinishedOperations(ctx context.Context, accountID int64) error {
+	_, err := s.write.ExecContext(ctx,
+		`DELETE FROM operations WHERE account_id = ? AND state IN (?, ?, ?)`,
+		accountID, string(model.OpDone), string(model.OpDropped), string(model.OpFailed))
+	if err != nil {
+		return fmt.Errorf("store: clearing finished operations: %w", err)
+	}
+	return nil
+}

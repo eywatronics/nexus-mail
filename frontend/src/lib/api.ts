@@ -41,6 +41,15 @@ export interface Message {
   bodyFetched: boolean
 }
 
+/** How much of what the user asked for has not reached the server. */
+export interface PendingChanges {
+  pending: number
+  /** Could not be applied: the server recreated the mailbox they belonged to. */
+  dropped: number
+  /** Hit something retrying cannot fix. */
+  failed: number
+}
+
 export interface LogBundle {
   path: string
   bytes: number
@@ -73,6 +82,12 @@ export const deleteMessages = (messageIds: number[]) =>
 
 export const moveMessages = (messageIds: number[], targetFolderId: number) =>
   MailService.MoveMessages(messageIds, targetFolderId)
+
+export const pendingChanges = (accountId: number) =>
+  MailService.PendingChangeCount(accountId) as Promise<PendingChanges>
+
+export const acknowledgeChangeFailures = (accountId: number) =>
+  MailService.AcknowledgeChangeFailures(accountId)
 
 export const syncAccount = (accountId: number) => MailService.SyncAccount(accountId)
 
