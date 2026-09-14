@@ -482,3 +482,13 @@ func applyFlags(current, change []string, add bool) []string {
 	}
 	return out
 }
+
+func (f *fakeBackend) FetchPart(_ context.Context, uid uint32, partID, _ string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, ok := f.bodies[uid]; !ok {
+		return nil, fmt.Errorf("no message with UID %d", uid)
+	}
+	return []byte(fmt.Sprintf("part %s of %d", partID, uid)), nil
+}

@@ -111,7 +111,32 @@ type Message struct {
 	Snippet        string
 	Flags          []string
 	HasAttachments bool
-	BodyFetched    bool
+	// Attachments is filled from the BODYSTRUCTURE at header-fetch time.
+	Attachments []AttachmentPart
+	BodyFetched bool
+}
+
+// AttachmentPart is one file carried by a message.
+//
+// Described from the BODYSTRUCTURE the header fetch already asks for, so
+// listing a message's attachments costs nothing extra. Only the bytes need a
+// second round trip, and only when somebody opens one.
+type AttachmentPart struct {
+	// ID is the local row id, zero for a part that has only been described by
+	// the server and never stored.
+	ID int64
+	// PartID is the IMAP part number, such as "2" or "1.3". It is how the
+	// bytes are fetched, and it is only meaningful together with the UID.
+	PartID   string
+	Filename string
+	MIMEType string
+	// Size is the encoded size the server reports, which is what it will send.
+	Size int64
+	// Encoding is the transfer encoding to undo, usually base64.
+	Encoding string
+	// LocalPath is where the bytes were saved, empty until somebody opens it.
+	LocalPath  string
+	Downloaded bool
 }
 
 // OperationKind is what an outgoing operation asks the server to do.

@@ -96,3 +96,15 @@ type PendingChangesDTO struct {
 	// Failed hit something retrying cannot fix.
 	Failed int `json:"failed"`
 }
+
+// AttachmentDTO is one file carried by a message, as the window sees it.
+type AttachmentDTO struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	MIMEType string `json:"mimeType"`
+	// Size is what the server reports, which is the encoded size — a little
+	// larger than the file that comes out.
+	Size       int64  `json:"size"`
+	Downloaded bool   `json:"downloaded"`
+	LocalPath  string `json:"localPath,omitempty"`
+}

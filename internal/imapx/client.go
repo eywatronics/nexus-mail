@@ -1,8 +1,12 @@
 package imapx
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"mime/quotedprintable"
 	"net"
 	"strconv"
 	"strings"
@@ -205,6 +209,10 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 		}
 		if buf.BodyStructure != nil {
 			m.HasAttachments = hasAttachmentParts(buf.BodyStructure)
+			// Listing the parts here costs nothing: the BODYSTRUCTURE is
+			// already in hand. Asking again later, per message, when the
+			// reader opens one, would be a round trip for data we threw away.
+			m.Attachments = attachmentParts(buf.BodyStructure)
 		}
 		m.ThreadID = ThreadKey(m.MessageID, m.InReplyTo, m.References, m.Subject)
 		out = append(out, m)
@@ -213,6 +221,86 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 }
 
 // FetchBody pulls one whole message and extracts its text and HTML parts.
+// FetchPart returns the decoded bytes of one part of a message.
+//
+// Separate from FetchBody because an attachment is not wanted until somebody
+// asks for it. A twenty-megabyte PDF pulled down with every header sync would
+// undo the point of syncing headers.
+//
+// The transfer encoding is undone here rather than by the caller: what comes
+// off the wire is base64 or quoted-printable, and handing that to a file
+// dialog would save a file nothing can open.
+func (cl *client) FetchPart(_ context.Context, uid uint32, partID, encoding string) ([]byte, error) {
+	if partID == "" {
+		return nil, fmt.Errorf("imapx: no part number given")
+	}
+
+	section := &imap.FetchItemBodySection{Part: parsePartNumber(partID)}
+	buffers, err := cl.c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{
+		BodySection: []*imap.FetchItemBodySection{section},
+	}).Collect()
+	if err != nil {
+		return nil, fmt.Errorf("imapx: FETCH part %s failed: %w", partID, err)
+	}
+	if len(buffers) == 0 {
+		return nil, fmt.Errorf("imapx: no message with UID %d", uid)
+	}
+
+	raw := buffers[0].FindBodySection(section)
+	if raw == nil {
+		return nil, fmt.Errorf("imapx: message %d has no part %s", uid, partID)
+	}
+
+	decoded, err := decodePart(raw, encoding)
+	if err != nil {
+		return nil, fmt.Errorf("imapx: decoding part %s of message %d: %w", partID, uid, err)
+	}
+	return decoded, nil
+}
+
+// decodePart undoes the transfer encoding the server reported.
+//
+// An unknown encoding is passed through rather than refused: the alternative
+// is failing to open a file that is probably fine, over a header some sending
+// client got wrong.
+func decodePart(raw []byte, encoding string) ([]byte, error) {
+	switch strings.ToLower(encoding) {
+	case "base64":
+		// Servers wrap base64 at 76 characters and the line breaks are not
+		// part of the alphabet, so the decoder has to be fed without them.
+		return io.ReadAll(base64.NewDecoder(base64.StdEncoding,
+			bytes.NewReader(stripLineBreaks(raw))))
+	case "quoted-printable":
+		return io.ReadAll(quotedprintable.NewReader(bytes.NewReader(raw)))
+	default:
+		return raw, nil
+	}
+}
+
+// stripLineBreaks removes CR and LF, leaving everything else alone.
+func stripLineBreaks(raw []byte) []byte {
+	out := make([]byte, 0, len(raw))
+	for _, b := range raw {
+		if b != 13 && b != 10 {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// parsePartNumber turns "1.3" back into the path go-imap wants.
+func parsePartNumber(partID string) []int {
+	var path []int
+	for _, chunk := range strings.Split(partID, ".") {
+		n, err := strconv.Atoi(chunk)
+		if err != nil {
+			return nil
+		}
+		path = append(path, n)
+	}
+	return path
+}
+
 // StoreFlags adds or removes flags on a UID set.
 //
 // Add and remove rather than set: two clients touching the same message should

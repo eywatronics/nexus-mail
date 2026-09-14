@@ -79,6 +79,11 @@ type MailBackend interface {
 	// mailbox. Bodies are deliberately not fetched.
 	FetchHeaders(ctx context.Context, r UIDRange) ([]model.Message, error)
 
+	// FetchPart returns the decoded bytes of one part of a message, which is
+	// how an attachment is downloaded. Separate from FetchBody because a
+	// twenty-megabyte file is not wanted until somebody asks for it.
+	FetchPart(ctx context.Context, uid uint32, partID, encoding string) ([]byte, error)
+
 	// StoreFlags adds or removes flags on a set of UIDs in the selected
 	// mailbox. Adding a flag that is already set is harmless, which is what
 	// makes a retry safe.

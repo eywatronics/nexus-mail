@@ -43,3 +43,27 @@ func (e *Engine) EnsureBody(ctx context.Context, acct model.Account, folder mode
 	}
 	return body, nil
 }
+
+// FetchAttachment returns the decoded bytes of one part of a message.
+//
+// Not cached in the database the way bodies are. An attachment is a file, and
+// files belong on the filesystem — putting a twenty-megabyte PDF in a SQLite
+// row would bloat every backup and every read of the table it sits in. The
+// caller writes it to disk and records the path.
+func (e *Engine) FetchAttachment(ctx context.Context, acct model.Account, folder model.Folder,
+	msg model.Message, part model.AttachmentPart) ([]byte, error) {
+
+	be, err := e.dial(ctx, acct.ID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
+	}
+	if _, err := be.Select(ctx, folder.Path); err != nil {
+		return nil, fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
+	}
+
+	data, err := be.FetchPart(ctx, msg.UID, part.PartID, part.Encoding)
+	if err != nil {
+		return nil, fmt.Errorf("sync: fetching part %s of UID %d: %w", part.PartID, msg.UID, err)
+	}
+	return data, nil
+}

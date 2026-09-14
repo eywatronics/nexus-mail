@@ -104,13 +104,29 @@ func TestOpenIsIdempotent(t *testing.T) {
 		}
 	})
 
+	// The version must equal the number of migration files, not a number
+	// written here: hardcoding it turns every new migration into a failing
+	// test that says nothing about what actually broke. What this proves is
+	// that the second Open applied none of them again.
+	want := countMigrations(t)
+
 	var version int
 	if err := s2.Read().QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("user_version query: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("user_version = %d, want 1", version)
+	if version != want {
+		t.Errorf("user_version = %d, want %d (one per migration file)", version, want)
 	}
+}
+
+func countMigrations(t *testing.T) int {
+	t.Helper()
+
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("reading the migration directory: %v", err)
+	}
+	return len(entries)
 }
 
 func TestWritePoolHasSingleConnection(t *testing.T) {

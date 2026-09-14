@@ -77,6 +77,14 @@ func (s *Store) UpsertMessages(ctx context.Context, folderID int64, msgs []model
 			return fmt.Errorf("store: upsert message UID %d: %w", m.UID, err)
 		}
 	}
+	// Attachments are described by the same BODYSTRUCTURE the headers came
+	// from, and this is the only place that ever sees it. Written in the same
+	// transaction so a message can never exist with a paperclip and no list
+	// behind it.
+	if err := upsertAttachmentsTx(ctx, tx, folderID, msgs); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 

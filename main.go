@@ -67,6 +67,7 @@ func run(debug bool) error {
 		return err
 	}
 	cfg.LogDir = paths.LogDir
+	cfg.AttachmentDir = paths.AttachmentDir
 
 	// The Wails application is needed to emit events, and the service is
 	// needed to build the application. The closure breaks the cycle: nothing

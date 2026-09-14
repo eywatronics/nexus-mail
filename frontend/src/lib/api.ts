@@ -50,6 +50,17 @@ export interface PendingChanges {
   failed: number
 }
 
+/** One file carried by a message. */
+export interface Attachment {
+  id: number
+  filename: string
+  mimeType: string
+  /** What the server reports, which is the encoded size. */
+  size: number
+  downloaded: boolean
+  localPath?: string
+}
+
 export interface LogBundle {
   path: string
   bytes: number
@@ -88,6 +99,13 @@ export const pendingChanges = (accountId: number) =>
 
 export const acknowledgeChangeFailures = (accountId: number) =>
   MailService.AcknowledgeChangeFailures(accountId)
+
+export const listAttachments = (messageId: number) =>
+  MailService.ListAttachments(messageId) as Promise<Attachment[]>
+
+/** Fetches the bytes if needed and opens the folder they were saved in. */
+export const revealAttachment = (attachmentId: number) =>
+  MailService.RevealAttachment(attachmentId)
 
 export const syncAccount = (accountId: number) => MailService.SyncAccount(accountId)
 

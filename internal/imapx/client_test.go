@@ -643,3 +643,120 @@ func hasFlag(t *testing.T, be MailBackend, uid uint32, flag string) bool {
 	}
 	return false
 }
+
+// The paperclip in the list only says a message has attachments. Opening one
+// needs their names, types and sizes, and a part number to fetch by — none of
+// which the envelope carries.
+func TestAttachmentPartsAreListedFromTheBodyStructure(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", mixedMessage())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	msgs, err := be.FetchHeaders(ctx, UIDRange{Start: 1})
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("FetchHeaders() = %v, %v", msgs, err)
+	}
+
+	parts := msgs[0].Attachments
+	if len(parts) != 1 {
+		t.Fatalf("found %d attachments, want 1: %+v", len(parts), parts)
+	}
+	if parts[0].Filename != "rapor.pdf" {
+		t.Errorf("Filename = %q, want rapor.pdf", parts[0].Filename)
+	}
+	if parts[0].MIMEType != "application/pdf" {
+		t.Errorf("MIMEType = %q, want application/pdf", parts[0].MIMEType)
+	}
+	if parts[0].PartID == "" {
+		t.Error("PartID is empty; there is no way to fetch the part")
+	}
+	if parts[0].Size == 0 {
+		t.Error("Size = 0; the list cannot show how big the file is")
+	}
+}
+
+// The body itself is not an attachment. Listing it would put "part 1" in every
+// message's attachment list, and the reader would wonder what it is.
+func TestTheBodyIsNotListedAsAnAttachment(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Sade", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	msgs, _ := be.FetchHeaders(ctx, UIDRange{Start: 1})
+	if len(msgs[0].Attachments) != 0 {
+		t.Errorf("a plain message reports %+v as attachments", msgs[0].Attachments)
+	}
+}
+
+// Fetching the bytes is the whole point; the metadata only exists to get here.
+func TestFetchPartReturnsTheAttachmentBytes(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", mixedMessage())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	msgs, _ := be.FetchHeaders(ctx, UIDRange{Start: 1})
+	part := msgs[0].Attachments[0]
+
+	data, err := be.FetchPart(ctx, msgs[0].UID, part.PartID, part.Encoding)
+	if err != nil {
+		t.Fatalf("FetchPart() error: %v", err)
+	}
+	if !strings.Contains(string(data), "PDF-1.4") {
+		t.Errorf("the part came back as %q, want the decoded file", string(data))
+	}
+}
+
+func TestFetchPartReportsAMissingPart(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", mixedMessage())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	if _, err := be.FetchPart(ctx, 4242, "1", ""); err == nil {
+		t.Error("FetchPart() succeeded for a message that is not there")
+	}
+}
+
+// mixedMessage is a multipart/mixed with a text body and a base64 PDF, which
+// is what an ordinary mail with a file on it looks like on the wire.
+func mixedMessage() string {
+	return "From: Muhasebe <muhasebe@example.com>\r\n" +
+		"To: " + testUser + "\r\n" +
+		"Subject: Rapor ektedir\r\n" +
+		"Message-ID: <rapor@example.com>\r\n" +
+		"Date: Mon, 02 Feb 2026 09:30:00 +0300\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"sinir\"\r\n" +
+		"\r\n" +
+		"--sinir\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		"Ektedir.\r\n" +
+		"--sinir\r\n" +
+		"Content-Type: application/pdf; name=\"rapor.pdf\"\r\n" +
+		"Content-Disposition: attachment; filename=\"rapor.pdf\"\r\n" +
+		"Content-Transfer-Encoding: base64\r\n" +
+		"\r\n" +
+		// "%PDF-1.4 test" base64-encoded.
+		"JVBERi0xLjQgdGVzdA==\r\n" +
+		"--sinir--\r\n"
+}

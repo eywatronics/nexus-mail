@@ -49,6 +49,11 @@ type Config struct {
 	// Retention bounds how much mail stays on disk. A zero policy keeps
 	// everything.
 	Retention model.RetentionPolicy
+
+	// AttachmentDir reports where downloaded files are kept. Injected for the
+	// same reason as LogDir: a test must be able to point it at a temporary
+	// directory rather than the user's real one.
+	AttachmentDir func() (string, error)
 }
 
 // LoadConfig reads config.json from the data directory, creating an empty one

@@ -849,3 +849,154 @@ func TestActionsOnAnEmptySelectionAreHarmless(t *testing.T) {
 		t.Errorf("an empty selection queued %+v", ops)
 	}
 }
+
+func (stubBackend) FetchPart(context.Context, uint32, string, string) ([]byte, error) {
+	return []byte("stub"), nil
+}
+
+// The paperclip in the list is a promise that there is something to open.
+// Listing is what keeps it from being an empty one.
+func TestListAttachmentsReturnsWhatTheSyncRecorded(t *testing.T) {
+	ctx := context.Background()
+	svc, _, s := newTestService(t, attachmentBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+	_ = s
+
+	folders, _ := svc.ListFolders(acct.ID)
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+
+	got, err := svc.ListAttachments(msgs[0].ID)
+	if err != nil {
+		t.Fatalf("ListAttachments() error: %v", err)
+	}
+	if len(got) != 1 || got[0].Filename != "rapor.pdf" {
+		t.Fatalf("listed %+v, want the one file the sync described", got)
+	}
+	if got[0].Downloaded {
+		t.Error("the attachment claims to be downloaded before anyone asked")
+	}
+	_ = ctx
+}
+
+// Downloading writes the bytes somewhere the window can hand to the operating
+// system, and records where, so asking twice does not fetch twice.
+func TestDownloadAttachmentWritesTheFileAndRemembersIt(t *testing.T) {
+	svc, _, _ := newTestService(t, attachmentBackend{})
+	dir := t.TempDir()
+	svc.cfg.AttachmentDir = func() (string, error) { return dir, nil }
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	folders, _ := svc.ListFolders(acct.ID)
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+	listed, _ := svc.ListAttachments(msgs[0].ID)
+
+	got, err := svc.DownloadAttachment(listed[0].ID)
+	if err != nil {
+		t.Fatalf("DownloadAttachment() error: %v", err)
+	}
+	if !got.Downloaded || got.LocalPath == "" {
+		t.Fatalf("the download reported %+v", got)
+	}
+
+	contents, err := os.ReadFile(got.LocalPath)
+	if err != nil {
+		t.Fatalf("reading the saved file: %v", err)
+	}
+	if string(contents) != "dosya icerigi" {
+		t.Errorf("the file holds %q", string(contents))
+	}
+
+	// Asking again must not go back to the server: the file is already here,
+	// and refetching it would make opening a large attachment twice cost twice.
+	again, err := svc.DownloadAttachment(listed[0].ID)
+	if err != nil {
+		t.Fatalf("second DownloadAttachment() error: %v", err)
+	}
+	if again.LocalPath != got.LocalPath {
+		t.Errorf("the second download saved to %q, want the same file", again.LocalPath)
+	}
+}
+
+// A filename from a message is attacker-controlled. Writing it straight into a
+// path is how a mail client overwrites something it had no business touching.
+func TestDownloadAttachmentDoesNotLetAFilenameEscapeTheDirectory(t *testing.T) {
+	svc, _, _ := newTestService(t, attachmentBackend{filename: "../../../etc/passwd"})
+	dir := t.TempDir()
+	svc.cfg.AttachmentDir = func() (string, error) { return dir, nil }
+
+	acct, _ := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+	folders, _ := svc.ListFolders(acct.ID)
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+	listed, _ := svc.ListAttachments(msgs[0].ID)
+
+	got, err := svc.DownloadAttachment(listed[0].ID)
+	if err != nil {
+		t.Fatalf("DownloadAttachment() error: %v", err)
+	}
+	if !strings.HasPrefix(got.LocalPath, dir) {
+		t.Errorf("the file was written to %q, outside %q", got.LocalPath, dir)
+	}
+}
+
+// attachmentBackend serves one message carrying one file.
+type attachmentBackend struct {
+	stubBackend
+	filename string
+}
+
+func (b attachmentBackend) FetchHeaders(context.Context, imapx.UIDRange) ([]model.Message, error) {
+	name := b.filename
+	if name == "" {
+		name = "rapor.pdf"
+	}
+	return []model.Message{{
+		UID:            1,
+		Subject:        "Rapor",
+		From:           model.Address{Addr: "a@example.com"},
+		InternalDate:   time.Unix(1700000000, 0),
+		Flags:          []string{model.FlagSeen},
+		HasAttachments: true,
+		Attachments: []model.AttachmentPart{
+			{PartID: "2", Filename: name, MIMEType: "application/pdf", Size: 13},
+		},
+	}}, nil
+}
+
+func (attachmentBackend) FetchPart(context.Context, uint32, string, string) ([]byte, error) {
+	return []byte("dosya icerigi"), nil
+}

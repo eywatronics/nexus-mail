@@ -2,6 +2,7 @@ import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/r
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL } from '../lib/api'
 import { applyDelete, applyRead, applyStar } from '../lib/actions'
+import { AttachmentList } from './AttachmentList'
 import { MoveMenu } from './MoveMenu'
 import { useMailStore } from '../store/useMailStore'
 import { BUTTON_GHOST, BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
@@ -166,6 +167,8 @@ export function MessageView() {
           </div>
         </header>
       )}
+
+      {message?.hasAttachments && <AttachmentList messageId={message.id} />}
 
       {!allowRemote && (
         <div

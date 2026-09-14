@@ -1,6 +1,7 @@
 package imapx
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,6 +111,61 @@ func firstAddress(list []imap.Address) model.Address {
 		return model.Address{}
 	}
 	return model.Address{Name: list[0].Name, Addr: list[0].Addr()}
+}
+
+// attachmentParts walks a BODYSTRUCTURE and describes every part worth
+// offering as a file.
+//
+// The part numbers come from the walk itself, so they are whatever this server
+// will accept in a FETCH BODY[...]. Building them any other way would mean
+// guessing at a numbering the server decides.
+//
+// A message whose whole body is one part has no attachments: that part is the
+// body. Listing it would put a mysterious "part 1" on every plain message.
+func attachmentParts(bs imap.BodyStructure) []model.AttachmentPart {
+	var out []model.AttachmentPart
+
+	bs.Walk(func(path []int, part imap.BodyStructure) bool {
+		single, ok := part.(*imap.BodyStructureSinglePart)
+		if !ok {
+			return true
+		}
+		// The top-level part of a non-multipart message is the body itself.
+		if len(path) == 0 {
+			return true
+		}
+
+		disp := single.Disposition()
+		attached := disp != nil && strings.EqualFold(disp.Value, "attachment")
+		// A non-text part that is not marked inline is a file in practice,
+		// whatever the sender's client chose to write in the disposition.
+		if !attached && strings.EqualFold(single.Type, "text") {
+			return true
+		}
+		if !attached && disp != nil && strings.EqualFold(disp.Value, "inline") &&
+			single.Filename() == "" {
+			return true
+		}
+
+		out = append(out, model.AttachmentPart{
+			PartID:   partNumber(path),
+			Filename: single.Filename(),
+			MIMEType: strings.ToLower(single.Type + "/" + single.Subtype),
+			Size:     int64(single.Size),
+			Encoding: single.Encoding,
+		})
+		return true
+	})
+	return out
+}
+
+// partNumber renders a BODYSTRUCTURE path as the dotted part number IMAP uses.
+func partNumber(path []int) string {
+	parts := make([]string, 0, len(path))
+	for _, n := range path {
+		parts = append(parts, strconv.Itoa(n))
+	}
+	return strings.Join(parts, ".")
 }
 
 // hasAttachmentParts walks a BODYSTRUCTURE looking for a part disposed as an
