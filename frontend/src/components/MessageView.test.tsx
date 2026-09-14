@@ -1,5 +1,6 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { bodyURL } from '../lib/api'
 import { useMailStore } from '../store/useMailStore'
 import { MessageView } from './MessageView'
 
@@ -395,5 +396,21 @@ describe('source view', () => {
       const iframe = container.querySelector('iframe') as HTMLIFrameElement
       expect(iframe.getAttribute('src')).toBe('/mail-body/2')
     })
+  })
+})
+
+describe('reloading after a repair', () => {
+  // The frame is keyed on its URL. After a repair the body at the same URL is
+  // different, so without a changing URL the frame would sit on the mojibake
+  // the reader just fixed.
+  it('changes the body URL so the frame re-requests it', () => {
+    expect(bodyURL(1, false, 0)).toBe('/mail-body/1')
+    expect(bodyURL(1, false, 1)).not.toBe(bodyURL(1, false, 0))
+
+    // Consent has to survive the reload, and the two parameters have to
+    // coexist rather than one overwriting the other's query string.
+    const both = bodyURL(1, true, 2)
+    expect(both).toContain('remote=1')
+    expect(both).toContain('v=2')
   })
 })

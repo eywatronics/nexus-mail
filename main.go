@@ -79,10 +79,22 @@ func run(debug bool) error {
 		}
 	}
 
+	// The same cycle again, and the same way out of it: the body handler is
+	// built from the service, and the service has to be able to drop entries
+	// from the handler's cache when an encoding repair rewrites a body. Config
+	// is passed by value, so the closure has to exist before the service does
+	// — assigning to cfg afterwards would write to a copy nothing reads.
+	var bodies *app.BodyHandler
+	cfg.InvalidateBody = func(messageID int64) {
+		if bodies != nil {
+			bodies.Invalidate(messageID)
+		}
+	}
+
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
 	service := app.NewMailService(db, secrets, engine, cfg)
-	bodies := app.NewBodyHandler(service)
+	bodies = app.NewBodyHandler(service)
 
 	wailsApp = application.New(application.Options{
 		Name:        "Nexus Mail",

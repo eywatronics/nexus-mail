@@ -54,6 +54,15 @@ type Config struct {
 	// same reason as LogDir: a test must be able to point it at a temporary
 	// directory rather than the user's real one.
 	AttachmentDir func() (string, error)
+
+	// InvalidateBody drops a message from the reading pane's render cache.
+	//
+	// A closure for the same reason Emit is one: the cache is built from this
+	// service, so the service cannot name its type without closing a cycle. It
+	// is also why this is not an exported setter — every exported method on
+	// the service becomes part of the window's API, and the window has no
+	// business reaching into a cache.
+	InvalidateBody func(messageID int64)
 }
 
 // LoadConfig reads config.json from the data directory, creating an empty one

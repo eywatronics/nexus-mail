@@ -198,6 +198,25 @@ func (h *BodyHandler) lookup(id int64, mode mailhtml.Mode) *renderedBody {
 	return nil
 }
 
+// Invalidate drops a message's cached render.
+//
+// Called when the body underneath it changed — today only from an encoding
+// repair, which rewrites the stored body while the cache holds a sanitised
+// copy of the previous one. Without this the reading pane would keep serving
+// the mojibake the reader just fixed.
+func (h *BodyHandler) Invalidate(messageID int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	delete(h.cache, messageID)
+	for i, id := range h.order {
+		if id == messageID {
+			h.order = append(h.order[:i], h.order[i+1:]...)
+			break
+		}
+	}
+}
+
 func (h *BodyHandler) store(id int64, rendered *renderedBody) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

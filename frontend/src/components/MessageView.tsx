@@ -49,6 +49,7 @@ export function MessageView() {
   const [settledId, setSettledId] = useState<number | null>(null)
   const [allowRemote, setAllowRemote] = useState(false)
   const [showSource, setShowSource] = useState(false)
+  const [bodyVersion, setBodyVersion] = useState(0)
 
   useEffect(() => {
     // Consent is per message and never sticky: carrying it forward would
@@ -58,6 +59,7 @@ export function MessageView() {
     // why one mail rendered wrong does not want raw headers for every message
     // they read afterwards.
     setShowSource(false)
+    setBodyVersion(0)
 
     if (selectedMessageId === null) {
       setSettledId(null)
@@ -70,8 +72,10 @@ export function MessageView() {
 
   const src = useMemo(() => {
     if (settledId === null) return null
-    return showSource ? sourceURL(settledId) : bodyURL(settledId, allowRemote)
-  }, [settledId, allowRemote, showSource])
+    return showSource
+      ? sourceURL(settledId)
+      : bodyURL(settledId, allowRemote, bodyVersion)
+  }, [settledId, allowRemote, showSource, bodyVersion])
 
   // Reading a message marks it read. Tied to the settled id rather than the
   // selection, so holding j through a folder does not mark fifty messages read
@@ -174,6 +178,7 @@ export function MessageView() {
                 messageId={message.id}
                 showingSource={showSource}
                 onToggleSource={() => setShowSource((was) => !was)}
+                onRepaired={() => setBodyVersion((was) => was + 1)}
               />
             </div>
           </div>
