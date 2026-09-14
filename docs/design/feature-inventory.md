@@ -46,7 +46,7 @@ içindeki `eIMAPCapabilityFlag` sabitlerinde sayılı; pazarlık
 | AUTH: EXTERNAL | İstemci sertifikası | — | Niş |
 | IDLE (RFC 2177) | Sunucu itmeli yeni posta | M2 | Planlı |
 | CONDSTORE (RFC 4551) | `HIGHESTMODSEQ` ile delta senkron | M2 | Planlı |
-| **QRESYNC (RFC 7162)** | Kopan bağlantıdan hızlı toparlanma | M2 | **Thunderbird'de yok.** go-imap v2 destekliyor — bizde artı |
+| **QRESYNC (RFC 7162)** | Silinenleri VANISHED ile doğrudan bildirir | — (bkz. not) | **Thunderbird'de yok. go-imap v2 beta.7'de de yok:** yalnızca yetenek adı tanımlı, SELECT parametresi ve VANISHED ayrıştırması yok. Yukarı akışa bağlı |
 | SPECIAL-USE (RFC 6154) / XLIST | `\Sent \Drafts \Trash \Archive \Junk` klasör rolleri | M5 | M6 gönderme için şart: "Gönderilenler" hangi klasör? |
 | UIDPLUS (RFC 4315) | `APPENDUID` / `COPYUID` | M6 | Gönderilen kopyanın UID'sini öğrenmek |
 | MOVE (RFC 6851) | Tek komutla taşıma | M3 | Yoksa COPY + STORE `\Deleted` + EXPUNGE |

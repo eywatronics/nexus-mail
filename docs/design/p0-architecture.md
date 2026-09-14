@@ -26,7 +26,7 @@ işlevseldir; yapılan değişiklikler kuyruğa alınır ve bağlantı geldiğin
 | Masaüstü çatı | Wails v3-beta, sürüm sabitlenmiş | v2 tek pencere mimarisi; e-posta istemcisi ayrı compose/okuma pencereleri ve sistem tepsisi gerektirir. v3'ün masaüstü API'si stabil ilan edildi. |
 | cgo | Bağımlılıklarımızda kullanılmayacak | Katkıcı kurulum eşiğini düşük tutmak; C derleme zinciri gerektirmemek. **Not:** macOS'ta Wails'in WebView bağlaması cgo gerektirir, bu kaçınılamaz. Kural bizim bağımlılık ağacımız için geçerlidir; Windows/Linux `CGO_ENABLED=0` ile derlenerek zorlanır. |
 | Veritabanı | modernc.org/sqlite (saf Go) + FTS5 | cgo yasağının doğal sonucu. FTS5 mevcut. |
-| IMAP | emersion/go-imap v2 (beta) | IMAP4rev2, CONDSTORE/QRESYNC, API'si dondurulmuş. v1 eski nesil. |
+| IMAP | emersion/go-imap v2 (beta) | IMAP4rev2, CONDSTORE, API'si dondurulmuş. v1 eski nesil. **QRESYNC yok** — yetenek adı tanımlı ama uzantı uygulanmamış; delta senkron bu yüzden silinenleri sayım farkından buluyor (§6.3). |
 | Şifreleme | Yalnızca kimlik bilgileri (OS anahtarlığı) | SQLCipher cgo gerektirir → çapraz platform ve saf Go hedefiyle çelişir. Thunderbird/Apple Mail de bu modeli kullanır. |
 | Senkron mimarisi | Yerel-önce + giden işlem kuyruğu | Çevrimdışı çalışma ayrı bir özellik değil, mimarinin doğal sonucu olur. |
 | JMAP | Uygulanmayacak | 2026'da Gmail/Outlook/Yahoo desteklemiyor; yalnızca Fastmail/Cyrus/Stalwart. Gelecekte eklenebilmesi için `sync` motoru `imapx`'e doğrudan değil, `MailBackend` arayüzü üzerinden bağlanır. |
@@ -421,13 +421,21 @@ operatörleri ve P4'teki kurallar motoru o kolonu okuyacak.
 
 ### 6.3 Delta senkron — iki yollu
 
-- **CONDSTORE/QRESYNC varsa:** `SELECT` sırasında QRESYNC parametresi, ardından
-  `FETCH ... (CHANGEDSINCE <modseq>)`. Yalnızca değişenler gelir.
+- **CONDSTORE varsa:** `FETCH ... (CHANGEDSINCE <modseq>)`. Yalnızca değişenler gelir.
 - **Yoksa (zorunlu yedek yol):** UIDNEXT karşılaştırmasıyla yeni mesajlar, mevcut
   UID aralığında `FETCH FLAGS` ile bayrak farkı, eksik UID'lerden silinenler.
 
 Yedek yol opsiyonel değildir: bazı kurumsal Zimbra ve eski Dovecot kurulumları
 CONDSTORE desteklemez.
+
+**Silinenler CONDSTORE ile bulunamaz.** Expunge `HIGHESTMODSEQ`'i ilerletmez
+(RFC 4551), yani `CHANGEDSINCE` silinen mesajdan hiç söz etmez. Bunu çözen şey
+QRESYNC'in `VANISHED` yanıtıdır — ama go-imap v2 beta.7 QRESYNC'i uygulamıyor
+(yalnızca yetenek adı tanımlı). Dolayısıyla silinme tespiti mesaj sayısından
+yapılıyor: posta kutusu eskiden tuttuğu artı yeni gelenler kadar mesaj
+tutuyorsa hiçbir şey silinmemiştir; başka bir sayı çıkarsa pencere baştan
+taranır. Doğru ama QRESYNC'ten pahalı; yukarı akış uzantıyı eklerse burası
+sadeleşir.
 
 ### 6.4 IDLE döngüsü
 
@@ -771,7 +779,7 @@ tanım var.
 
 - **M1 — Salt okunur istemci.** Hesap bağlama (3 auth yolu), klasör ve başlık çekme,
   üç sütunlu UI, izole HTML render, karanlık tema, arama, klavye navigasyonu.
-- **M2 — Canlı senkron.** IDLE döngüsü, delta senkron (her iki yol), QRESYNC,
+- **M2 — Canlı senkron.** IDLE döngüsü, delta senkron (her iki yol),
   yeniden bağlanma, saklama penceresi.
 - **M3 — Durum yazma.** İşlem kuyruğu: okundu/okunmadı, yıldız, klasöre taşı, sil;
   çevrimdışı dayanıklı.
