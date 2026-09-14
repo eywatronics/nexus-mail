@@ -99,6 +99,8 @@ func (h *BodyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveBody(w, r)
 	case strings.HasPrefix(r.URL.Path, assetPath):
 		h.serveAsset(w, r)
+	case strings.HasPrefix(r.URL.Path, sourcePath):
+		h.serveSource(w, r)
 	default:
 		http.NotFound(w, r)
 	}

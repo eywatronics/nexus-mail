@@ -102,3 +102,34 @@ export const ROW_DIVIDER = 'border-b border-b-neutral-200 dark:border-b-neutral-
 
 /** One icon size and weight for the whole app, per the icon policy. */
 export const ICON = { size: 16, weight: 'regular' } as const
+
+/**
+ * An icon-only toolbar button.
+ *
+ * The padding is the whole point: a 16px icon with p-1.5 gives a 28px target,
+ * and the toolbar buttons were each spelling that out. One value means the
+ * reading pane's controls stay the same size as each other, which is what
+ * makes a row of them read as a row rather than as five separate decisions.
+ */
+export const ICON_ONLY = 'inline-flex items-center p-1.5'
+
+/**
+ * A dropdown panel anchored under its trigger.
+ *
+ * Right-aligned because every menu in this app hangs off a toolbar at the
+ * right edge; left-aligning one would push it off the pane.
+ */
+export const MENU_PANEL = [
+  RADIUS,
+  'absolute right-0 top-full z-10 mt-1 border p-1 shadow-lg',
+  SURFACE.divider,
+  SURFACE.panel,
+].join(' ')
+
+/** One row inside a MENU_PANEL. */
+export const MENU_ITEM = [
+  RADIUS,
+  'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors',
+  TEXT.secondary,
+  'hover:bg-neutral-200/70 dark:hover:bg-neutral-800',
+].join(' ')

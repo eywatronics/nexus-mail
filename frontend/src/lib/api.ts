@@ -136,3 +136,15 @@ export const addOAuthAccount = (email: string, displayName: string, provider: st
 /** The body is served over HTTP, not the bridge, so this is just a URL. */
 export const bodyURL = (messageId: number, allowRemote: boolean) =>
   `/mail-body/${messageId}${allowRemote ? '?remote=1' : ''}`
+
+/**
+ * The message exactly as it arrived, served as plain text.
+ *
+ * Also over HTTP rather than the bridge: a message is as large as a message,
+ * and the source view is the one place its whole size is on screen at once.
+ */
+export const sourceURL = (messageId: number) => `/mail-source/${messageId}`
+
+/** Writes the message as an .eml and opens the folder it landed in. */
+export const saveMessageAsEML = (messageId: number) =>
+  MailService.RevealMessageEML(messageId)

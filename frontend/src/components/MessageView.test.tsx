@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useMailStore } from '../store/useMailStore'
 import { MessageView } from './MessageView'
@@ -321,6 +321,79 @@ describe('marking read by reading', () => {
 
     await waitFor(() => {
       expect(useMailStore.getState().messages[0].isRead).toBe(true)
+    })
+  })
+})
+
+describe('source view', () => {
+  const seed = () =>
+    useMailStore.setState({
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          subject: 'Konu',
+          fromName: 'Gönderen',
+          fromAddr: 'g@example.com',
+          snippet: 'önizleme',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+        },
+      ],
+    })
+
+  // The source view is what a reader opens when a message rendered wrong, so
+  // it has to point somewhere else entirely — not at the same sanitised body.
+  it('points the frame at the source endpoint', async () => {
+    seed()
+    const { getByTestId, container } = await renderSelected(1)
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('toggle-source'))
+
+    await waitFor(() => {
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-source/1')
+    })
+  })
+
+  // Plain text has no remote content in it. Offering to load images over a
+  // source view would be offering to do nothing.
+  it('drops the remote content prompt while the source is showing', async () => {
+    seed()
+    const { getByTestId, queryByTestId } = await renderSelected(1)
+
+    expect(queryByTestId('load-remote')).toBeTruthy()
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('toggle-source'))
+
+    await waitFor(() => expect(queryByTestId('load-remote')).toBeNull())
+  })
+
+  // Somebody who opened the source to work out why one mail looked wrong does
+  // not want raw headers for every message they read afterwards.
+  it('goes back to the rendered body when another message is opened', async () => {
+    seed()
+    const { getByTestId, container } = await renderSelected(1)
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('toggle-source'))
+    await waitFor(() => {
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-source/1')
+    })
+
+    useMailStore.setState({ selectedMessageId: 2 })
+
+    await waitFor(() => {
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-body/2')
     })
   })
 })

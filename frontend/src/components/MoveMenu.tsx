@@ -1,8 +1,9 @@
 import { FolderOpen } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { moveMessages } from '../lib/api'
+import { useDismissOnOutside } from '../lib/menu'
 import { useMailStore } from '../store/useMailStore'
-import { BUTTON_GHOST, ICON, RADIUS, SURFACE, TEXT } from '../lib/ui'
+import { BUTTON_GHOST, ICON, MENU_ITEM, MENU_PANEL, ICON_ONLY } from '../lib/ui'
 
 interface MoveMenuProps {
   messageId: number
@@ -28,27 +29,7 @@ export function MoveMenu({ messageId, folderId }: MoveMenuProps) {
   const accountId = folders.find((f) => f.id === folderId)?.accountId
   const destinations = folders.filter((f) => f.accountId === accountId && f.id !== folderId)
 
-  useEffect(() => {
-    if (!open) return
-
-    // Clicking anywhere else closes it, which is what every menu does and what
-    // a reader will try without thinking about it.
-    const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismissOnOutside(open, containerRef, useCallback(() => setOpen(false), []))
 
   if (destinations.length === 0) return null
 
@@ -61,7 +42,7 @@ export function MoveMenu({ messageId, folderId }: MoveMenuProps) {
         aria-expanded={open}
         title="Move to folder"
         onClick={() => setOpen((was) => !was)}
-        className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+        className={`${BUTTON_GHOST} ${ICON_ONLY}`}
       >
         <FolderOpen size={ICON.size} weight={ICON.weight} aria-hidden />
       </button>
@@ -70,7 +51,7 @@ export function MoveMenu({ messageId, folderId }: MoveMenuProps) {
         <div
           role="menu"
           data-testid="move-menu"
-          className={`absolute right-0 top-full z-10 mt-1 max-h-64 w-56 overflow-y-auto border p-1 shadow-lg ${RADIUS} ${SURFACE.divider} ${SURFACE.panel}`}
+          className={`${MENU_PANEL} max-h-64 w-56 overflow-y-auto`}
         >
           {destinations.map((folder) => (
             <button
@@ -87,12 +68,7 @@ export function MoveMenu({ messageId, folderId }: MoveMenuProps) {
                 removeLocalMessages([messageId])
                 void moveMessages([messageId], folder.id).catch(() => {})
               }}
-              className={[
-                RADIUS,
-                'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors',
-                TEXT.secondary,
-                'hover:bg-neutral-200/70 dark:hover:bg-neutral-800',
-              ].join(' ')}
+              className={MENU_ITEM}
             >
               <span className="truncate">{folder.name}</span>
             </button>

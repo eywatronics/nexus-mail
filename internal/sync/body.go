@@ -44,6 +44,30 @@ func (e *Engine) EnsureBody(ctx context.Context, acct model.Account, folder mode
 	return body, nil
 }
 
+// FetchRawMessage returns the message exactly as it sits on the server.
+//
+// Deliberately not cached. The parsed body is cached because it is read on
+// every render; the raw form is read when somebody asks to see the source,
+// save an .eml or repair a mangled encoding — rare enough that storing a
+// second full copy of every message would cost more disk than it ever saves.
+func (e *Engine) FetchRawMessage(ctx context.Context, acct model.Account, folder model.Folder,
+	msg model.Message) ([]byte, error) {
+
+	be, err := e.dial(ctx, acct.ID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
+	}
+	if _, err := be.Select(ctx, folder.Path); err != nil {
+		return nil, fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
+	}
+
+	raw, err := be.FetchRaw(ctx, msg.UID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: fetching the raw message for UID %d: %w", msg.UID, err)
+	}
+	return raw, nil
+}
+
 // FetchAttachment returns the decoded bytes of one part of a message.
 //
 // Not cached in the database the way bodies are. An attachment is a file, and

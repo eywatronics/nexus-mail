@@ -1,11 +1,12 @@
 import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
-import { bodyURL } from '../lib/api'
+import { bodyURL, sourceURL } from '../lib/api'
 import { applyDelete, applyRead, applyStar } from '../lib/actions'
 import { AttachmentList } from './AttachmentList'
+import { MessageActionsMenu } from './MessageActionsMenu'
 import { MoveMenu } from './MoveMenu'
 import { useMailStore } from '../store/useMailStore'
-import { BUTTON_GHOST, BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
+import { BUTTON_GHOST, BUTTON_SECONDARY, ICON, ICON_ONLY, SURFACE, TEXT } from '../lib/ui'
 
 /**
  * The sandbox attribute is deliberately minimal.
@@ -47,11 +48,16 @@ export function MessageView() {
   )
   const [settledId, setSettledId] = useState<number | null>(null)
   const [allowRemote, setAllowRemote] = useState(false)
+  const [showSource, setShowSource] = useState(false)
 
   useEffect(() => {
     // Consent is per message and never sticky: carrying it forward would
     // silently load trackers in whatever the user opens next.
     setAllowRemote(false)
+    // The source view is per message too. Somebody who opened it to work out
+    // why one mail rendered wrong does not want raw headers for every message
+    // they read afterwards.
+    setShowSource(false)
 
     if (selectedMessageId === null) {
       setSettledId(null)
@@ -62,10 +68,10 @@ export function MessageView() {
     return () => clearTimeout(timer)
   }, [selectedMessageId])
 
-  const src = useMemo(
-    () => (settledId === null ? null : bodyURL(settledId, allowRemote)),
-    [settledId, allowRemote],
-  )
+  const src = useMemo(() => {
+    if (settledId === null) return null
+    return showSource ? sourceURL(settledId) : bodyURL(settledId, allowRemote)
+  }, [settledId, allowRemote, showSource])
 
   // Reading a message marks it read. Tied to the settled id rather than the
   // selection, so holding j through a folder does not mark fifty messages read
@@ -121,7 +127,7 @@ export function MessageView() {
                 aria-label={message.isRead ? 'Mark as unread' : 'Mark as read'}
                 title={message.isRead ? 'Mark as unread (r)' : 'Mark as read (r)'}
                 onClick={() => void applyRead([message.id], !message.isRead)}
-                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
               >
                 {message.isRead ? (
                   <Envelope size={ICON.size} weight={ICON.weight} aria-hidden />
@@ -136,7 +142,7 @@ export function MessageView() {
                 aria-label={message.isStarred ? 'Remove star' : 'Add star'}
                 title={message.isStarred ? 'Remove star (s)' : 'Add star (s)'}
                 onClick={() => void applyStar([message.id], !message.isStarred)}
-                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
               >
                 <Star
                   size={ICON.size}
@@ -159,10 +165,16 @@ export function MessageView() {
                   useMailStore.getState().selectRelative(1)
                   void applyDelete([message.id])
                 }}
-                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
               >
                 <Trash size={ICON.size} weight={ICON.weight} aria-hidden />
               </button>
+
+              <MessageActionsMenu
+                messageId={message.id}
+                showingSource={showSource}
+                onToggleSource={() => setShowSource((was) => !was)}
+              />
             </div>
           </div>
 
@@ -182,7 +194,7 @@ export function MessageView() {
 
       {message?.hasAttachments && <AttachmentList messageId={message.id} />}
 
-      {!allowRemote && (
+      {!allowRemote && !showSource && (
         <div
           className={`flex items-center justify-between gap-3 border-b px-4 py-2 ${SURFACE.divider} ${SURFACE.panel}`}
         >
@@ -214,7 +226,7 @@ export function MessageView() {
         // Keying on the URL forces a fresh document when consent changes,
         // rather than leaving the previous render in place.
         key={src}
-        title="Message body"
+        title={showSource ? 'Message source' : 'Message body'}
         sandbox={SANDBOX}
         src={src}
         className="h-full w-full flex-1 border-0"
