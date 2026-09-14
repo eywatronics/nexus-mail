@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"nexusmail/internal/imapx"
@@ -48,6 +49,12 @@ type fakeBackend struct {
 	// exercise a specific error class.
 	fetchErr error
 
+	// idleWake releases a blocked Idle; idleErr makes it fail instead, which
+	// is how a dropped connection looks to the supervisor.
+	idleWake  chan struct{}
+	idleErr   error
+	idleCalls atomic.Int32
+
 	selectCalls int
 	closed      bool
 }
@@ -67,6 +74,7 @@ func newFakeBackend() *fakeBackend {
 		bodies:        map[uint32]imapx.Body{},
 		modseq:        map[string]map[uint32]uint64{},
 		highestModSeq: map[string]uint64{},
+		idleWake:      make(chan struct{}, 1),
 	}
 }
 
@@ -306,4 +314,41 @@ func (f *fakeBackend) Close() error {
 	defer f.mu.Unlock()
 	f.closed = true
 	return nil
+}
+
+// Idle blocks until a test signals a change through idleWake, or the context
+// ends. A real server pushes; here the test pushes.
+func (f *fakeBackend) Idle(ctx context.Context) (bool, error) {
+	f.mu.Lock()
+	if !f.caps.Idle {
+		f.mu.Unlock()
+		return false, fmt.Errorf("server does not support IDLE")
+	}
+	if f.idleErr != nil {
+		err := f.idleErr
+		f.mu.Unlock()
+		return false, err
+	}
+	wake := f.idleWake
+	f.mu.Unlock()
+
+	f.idleCalls.Add(1)
+
+	select {
+	case <-wake:
+		return true, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
+// wakeIdle releases whoever is waiting in Idle, the way a server announcing
+// new mail would.
+func (f *fakeBackend) wakeIdle() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	select {
+	case f.idleWake <- struct{}{}:
+	default:
+	}
 }

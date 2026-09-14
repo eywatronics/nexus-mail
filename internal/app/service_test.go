@@ -501,3 +501,121 @@ func TestSearchMessagesReturnsNothingForABlankQuery(t *testing.T) {
 func (stubBackend) FetchFlags(context.Context, imapx.UIDRange, uint64) ([]model.FlagUpdate, error) {
 	return nil, nil
 }
+
+func (stubBackend) Idle(ctx context.Context) (bool, error) {
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+
+// Live sync only exists if something starts it. The engine's watch loop is
+// complete and tested on its own; this is the wiring that was missing when the
+// search index was built and never read.
+func TestStartWatchingRunsALoopPerAccount(t *testing.T) {
+	svc, rec, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.StartWatching(ctx); err != nil {
+		t.Fatalf("StartWatching() error: %v", err)
+	}
+
+	waitFor(t, func() bool { return svc.watcherCount() == 1 })
+	_ = rec
+}
+
+// A newly added account has to start syncing without a restart.
+func TestSyncAccountStartsWatchingTheAccount(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.StartWatching(ctx); err != nil {
+		t.Fatalf("StartWatching() error: %v", err)
+	}
+	if svc.watcherCount() != 0 {
+		t.Fatalf("precondition failed: %d watchers before any account", svc.watcherCount())
+	}
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	waitFor(t, func() bool { return svc.watcherCount() == 1 })
+}
+
+// Two calls must not mean two connections per account. Gmail locks an account
+// that opens too many.
+func TestStartWatchingIsIdempotent(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for range 3 {
+		if err := svc.StartWatching(ctx); err != nil {
+			t.Fatalf("StartWatching() error: %v", err)
+		}
+	}
+
+	waitFor(t, func() bool { return svc.watcherCount() == 1 })
+	if n := svc.watcherCount(); n != 1 {
+		t.Errorf("%d watchers for one account", n)
+	}
+}
+
+// Closing the window has to close the connections. A watcher outliving the
+// context would hold an IMAP connection open after the app is gone.
+func TestCancellingTheContextStopsEveryWatcher(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := svc.StartWatching(ctx); err != nil {
+		t.Fatalf("StartWatching() error: %v", err)
+	}
+	waitFor(t, func() bool { return svc.watcherCount() == 1 })
+
+	cancel()
+	waitFor(t, func() bool { return svc.watcherCount() == 0 })
+}
+
+// waitFor polls a condition for a bounded time. The watchers run in their own
+// goroutines, so their effect is not visible the instant the call returns.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition never became true")
+}

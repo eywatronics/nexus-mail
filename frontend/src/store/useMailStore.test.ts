@@ -273,3 +273,61 @@ describe('keyboard selection', () => {
     expect(useMailStore.getState().selectedMessageId).toBeNull()
   })
 })
+
+describe('live refresh', () => {
+  it('replaces the visible list rather than appending to it', () => {
+    const { setSelectedFolder, appendMessages, replaceMessages } = useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], true)
+
+    replaceMessages([message(3), message(1), message(2)], true)
+
+    const ids = useMailStore.getState().messages.map((m) => m.id)
+    expect(ids).toEqual([3, 1, 2])
+  })
+
+  // A message expunged on another device must not stay selected: opening it
+  // would ask the server for mail that is no longer there.
+  it('drops a selection the refresh no longer contains', () => {
+    const { setSelectedFolder, appendMessages, setSelectedMessage, replaceMessages } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], false)
+    setSelectedMessage(2)
+
+    replaceMessages([message(1)], false)
+
+    expect(useMailStore.getState().selectedMessageId).toBeNull()
+  })
+
+  it('keeps a selection that survived', () => {
+    const { setSelectedFolder, appendMessages, setSelectedMessage, replaceMessages } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], false)
+    setSelectedMessage(1)
+
+    replaceMessages([message(3), message(1)], false)
+
+    expect(useMailStore.getState().selectedMessageId).toBe(1)
+  })
+
+  // A refresh arriving while a search is open must not throw the results away
+  // under the reader.
+  it('leaves search results alone', () => {
+    const { setSelectedFolder, appendMessages, setSearchQuery, setSearchResults, replaceMessages } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1)], false)
+    setSearchQuery('rapor')
+    setSearchResults([message(9)])
+
+    replaceMessages([message(1), message(2)], false)
+
+    expect(useMailStore.getState().visibleMessages()).toEqual([message(9)])
+  })
+})

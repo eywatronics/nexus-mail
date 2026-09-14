@@ -20,7 +20,15 @@ func (e *Engine) DeltaSync(ctx context.Context, acct model.Account, folder model
 	if err != nil {
 		return fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
 	}
+	return e.deltaSyncOn(ctx, be, acct, folder)
+}
 
+// deltaSyncOn is DeltaSync over a connection the caller already has.
+//
+// The watch loop holds one connection open for hours and syncs many folders
+// through it; dialing again per folder would open a new connection for every
+// message that arrives, and Gmail locks an account that does that.
+func (e *Engine) deltaSyncOn(ctx context.Context, be imapx.MailBackend, acct model.Account, folder model.Folder) error {
 	sel, err := be.Select(ctx, folder.Path)
 	if err != nil {
 		return fmt.Errorf("sync: selecting %q: %w", folder.Path, err)

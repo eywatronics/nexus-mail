@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"nexusmail/internal/auth"
@@ -28,6 +29,13 @@ type MailService struct {
 	secrets auth.SecretStore
 	engine  *imapsync.Engine
 	cfg     Config
+
+	// Live sync state. watchCtx is the parent every watcher hangs off, stored
+	// rather than passed because accounts are added long after StartWatching
+	// was called and their watchers have to share the same lifetime.
+	watchMu  sync.Mutex
+	watchCtx context.Context
+	watching map[int64]context.CancelFunc
 }
 
 func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engine, cfg Config) *MailService {
@@ -228,6 +236,10 @@ func (s *MailService) SyncAccount(accountID int64) error {
 	}
 
 	s.cfg.Emit(EventSyncFinished, SyncEvent{AccountID: acct.ID, Email: acct.Email})
+
+	// Now that the account has folders, it is worth watching. Starting the
+	// watcher when the account was created would have found no inbox.
+	s.watchAccount(acct)
 	return nil
 }
 

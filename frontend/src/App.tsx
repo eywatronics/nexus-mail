@@ -64,6 +64,20 @@ export default function App() {
     setFolders(folders)
   }, [setAccounts, setFolders])
 
+  // A live sync just wrote to the database; without this the new mail sits
+  // there and the list keeps showing what it had. Refetching as many rows as
+  // are already on screen keeps the reader roughly where they were instead of
+  // yanking them back to the first page.
+  const refreshVisibleMessages = useCallback(() => {
+    const state = useMailStore.getState()
+    if (state.selectedFolderId === null || state.searching) return
+
+    const count = Math.max(PAGE_SIZE, state.messages.length)
+    listMessages(state.selectedFolderId, count, 0)
+      .then((page) => state.replaceMessages(page, page.length === count))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     refreshAccounts()
       .catch(() => {
@@ -77,11 +91,12 @@ export default function App() {
         applySyncEvent(name, event.data)
         if (name === EVENTS.syncFinished) {
           refreshAccounts().catch(() => {})
+          refreshVisibleMessages()
         }
       }),
     )
     return () => offs.forEach((off) => off())
-  }, [applySyncEvent, refreshAccounts])
+  }, [applySyncEvent, refreshAccounts, refreshVisibleMessages])
 
   // Load the first page whenever the selected folder changes. OpenFolder also
   // syncs a folder the initial sync deliberately left empty.

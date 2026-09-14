@@ -2,8 +2,10 @@ package imapx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 
@@ -395,5 +397,82 @@ func TestFetchFlagsReportsSystemFlags(t *testing.T) {
 	}
 	if !seen {
 		t.Errorf("flags = %v, want the seen flag after the body was read", after[0].Flags)
+	}
+}
+
+// IDLE is what makes new mail appear without polling. The assertion that
+// matters is that the call actually returns when the server has something to
+// say — a version that always timed out would look identical from the outside
+// until someone waited half an hour for a message.
+func TestIdleWakesWhenAMessageArrives(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps(imap.CapIdle))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	delivered := make(chan struct{})
+	go func() {
+		defer close(delivered)
+		// Long enough that IDLE is certainly established first; short enough
+		// that the test does not become a sleep.
+		time.Sleep(150 * time.Millisecond)
+		appendMessage(t, user, "INBOX", htmlMessage("Yeni", "a@example.com", "<p>x</p>"))
+	}()
+
+	changed, err := be.Idle(ctx)
+	if err != nil {
+		t.Fatalf("Idle() error: %v", err)
+	}
+	if !changed {
+		t.Error("Idle() reported no change after a message was delivered")
+	}
+	<-delivered
+}
+
+// The supervisor cancels the context to shut the loop down. Blocking past that
+// would leave a goroutine holding a connection open after the window closed.
+func TestIdleReturnsWhenTheContextIsCancelled(t *testing.T) {
+	addr, _ := startFakeServer(t, serverCaps(imap.CapIdle))
+
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(context.Background(), "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	changed, err := be.Idle(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Idle() error = %v, want context.Canceled", err)
+	}
+	if changed {
+		t.Error("Idle() reported a change on cancellation")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Idle() took %s to notice cancellation", elapsed)
+	}
+}
+
+// A server that does not advertise IDLE has to be told so, not discovered by
+// a command that hangs until the connection times out.
+//
+// Checked against the struct rather than a live server: what the fake
+// advertises is go-imap's business (IMAP4rev2 subsumes IDLE, so a rev2 server
+// cannot be made to lack it), while the refusal is ours.
+func TestIdleIsRefusedWhenTheServerDoesNotAdvertiseIt(t *testing.T) {
+	cl := &client{caps: Capabilities{Idle: false}}
+
+	if _, err := cl.Idle(context.Background()); err == nil {
+		t.Error("Idle() succeeded against a server without the capability")
 	}
 }

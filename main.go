@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"log"
@@ -111,6 +112,18 @@ func run(debug bool) error {
 		BackgroundColour: application.NewRGB(255, 255, 255),
 		URL:              "/",
 	})
+
+	// Live sync starts before the window opens and stops when Run returns.
+	// Everything the IDLE loop does hangs off this context, so closing the
+	// window closes every IMAP connection with it.
+	watchCtx, stopWatching := context.WithCancel(context.Background())
+	defer stopWatching()
+
+	if err := service.StartWatching(watchCtx); err != nil {
+		// Not fatal: the window is still useful with what is already on disk,
+		// and a manual sync still works. Live updates are what is lost.
+		logger.Error("live sync could not be started", "err", err)
+	}
 
 	logger.Info("starting", "data_dir", dataDir, "debug", debug)
 

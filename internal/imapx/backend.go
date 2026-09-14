@@ -75,6 +75,10 @@ type MailBackend interface {
 	// mailbox. Bodies are deliberately not fetched.
 	FetchHeaders(ctx context.Context, r UIDRange) ([]model.Message, error)
 
+	// Idle waits for the server to report that the selected mailbox changed,
+	// returning true when it did. It blocks until then or until ctx is done.
+	Idle(ctx context.Context) (bool, error)
+
 	// FetchFlags returns UIDs and their current flags for a range, without
 	// envelopes or bodies. This is the cheap half of a delta sync.
 	//

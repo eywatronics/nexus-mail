@@ -17,6 +17,13 @@ import (
 type client struct {
 	c    *imapclient.Client
 	caps Capabilities
+
+	// changes carries a signal from the server's unilateral responses to
+	// whoever is sitting in Idle. Buffered to one and written without
+	// blocking: several announcements in a row still mean one thing to us,
+	// "something moved, go and look", and a blocking write here would stall
+	// go-imap's reader goroutine.
+	changes chan struct{}
 }
 
 // Dial connects, authenticates with the provider's SASL client and records the
@@ -24,14 +31,34 @@ type client struct {
 func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (MailBackend, error) {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 
+	changes := make(chan struct{}, 1)
+	notify := func() {
+		select {
+		case changes <- struct{}{}:
+		default: // a signal is already pending; one is enough
+		}
+	}
+
+	// Only the responses that mean "the mailbox is not what you last saw" are
+	// wired up. The Fetch handler is deliberately left nil: go-imap requires
+	// whoever takes it to fully consume the message data, and we do not want
+	// the message here — we want to know to run a delta pass, which will
+	// fetch properly.
+	opts := &imapclient.Options{
+		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
+			Expunge: func(uint32) { notify() },
+			Mailbox: func(*imapclient.UnilateralDataMailbox) { notify() },
+		},
+	}
+
 	var (
 		c   *imapclient.Client
 		err error
 	)
 	if cfg.TLS {
-		c, err = imapclient.DialTLS(addr, nil)
+		c, err = imapclient.DialTLS(addr, opts)
 	} else {
-		c, err = imapclient.DialInsecure(addr, nil)
+		c, err = imapclient.DialInsecure(addr, opts)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("imapx: dial %s: %w", addr, err)
@@ -56,7 +83,8 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 	}
 
 	return &client{
-		c: c,
+		c:       c,
+		changes: changes,
 		caps: Capabilities{
 			CondStore: caps.Has(imap.CapCondStore),
 			QResync:   caps.Has(imap.CapQResync),
@@ -184,6 +212,41 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 }
 
 // FetchBody pulls one whole message and extracts its text and HTML parts.
+// Idle waits for the server to say the selected mailbox changed.
+//
+// Returns true when the server announced something, or ctx.Err() when the
+// caller gave up. There is no timeout parameter on purpose: go-imap already
+// restarts the IDLE command every 28 minutes internally, which is the RFC 2177
+// requirement that would otherwise have to live here. A second restart timer
+// on top of that would close and reopen the command for no reason. A caller
+// that wants its own ceiling puts it on the context.
+func (cl *client) Idle(ctx context.Context) (bool, error) {
+	if !cl.caps.Idle {
+		return false, fmt.Errorf("imapx: server does not support IDLE")
+	}
+
+	idle, err := cl.c.Idle()
+	if err != nil {
+		return false, fmt.Errorf("imapx: starting IDLE: %w", err)
+	}
+
+	var changed bool
+	select {
+	case <-cl.changes:
+		changed = true
+	case <-ctx.Done():
+		_ = idle.Close()
+		return false, ctx.Err()
+	}
+
+	// Close reports a connection that died while we were waiting, which is the
+	// signal the supervisor needs to reconnect rather than loop.
+	if err := idle.Close(); err != nil {
+		return false, fmt.Errorf("imapx: ending IDLE: %w", err)
+	}
+	return changed, nil
+}
+
 // FetchFlags asks only for UIDs and flags.
 //
 // Two jobs in one call. With CONDSTORE (changedSince non-zero) the server

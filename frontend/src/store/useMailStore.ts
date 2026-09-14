@@ -30,6 +30,8 @@ interface MailState {
   setFolders: (folders: Folder[]) => void
   startMessageLoad: () => void
   appendMessages: (messages: Message[], hasMore: boolean) => void
+  /** Swaps the folder's list for a freshly fetched one, after a live sync. */
+  replaceMessages: (messages: Message[], hasMore: boolean) => void
   setSelectedFolder: (id: number | null) => void
   setSelectedMessage: (id: number | null) => void
   applySyncEvent: (name: string, payload: SyncEventPayload) => void
@@ -82,6 +84,19 @@ export const useMailStore = create<MailState>((set, get) => ({
       messages: [...state.messages, ...messages],
       hasMore,
       loadingMessages: false,
+    })),
+
+  replaceMessages: (messages, hasMore) =>
+    set((state) => ({
+      messages,
+      hasMore,
+      loadingMessages: false,
+      // A message expunged on another device is gone from the refresh.
+      // Keeping it selected would leave the reader asking the server for mail
+      // that no longer exists.
+      selectedMessageId: messages.some((m) => m.id === state.selectedMessageId)
+        ? state.selectedMessageId
+        : null,
     })),
 
   // Changing folder clears the list, the selection and pagination together.
