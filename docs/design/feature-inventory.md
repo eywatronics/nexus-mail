@@ -143,12 +143,12 @@ Diğer IMAP davranışları:
 | Başlık görüntüleme kipleri | Mikro / normal / tüm başlıklar | `mailnews/mime/public/nsIMimeEmitter.idl` | M5 |
 | Posta listesi başlıkları | `List-Unsubscribe`, `List-Post`, `List-Archive` | `mail/base/content/msgHdrView.inc.xhtml` | M8 |
 | Gövde kipi | Özgün HTML / sade HTML / düz metin | `mail/base/content/messenger-menubar.inc.xhtml` (`viewBodyMenu`) | M5 |
-| **Ekleri indir / aç / kaydet / ayır** | | `mail/base/content/msgAttachmentView.inc.xhtml`, `mail/modules/AttachmentInfo.sys.mjs` | M5 |
+| **Ekleri indir / aç / kaydet / ayır** | Ayırma yok: ek sunucudan silinmiyor | `mail/base/content/msgAttachmentView.inc.xhtml`, `mail/modules/AttachmentInfo.sys.mjs` | ✔ M5 |
 | Satır içi ek gösterimi | Resimleri gövde içinde göstermek | `mail/base/content/msgHdrView.js` | M5 |
-| Kaynağı görüntüle | Ham RFC 5322 | `mail/base/content/viewSource.js` | M5 |
-| `.eml` olarak kaydet | | `mailnews/base/public/nsIMessenger.idl` (`saveAs`) | M5 |
-| Yazdır | | `mail/base/content/printUtils.js` | M5 |
-| **Kodlamayı onar** | Yanlış çözülmüş mesaj için charset seçici | `mail/base/content/messenger-menubar.inc.xhtml` (`repair-text-encoding-button`) | M5 |
+| Kaynağı görüntüle | Ham RFC 5322 | `mail/base/content/viewSource.js` | ✔ M5 |
+| `.eml` olarak kaydet | Bayt bayt, yeniden kodlanmadan | `mailnews/base/public/nsIMessenger.idl` (`saveAs`) | ✔ M5 |
+| Yazdır | Sandbox'lı iframe'den çağrılamıyor; ayrı pencere gerekiyor | `mail/base/content/printUtils.js` | M6 |
+| **Kodlamayı onar** | Yanlış çözülmüş mesaj için charset seçici | `mail/base/content/messenger-menubar.inc.xhtml` (`repair-text-encoding-button`) | ✔ M5 |
 | Mesaj gövdesinde karanlık mod | HTML maili koyu temaya uydurmak | `mail/base/content/modules/DarkReader.mjs` | M5 |
 | Mesajda bul | Gövde içinde arama çubuğu | `mail/base/content/widgets/lazy-findbar.mjs` | M5 |
 | Okundu işaretleme davranışı | Görüntülemede / gecikmeli / açınca / tarihe göre | `mail/components/preferences/general.inc.xhtml` | M5 |

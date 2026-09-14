@@ -17,7 +17,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Planlandı |
-| **M5** | Okuma deneyimini tamamla | Yeni |
+| **M5** | Okuma deneyimini tamamla | Sürüyor |
 | **M6** | Gönderme | Yeni |
 | **M7** | Kişiler | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
@@ -38,15 +38,33 @@ sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
 M1'in yarım bıraktığı yer. Küçük, birbirinden bağımsız parçalar; her biri tek
 başına teslim edilebilir.
 
-- Ek indirme, açma, kaydetme (`attachments` tablosu hazır, indirme yok)
+- ~~Ek indirme, açma, kaydetme~~ — **bitti**
+- ~~Kaynağı görüntüle, `.eml` kaydet~~ — **bitti**
+- ~~Kodlamayı onar: yanlış çözülmüş mesaj için charset seçici~~ — **bitti**
 - Konuşma gruplama — `thread_id` şemada var, arayüz yok
-- Kaynağı görüntüle, `.eml` kaydet, yazdır
-- Kodlamayı onar: yanlış çözülmüş mesaj için charset seçici
 - Gövde kipi: özgün HTML / sade HTML / düz metin
 - Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
 - SPECIAL-USE ile klasör rolleri — M6'nın "Gönderilenler hangi klasör" sorusunun cevabı
 - UTF8=ACCEPT: Türkçe klasör adları
 - Mesajda bul, okundu işaretleme davranışı, geri al/yinele
+
+### Yazdırma neden burada değil
+
+Envanterde "kaynağı görüntüle, `.eml` kaydet, **yazdır**" tek satırdı; ilk
+ikisi yapıldı, üçüncüsü bilerek yapılmadı.
+
+Okuma paneli `allow-same-origin` taşımayan bir iframe. Bu, frontend'deki tek en
+önemli satır: mail'e bu uygulamanın origin'ini vermemek. Ama bunun bedeli,
+ana pencerenin `iframe.contentWindow` üzerine hiç uzanamaması — yani
+`contentWindow.print()` çağrılamaz. Yazdırmayı çalıştırmanın yolu ya sandbox'ı
+gevşetmek ya da gövdeyi kendi origin'imizde render etmek; ikisi de panelin
+varlık sebebini iptal ediyor.
+
+Şimdilik `.eml` kaydetme bu ihtiyacın pratik karşılığı: dosya diskte, istenen
+her şeyle açılabiliyor. Gerçek çözüm muhtemelen ayrı bir yazdırma penceresi
+(Wails çoklu pencere) ve orada aynı sanitize edilmiş gövdeyi kendi belgesi
+olarak render etmek; M6'da compose penceresi için zaten kurulacak altyapıyla
+birlikte ele alınacak.
 
 **Kabul:** gerçek bir hesapta ekli bir mesaj açılıp eki diske kaydedilebiliyor;
 ISO-8859-9 kodlaması bozuk gelen bir mesaj elle düzeltilebiliyor; konuşma
