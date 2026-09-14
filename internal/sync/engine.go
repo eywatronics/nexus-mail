@@ -58,10 +58,55 @@ type Engine struct {
 	// can write it.
 	retentionMu sync.RWMutex
 	retention   model.RetentionPolicy
+
+	// nudges lets the UI wake a watch loop that is sitting in IDLE. Without
+	// it a queued change waits for the server to happen to say something,
+	// which on a quiet mailbox can be hours.
+	nudgeMu sync.Mutex
+	nudges  map[int64]chan struct{}
 }
 
 func New(s Store, d Dialer) *Engine {
-	return &Engine{store: s, dial: d, retention: model.DefaultRetention}
+	return &Engine{
+		store:     s,
+		dial:      d,
+		retention: model.DefaultRetention,
+		nudges:    map[int64]chan struct{}{},
+	}
+}
+
+// Nudge asks the watch loop for an account to stop waiting and drain the queue
+// now. Safe to call for an account nobody is watching, which is the normal
+// case while a connection is down.
+func (e *Engine) Nudge(accountID int64) {
+	e.nudgeMu.Lock()
+	ch, ok := e.nudges[accountID]
+	e.nudgeMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- struct{}{}:
+	default: // a wake-up is already pending; one is enough
+	}
+}
+
+// registerNudges gives one watch loop a channel to be woken through, and
+// returns the function that takes it away again.
+func (e *Engine) registerNudges(accountID int64) (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+
+	e.nudgeMu.Lock()
+	e.nudges[accountID] = ch
+	e.nudgeMu.Unlock()
+
+	return ch, func() {
+		e.nudgeMu.Lock()
+		if e.nudges[accountID] == ch {
+			delete(e.nudges, accountID)
+		}
+		e.nudgeMu.Unlock()
+	}
 }
 
 // SetRetention replaces the retention policy. A zero policy keeps everything,

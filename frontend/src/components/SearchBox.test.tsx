@@ -233,3 +233,57 @@ describe('keyboard navigation', () => {
     expect(useMailStore.getState().searching).toBe(false)
   })
 })
+
+describe('message actions', () => {
+  const seed = (overrides: Partial<Message> = {}) =>
+    useMailStore.setState({
+      selectedFolderId: 1,
+      messages: [{ ...message(1), ...overrides }, message(2)],
+      selectedMessageId: 1,
+    })
+
+  it('toggles read with r', () => {
+    renderHook(() => useMessageShortcuts())
+    seed({ isRead: true })
+
+    fireEvent.keyDown(window, { key: 'r' })
+
+    expect(useMailStore.getState().messages[0].isRead).toBe(false)
+  })
+
+  it('toggles starred with s', () => {
+    renderHook(() => useMessageShortcuts())
+    seed({ isStarred: false })
+
+    fireEvent.keyDown(window, { key: 's' })
+
+    expect(useMailStore.getState().messages[0].isStarred).toBe(true)
+  })
+
+  // Leaving the reader staring at an empty pane after every delete would make
+  // clearing a mailbox a chore of re-selecting after each keystroke.
+  it('moves the selection on before deleting', () => {
+    renderHook(() => useMessageShortcuts())
+    seed()
+
+    fireEvent.keyDown(window, { key: 'Delete' })
+
+    const state = useMailStore.getState()
+    expect(state.messages.map((m) => m.id)).toEqual([2])
+    expect(state.selectedMessageId).toBe(2)
+  })
+
+  // The same guard as the navigation keys: typing "star" in the search box
+  // must not star anything.
+  it('ignores action keys aimed at a text field', () => {
+    renderHook(() => useMessageShortcuts())
+    render(<SearchBox />)
+    seed({ isStarred: false })
+
+    const input = screen.getByRole('searchbox')
+    input.focus()
+    fireEvent.keyDown(input, { key: 's' })
+
+    expect(useMailStore.getState().messages[0].isStarred).toBe(false)
+  })
+})

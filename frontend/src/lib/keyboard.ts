@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { applyDelete, applyRead, applyStar, selectedIds, selectedMessage } from './actions'
 import { useMailStore } from '../store/useMailStore'
 
 /**
@@ -59,6 +60,36 @@ export function useMessageShortcuts() {
           event.preventDefault()
           store.selectRelative(-1)
           break
+
+        // The action keys toggle rather than set, so the same key both does
+        // and undoes the thing — which is what a reader pressing it twice
+        // expects, and what makes it safe to press without looking.
+        case 'r': {
+          const current = selectedMessage()
+          if (!current) break
+          event.preventDefault()
+          void applyRead(selectedIds(), !current.isRead)
+          break
+        }
+        case 's': {
+          const current = selectedMessage()
+          if (!current) break
+          event.preventDefault()
+          void applyStar(selectedIds(), !current.isStarred)
+          break
+        }
+
+        // Delete moves the selection on first, so the reader is left looking
+        // at the next message rather than at an empty pane.
+        case 'Delete':
+        case '#': {
+          const ids = selectedIds()
+          if (ids.length === 0) break
+          event.preventDefault()
+          store.selectRelative(1)
+          void applyDelete(ids)
+          break
+        }
       }
     }
 

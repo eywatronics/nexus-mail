@@ -136,3 +136,69 @@ describe('message header', () => {
     expect(iframe.getAttribute('src')).toBe('/mail-body/42')
   })
 })
+
+describe('message actions', () => {
+  const seedSelected = (overrides: Partial<import('../lib/api').Message> = {}) =>
+    useMailStore.setState({
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          subject: 'Konu',
+          fromName: 'Gönderen',
+          fromAddr: 'g@example.com',
+          snippet: 'önizleme',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+          ...overrides,
+        },
+      ],
+    })
+
+  it('toggles read from the header', async () => {
+    seedSelected({ isRead: true })
+    const { getByTestId } = await renderSelected(1)
+
+    getByTestId('toggle-read').click()
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages[0].isRead).toBe(false)
+    })
+  })
+
+  it('toggles the star from the header', async () => {
+    seedSelected({ isStarred: false })
+    const { getByTestId } = await renderSelected(1)
+
+    getByTestId('toggle-star').click()
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages[0].isStarred).toBe(true)
+    })
+  })
+
+  it('deletes from the header', async () => {
+    seedSelected()
+    const { getByTestId } = await renderSelected(1)
+
+    getByTestId('delete-message').click()
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages).toHaveLength(0)
+    })
+  })
+
+  // A message the list has not loaded has no state to act on, so the header —
+  // and its buttons — are not drawn at all.
+  it('shows no actions when the message is not in the loaded page', async () => {
+    useMailStore.setState({ messages: [] })
+    const { container } = await renderSelected(42)
+
+    expect(container.querySelector('[data-testid="toggle-read"]')).toBeNull()
+  })
+})

@@ -84,3 +84,15 @@ func messageToDTO(m model.Message) MessageDTO {
 		BodyFetched:      m.BodyFetched,
 	}
 }
+
+// PendingChangesDTO tells the window how much of the user's intent has not
+// reached the server, and how much never will.
+type PendingChangesDTO struct {
+	// Pending is still on its way.
+	Pending int `json:"pending"`
+	// Dropped could not be applied because the server recreated the mailbox
+	// the change was queued against.
+	Dropped int `json:"dropped"`
+	// Failed hit something retrying cannot fix.
+	Failed int `json:"failed"`
+}

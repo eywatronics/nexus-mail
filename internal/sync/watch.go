@@ -84,6 +84,9 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 	}
 	defer func() { _ = be.Close() }()
 
+	nudge, unregister := e.registerNudges(acct.ID)
+	defer unregister()
+
 	synced := false
 	purged := false
 	for {
@@ -125,7 +128,7 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 			onPass()
 		}
 
-		if err := e.waitForChange(ctx, be, *inbox); err != nil {
+		if err := e.waitForChange(ctx, be, *inbox, nudge); err != nil {
 			return synced, err
 		}
 	}
@@ -188,13 +191,15 @@ func (e *Engine) purgeAccount(ctx context.Context, acct model.Account) error {
 
 // waitForChange blocks until the server says something changed, or until the
 // poll interval elapses on a server that cannot say so.
-func (e *Engine) waitForChange(ctx context.Context, be imapx.MailBackend, inbox model.Folder) error {
+func (e *Engine) waitForChange(ctx context.Context, be imapx.MailBackend, inbox model.Folder, nudge <-chan struct{}) error {
 	if !be.Capabilities().Idle {
 		// Without IDLE the only option is to look again later. Returning an
 		// error instead would send this through the reconnect path, which
 		// would reopen the connection every couple of seconds.
 		select {
 		case <-time.After(pollInterval):
+			return nil
+		case <-nudge:
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -204,8 +209,28 @@ func (e *Engine) waitForChange(ctx context.Context, be imapx.MailBackend, inbox 
 	if _, err := be.Select(ctx, inbox.Path); err != nil {
 		return fmt.Errorf("sync: selecting %q to idle on: %w", inbox.Path, err)
 	}
+
+	// A nudge has to be able to interrupt IDLE, and the only way out of a
+	// blocked IDLE is cancelling its context. So the nudge gets its own
+	// derived context rather than a channel the call could select on.
+	idleCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-nudge:
+			cancel()
+		case <-idleCtx.Done():
+		}
+	}()
+
 	// The wake tells us something moved, not what. The next pass finds out.
-	if _, err := be.Idle(ctx); err != nil {
+	if _, err := be.Idle(idleCtx); err != nil {
+		// Cancelled by the nudge rather than by shutdown: that is a wake-up,
+		// not a failure, and treating it as one would send a healthy
+		// connection through the reconnect path on every user action.
+		if ctx.Err() == nil && errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return fmt.Errorf("sync: idling on %q: %w", inbox.Path, err)
 	}
 	return nil

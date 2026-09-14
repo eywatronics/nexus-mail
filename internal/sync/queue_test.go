@@ -301,3 +301,51 @@ func TestWatchDrainsTheQueue(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// Without a nudge a queued change waits for the server to happen to say
+// something, which on a quiet mailbox can be hours. Marking a message read
+// has to reach the server in seconds.
+func TestNudgeWakesTheWatchLoopToDrain(t *testing.T) {
+	be := newFakeBackend()
+	eng, s, acct, folder := syncedInbox(t, be, 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- eng.Watch(ctx, acct, nil) }()
+
+	// Let the loop settle into IDLE with an empty queue.
+	waitUntil(t, func() bool { return be.idleCalls.Load() > 0 })
+	if writes := be.recordedWrites(); len(writes) != 0 {
+		t.Fatalf("precondition failed: the server already received %+v", writes)
+	}
+
+	enqueue(t, s, model.Operation{
+		AccountID: acct.ID, FolderID: folder.ID, UIDValidity: folder.UIDValidity,
+		Kind: model.OpAddFlags, UIDs: []uint32{1}, Flags: []string{model.FlagSeen},
+	})
+	eng.Nudge(acct.ID)
+
+	waitUntil(t, func() bool {
+		for _, w := range be.recordedWrites() {
+			if w.kind == "store" {
+				return true
+			}
+		}
+		return false
+	})
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Watch() error = %v, want a clean exit after a nudge", err)
+	}
+}
+
+// A nudge for an account nobody is watching must not block or panic. The UI
+// can act on an account whose connection is down.
+func TestNudgeForAnUnwatchedAccountIsHarmless(t *testing.T) {
+	be := newFakeBackend()
+	eng, _, acct, _ := syncedInbox(t, be, 1)
+
+	eng.Nudge(acct.ID)
+	eng.Nudge(999)
+}

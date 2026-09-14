@@ -1,8 +1,9 @@
-import { Envelope, EyeSlash } from '@phosphor-icons/react'
+import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL } from '../lib/api'
+import { applyDelete, applyRead, applyStar } from '../lib/actions'
 import { useMailStore } from '../store/useMailStore'
-import { BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
+import { BUTTON_GHOST, BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
 
 /**
  * The sandbox attribute is deliberately minimal.
@@ -90,9 +91,64 @@ export function MessageView() {
           what it is about. */}
       {message && (
         <header className={`border-b px-6 py-4 ${SURFACE.divider}`}>
-          <h1 className={`text-base font-semibold leading-snug ${TEXT.primary}`}>
-            {message.subject || '(no subject)'}
-          </h1>
+          <div className="flex items-start gap-3">
+            <h1 className={`min-w-0 flex-1 text-base font-semibold leading-snug ${TEXT.primary}`}>
+              {message.subject || '(no subject)'}
+            </h1>
+
+            {/* The three things a reader does to a message without opening
+                anything else. Ghost buttons rather than a bordered toolbar:
+                the message is the content here, and chrome around it competes
+                with what the reader came for. */}
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                data-testid="toggle-read"
+                aria-label={message.isRead ? 'Mark as unread' : 'Mark as read'}
+                title={message.isRead ? 'Mark as unread (r)' : 'Mark as read (r)'}
+                onClick={() => void applyRead([message.id], !message.isRead)}
+                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+              >
+                {message.isRead ? (
+                  <Envelope size={ICON.size} weight={ICON.weight} aria-hidden />
+                ) : (
+                  <EnvelopeOpen size={ICON.size} weight={ICON.weight} aria-hidden />
+                )}
+              </button>
+
+              <button
+                type="button"
+                data-testid="toggle-star"
+                aria-label={message.isStarred ? 'Remove star' : 'Add star'}
+                title={message.isStarred ? 'Remove star (s)' : 'Add star (s)'}
+                onClick={() => void applyStar([message.id], !message.isStarred)}
+                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+              >
+                <Star
+                  size={ICON.size}
+                  weight={message.isStarred ? 'fill' : ICON.weight}
+                  aria-hidden
+                  className={message.isStarred ? 'text-[var(--color-accent)]' : undefined}
+                />
+              </button>
+
+              <button
+                type="button"
+                data-testid="delete-message"
+                aria-label="Delete"
+                title="Delete (Del)"
+                onClick={() => {
+                  // Move on first, so the reader is left looking at the next
+                  // message rather than an empty pane.
+                  useMailStore.getState().selectRelative(1)
+                  void applyDelete([message.id])
+                }}
+                className={`${BUTTON_GHOST} inline-flex items-center p-1.5`}
+              >
+                <Trash size={ICON.size} weight={ICON.weight} aria-hidden />
+              </button>
+            </div>
+          </div>
 
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className={`text-sm ${TEXT.primary}`}>

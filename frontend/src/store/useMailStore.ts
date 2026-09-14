@@ -32,6 +32,15 @@ interface MailState {
   appendMessages: (messages: Message[], hasMore: boolean) => void
   /** Swaps the folder's list for a freshly fetched one, after a live sync. */
   replaceMessages: (messages: Message[], hasMore: boolean) => void
+
+  /**
+   * Reflects a change the backend has already written, before any round trip.
+   * The database is the source of truth; this is the window catching up in the
+   * same frame the user clicked.
+   */
+  applyLocalFlag: (ids: number[], field: 'isRead' | 'isStarred', value: boolean) => void
+  /** Drops messages the user deleted or moved out of the current folder. */
+  removeLocalMessages: (ids: number[]) => void
   setSelectedFolder: (id: number | null) => void
   setSelectedMessage: (id: number | null) => void
   applySyncEvent: (name: string, payload: SyncEventPayload) => void
@@ -119,6 +128,34 @@ export const useMailStore = create<MailState>((set, get) => ({
     }),
 
   setSelectedMessage: (id) => set({ selectedMessageId: id }),
+
+  // Both lists are updated, because a search result and a folder row are two
+  // views of the same message. Starring one and not the other would read as a
+  // bug the moment the user closed the search.
+  applyLocalFlag: (ids, field, value) =>
+    set((state) => {
+      const touched = new Set(ids)
+      const patch = (list: Message[]) =>
+        list.map((m) => (touched.has(m.id) ? { ...m, [field]: value } : m))
+
+      return { messages: patch(state.messages), searchResults: patch(state.searchResults) }
+    }),
+
+  removeLocalMessages: (ids) =>
+    set((state) => {
+      const gone = new Set(ids)
+      const keep = (list: Message[]) => list.filter((m) => !gone.has(m.id))
+
+      return {
+        messages: keep(state.messages),
+        searchResults: keep(state.searchResults),
+        // Leaving a deleted message selected would keep the reading pane
+        // asking the backend for mail that is no longer there.
+        selectedMessageId: gone.has(state.selectedMessageId ?? -1)
+          ? null
+          : state.selectedMessageId,
+      }
+    }),
 
   applySyncEvent: (name, payload) =>
     set((state) => {

@@ -331,3 +331,71 @@ describe('live refresh', () => {
     expect(useMailStore.getState().visibleMessages()).toEqual([message(9)])
   })
 })
+
+describe('optimistic actions', () => {
+  it('flips the read state in place', () => {
+    const { setSelectedFolder, appendMessages, applyLocalFlag } = useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], false)
+
+    applyLocalFlag([1], 'isRead', true)
+
+    const byId = Object.fromEntries(useMailStore.getState().messages.map((m) => [m.id, m]))
+    expect(byId[1].isRead).toBe(true)
+    expect(byId[2].isRead).toBe(false)
+  })
+
+  it('flips the starred state in place', () => {
+    const { setSelectedFolder, appendMessages, applyLocalFlag } = useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1)], false)
+
+    applyLocalFlag([1], 'isStarred', true)
+    expect(useMailStore.getState().messages[0].isStarred).toBe(true)
+  })
+
+  // A search result and the folder list are two views of the same message. A
+  // star applied in one that did not show in the other would look like a bug.
+  it('updates search results as well as the folder list', () => {
+    const { setSelectedFolder, appendMessages, setSearchQuery, setSearchResults, applyLocalFlag } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1)], false)
+    setSearchQuery('konu')
+    setSearchResults([message(1)])
+
+    applyLocalFlag([1], 'isStarred', true)
+
+    expect(useMailStore.getState().searchResults[0].isStarred).toBe(true)
+    expect(useMailStore.getState().messages[0].isStarred).toBe(true)
+  })
+
+  it('removes deleted messages from both views and clears the selection', () => {
+    const { setSelectedFolder, appendMessages, setSelectedMessage, removeLocalMessages } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], false)
+    setSelectedMessage(1)
+
+    removeLocalMessages([1])
+
+    expect(useMailStore.getState().messages.map((m) => m.id)).toEqual([2])
+    expect(useMailStore.getState().selectedMessageId).toBeNull()
+  })
+
+  it('keeps a selection that was not deleted', () => {
+    const { setSelectedFolder, appendMessages, setSelectedMessage, removeLocalMessages } =
+      useMailStore.getState()
+
+    setSelectedFolder(1)
+    appendMessages([message(1), message(2)], false)
+    setSelectedMessage(2)
+
+    removeLocalMessages([1])
+    expect(useMailStore.getState().selectedMessageId).toBe(2)
+  })
+})

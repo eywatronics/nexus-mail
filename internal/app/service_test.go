@@ -697,3 +697,155 @@ func TestLoadConfigRejectsNegativeRetention(t *testing.T) {
 func (stubBackend) StoreFlags(context.Context, []uint32, []string, bool) error { return nil }
 func (stubBackend) Move(context.Context, []uint32, string) error               { return nil }
 func (stubBackend) Expunge(context.Context, []uint32) error                    { return nil }
+
+// syncedAccountWithMessages gets a service to the state the UI acts from:
+// an account with a synced inbox holding messages.
+func syncedAccountWithMessages(t *testing.T) (*MailService, *store.Store, AccountDTO, FolderDTO, []MessageDTO) {
+	t.Helper()
+
+	svc, _, s := newTestService(t, stubBackend{})
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	folders, err := svc.ListFolders(acct.ID)
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+	msgs, err := svc.ListMessages(inbox.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("the fixture has no messages")
+	}
+	return svc, s, acct, inbox, msgs
+}
+
+func pendingOps(t *testing.T, s *store.Store, accountID int64) []model.Operation {
+	t.Helper()
+
+	ops, err := s.ClaimOperations(context.Background(), accountID, 50)
+	if err != nil {
+		t.Fatalf("ClaimOperations() error: %v", err)
+	}
+	return ops
+}
+
+// The window shows the change immediately and the server hears about it
+// afterwards. That is the whole local-first bargain, and it only holds if both
+// halves actually happen.
+func TestMarkReadUpdatesLocallyAndQueues(t *testing.T) {
+	svc, s, acct, inbox, msgs := syncedAccountWithMessages(t)
+
+	// The fixture arrives already read, so unread is the change to make.
+	if err := svc.MarkRead([]int64{msgs[0].ID}, false); err != nil {
+		t.Fatalf("MarkRead() error: %v", err)
+	}
+
+	after, err := svc.ListMessages(inbox.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if after[0].IsRead {
+		t.Error("the message still reads as read in the window")
+	}
+
+	ops := pendingOps(t, s, acct.ID)
+	if len(ops) != 1 || ops[0].Kind != model.OpRemoveFlags {
+		t.Errorf("queued %+v, want a remove-flags for the seen flag", ops)
+	}
+}
+
+func TestSetStarredUpdatesLocallyAndQueues(t *testing.T) {
+	svc, s, acct, inbox, msgs := syncedAccountWithMessages(t)
+
+	if err := svc.SetStarred([]int64{msgs[0].ID}, true); err != nil {
+		t.Fatalf("SetStarred() error: %v", err)
+	}
+
+	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	if !after[0].IsStarred {
+		t.Error("the message is not starred in the window")
+	}
+	if ops := pendingOps(t, s, acct.ID); len(ops) != 1 || ops[0].Kind != model.OpAddFlags {
+		t.Errorf("queued %+v, want an add-flags", ops)
+	}
+}
+
+func TestDeleteMessagesRemovesLocallyAndQueues(t *testing.T) {
+	svc, s, acct, inbox, msgs := syncedAccountWithMessages(t)
+
+	if err := svc.DeleteMessages([]int64{msgs[0].ID}); err != nil {
+		t.Fatalf("DeleteMessages() error: %v", err)
+	}
+
+	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	for _, m := range after {
+		if m.ID == msgs[0].ID {
+			t.Error("the deleted message is still in the window")
+		}
+	}
+	if ops := pendingOps(t, s, acct.ID); len(ops) != 1 || ops[0].Kind != model.OpDelete {
+		t.Errorf("queued %+v, want a delete", ops)
+	}
+}
+
+func TestMoveMessagesRemovesFromTheSourceAndQueues(t *testing.T) {
+	svc, s, acct, inbox, msgs := syncedAccountWithMessages(t)
+
+	folders, _ := svc.ListFolders(acct.ID)
+	var other FolderDTO
+	for _, f := range folders {
+		if !f.IsInbox {
+			other = f
+		}
+	}
+	if other.ID == 0 {
+		t.Fatal("the fixture has no second folder")
+	}
+
+	if err := svc.MoveMessages([]int64{msgs[0].ID}, other.ID); err != nil {
+		t.Fatalf("MoveMessages() error: %v", err)
+	}
+
+	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	for _, m := range after {
+		if m.ID == msgs[0].ID {
+			t.Error("the moved message is still in the source folder")
+		}
+	}
+	ops := pendingOps(t, s, acct.ID)
+	if len(ops) != 1 || ops[0].Kind != model.OpMove || ops[0].TargetFolderID != other.ID {
+		t.Errorf("queued %+v, want a move to folder %d", ops, other.ID)
+	}
+}
+
+// An empty selection is what a keyboard shortcut sends when nothing is
+// selected. It must not be an error, and must not queue anything.
+func TestActionsOnAnEmptySelectionAreHarmless(t *testing.T) {
+	svc, s, acct, _, _ := syncedAccountWithMessages(t)
+
+	if err := svc.MarkRead(nil, true); err != nil {
+		t.Errorf("MarkRead(nil) error: %v", err)
+	}
+	if err := svc.SetStarred(nil, true); err != nil {
+		t.Errorf("SetStarred(nil) error: %v", err)
+	}
+	if err := svc.DeleteMessages(nil); err != nil {
+		t.Errorf("DeleteMessages(nil) error: %v", err)
+	}
+	if ops := pendingOps(t, s, acct.ID); len(ops) != 0 {
+		t.Errorf("an empty selection queued %+v", ops)
+	}
+}

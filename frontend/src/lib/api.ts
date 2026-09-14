@@ -62,6 +62,18 @@ export const openFolder = (folderId: number, limit: number) =>
 export const searchMessages = (accountId: number, query: string, limit: number) =>
   MailService.SearchMessages(accountId, query, limit) as Promise<Message[]>
 
+export const markRead = (messageIds: number[], read: boolean) =>
+  MailService.MarkRead(messageIds, read)
+
+export const setStarred = (messageIds: number[], starred: boolean) =>
+  MailService.SetStarred(messageIds, starred)
+
+export const deleteMessages = (messageIds: number[]) =>
+  MailService.DeleteMessages(messageIds)
+
+export const moveMessages = (messageIds: number[], targetFolderId: number) =>
+  MailService.MoveMessages(messageIds, targetFolderId)
+
 export const syncAccount = (accountId: number) => MailService.SyncAccount(accountId)
 
 export const exportLogs = () => MailService.ExportLogs() as Promise<LogBundle>
