@@ -69,12 +69,7 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 		return nil, err
 	}
 
-	saslClient, err := provider.SASLClient(ctx)
-	if err != nil {
-		_ = c.Close()
-		return nil, fmt.Errorf("imapx: obtaining credentials for %s: %w", cfg.Username, err)
-	}
-	if err := c.Authenticate(saslClient); err != nil {
+	if err := authenticate(ctx, c, provider); err != nil {
 		_ = c.Close()
 		return nil, fmt.Errorf("imapx: authentication failed for %s: %w", cfg.Username, err)
 	}

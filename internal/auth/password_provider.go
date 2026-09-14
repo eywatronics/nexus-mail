@@ -32,6 +32,14 @@ func (p *passwordProvider) SASLClient(_ context.Context) (sasl.Client, error) {
 	return sasl.NewPlainClient("", p.username, secret), nil
 }
 
+// Password hands back the secret so the IMAP layer can present it in whichever
+// way the server will accept. See PasswordCredential for why this exists.
+func (p *passwordProvider) Password(_ context.Context) (string, error) {
+	return p.store.Get(p.secretRef)
+}
+
+func (p *passwordProvider) Username() string { return p.username }
+
 // Refresh is a no-op: a password does not expire on its own. If it stops
 // working the user changed it, which no amount of retrying will fix.
 func (p *passwordProvider) Refresh(_ context.Context) error { return nil }
