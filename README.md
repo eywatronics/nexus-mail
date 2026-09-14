@@ -55,16 +55,21 @@ Geliştirme aşamasında. **M1–M3 bitti:** hesap bağlama, canlı senkron ve
 okundu, yıldız, taşı ve sil işlemleri anında görünüyor, kuyruğa alınıyor ve
 bağlantı geldiğinde sunucuya gidiyor.
 
-Henüz **gönderme yok** (M6) ve **ek indirme yok** (M5); sıradaki iş sistem
-tepsisi ve bildirimler (M4).
+**M5 büyük ölçüde bitti:** ekleri indirme, konuşma gruplama, kaynağı görüntüleme
+ve `.eml` kaydetme, kodlama onarımı, gövde görüntüleme kipleri, SPECIAL-USE
+klasör rolleri. **M4 kısmen bitti:** pencere kapanınca uygulama tepside kalıyor
+ve senkron sürüyor, yeni mail bildirimi gönderiyor.
+
+Henüz **gönderme yok** (M6). Yazdırma, sandbox'lı okuma paneli yüzünden ayrı bir
+pencere gerektiriyor ve M6'ya ertelendi.
 
 | Kilometre taşı | Kapsam | Durum |
 |---|---|---|
 | **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
-| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Planlandı |
-| **M5** | Ekler, konuşma gruplama, kaynak/yazdır/kaydet, kodlama onarımı | Planlandı |
+| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
+| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri | Büyük ölçüde bitti |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
 | **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
 | **M8** | Etiket, arşiv, birleşik gelen kutusu, gövde araması, kural motoru, junk | Planlandı |
@@ -177,6 +182,23 @@ orada durmaya devam eder. **Yıldızlı mesajlar yaşına bakılmaksızın muaft
 
 Her ikisine de `0` yazmak pencereyi kapatır: **her şey tutulur.** Diski nasıl
 kullanacağınız sizin kararınız; yerel-önce bir uygulamada doğru varsayılan bu.
+
+### Bildirim önizlemesi
+
+Yeni mail bildirimi varsayılan olarak gönderenin adını ve konuyu gösterir.
+Windows bildirimleri aksi söylenmedikçe **kilit ekranında** da gösterir;
+masanın başında duran birinin kimin ne hakkında yazdığını okuyabilmesini
+istemiyorsanız:
+
+```json
+{
+  "notificationPreview": false
+}
+```
+
+O zaman bildirim yalnızca kaç mesaj geldiğini ve hangi hesaba geldiğini söyler.
+Windows'un kendi "kilitliyken bildirim içeriğini gizle" ayarı da aynı işi
+sistem genelinde yapar.
 
 ## Katkıda bulunma
 

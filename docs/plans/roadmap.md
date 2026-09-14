@@ -16,7 +16,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M1** | Salt okunur istemci: hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
-| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Planlandı |
+| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Kısmen bitti |
 | **M5** | Okuma deneyimini tamamla | Sürüyor |
 | **M6** | Gönderme | Yeni |
 | **M7** | Kişiler | Yeni |
@@ -30,6 +30,30 @@ bir taşın üzerine bir sonraki başlamaz.
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
 sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
+
+---
+
+## M4 — Tepsi, bildirimler, arka plan yaşam döngüsü
+
+**Bitti:**
+
+- Pencere kapanınca uygulama kapanmıyor, tepside kalıyor; izleyiciler
+  çalışmaya devam ediyor
+- Tepsi menüsü: aç, şimdi senkronla, çık
+- Okunmamış sayısı tepsi ipucunda
+- Yeni mail geldiğinde işletim sistemi bildirimi, önizleme ayarlı
+  (`notificationPreview`, varsayılan açık)
+
+**Kalan:**
+
+- Varsayılan posta istemcisi olarak ayarla (`mail/components/shell`)
+- Görev çubuğu ilerlemesi, Jump List, macOS dock rozeti
+- Açılışta başlat
+
+**Doğrulanmayan:** toast'ın gerçekten teslim edildiği. Bildirim servisi çalışan
+bir Wails uygulaması gerektirdiği için tek başına denenemiyor; gerçek bir
+hesaba mail gelerek doğrulanmalı. Pencere kapatmanın süreci öldürmediği ise
+çalışan sürece `WM_CLOSE` gönderilerek doğrulandı.
 
 ---
 
