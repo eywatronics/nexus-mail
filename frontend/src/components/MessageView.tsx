@@ -67,6 +67,18 @@ export function MessageView() {
     [settledId, allowRemote],
   )
 
+  // Reading a message marks it read. Tied to the settled id rather than the
+  // selection, so holding j through a folder does not mark fifty messages read
+  // on the way past — only the one the reader actually stopped on.
+  useEffect(() => {
+    if (settledId === null) return
+
+    const current = useMailStore.getState().visibleMessages().find((m) => m.id === settledId)
+    if (!current || current.isRead) return
+
+    void applyRead([settledId], true)
+  }, [settledId])
+
   if (selectedMessageId === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">

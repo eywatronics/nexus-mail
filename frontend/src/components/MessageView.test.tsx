@@ -285,3 +285,42 @@ describe('move menu', () => {
     expect(queryByTestId('open-move-menu')).toBeNull()
   })
 })
+
+describe('marking read by reading', () => {
+  const unread = {
+    id: 1,
+    folderId: 1,
+    uid: 1,
+    threadId: '<t1@x>',
+    subject: 'Konu',
+    fromName: 'Gönderen',
+    fromAddr: 'g@example.com',
+    snippet: 'önizleme',
+    internalDateUnix: 1700000000,
+    isRead: false,
+    isStarred: false,
+    hasAttachments: false,
+    bodyFetched: false,
+  }
+
+  it('marks the message read once its body is shown', async () => {
+    useMailStore.setState({ messages: [unread] })
+    await renderSelected(1)
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages[0].isRead).toBe(true)
+    })
+  })
+
+  // A message that is already read must not queue a change. The reading pane
+  // renders constantly, and a command per render would be thousands of
+  // pointless round trips.
+  it('says nothing about a message that is already read', async () => {
+    useMailStore.setState({ messages: [{ ...unread, isRead: true }] })
+    await renderSelected(1)
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages[0].isRead).toBe(true)
+    })
+  })
+})
