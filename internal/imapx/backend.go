@@ -32,6 +32,10 @@ type Capabilities struct {
 	QResync   bool
 	Move      bool
 	Idle      bool
+	// UIDPlus is what makes a scoped expunge possible. Without it the only
+	// EXPUNGE available removes every message in the mailbox flagged deleted,
+	// including ones another client flagged.
+	UIDPlus bool
 }
 
 // SelectResult carries the mailbox state a SELECT reports. HighestModSeq is
@@ -74,6 +78,17 @@ type MailBackend interface {
 	// FetchHeaders returns message headers for a UID range in the selected
 	// mailbox. Bodies are deliberately not fetched.
 	FetchHeaders(ctx context.Context, r UIDRange) ([]model.Message, error)
+
+	// StoreFlags adds or removes flags on a set of UIDs in the selected
+	// mailbox. Adding a flag that is already set is harmless, which is what
+	// makes a retry safe.
+	StoreFlags(ctx context.Context, uids []uint32, flags []string, add bool) error
+
+	// Move relocates messages from the selected mailbox to another one.
+	Move(ctx context.Context, uids []uint32, destPath string) error
+
+	// Expunge permanently removes messages from the selected mailbox.
+	Expunge(ctx context.Context, uids []uint32) error
 
 	// Idle waits for the server to report that the selected mailbox changed,
 	// returning true when it did. It blocks until then or until ctx is done.

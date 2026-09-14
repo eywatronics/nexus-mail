@@ -96,6 +96,19 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 		}
 		synced = true
 
+		// Outgoing changes go out before anything else is read. A queue
+		// nothing drains is a queue that never reaches the server, and the
+		// user's change would sit on disk looking applied.
+		claimed, err := e.store.ClaimOperations(ctx, acct.ID, queueBatchSize)
+		if err != nil {
+			return synced, err
+		}
+		if len(claimed) > 0 {
+			if err := e.drainOn(ctx, be, acct, claimed); err != nil {
+				return synced, err
+			}
+		}
+
 		// Once per connection, not once per wake. The purge walks every row in
 		// a folder, and doing that each time a message arrives would turn a
 		// twenty-five thousand row scan into a per-message cost. A connection

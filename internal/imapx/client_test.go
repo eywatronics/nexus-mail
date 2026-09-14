@@ -476,3 +476,170 @@ func TestIdleIsRefusedWhenTheServerDoesNotAdvertiseIt(t *testing.T) {
 		t.Error("Idle() succeeded against a server without the capability")
 	}
 }
+
+// Marking a message read is the most common thing a mail client does, and the
+// only proof it worked is asking the server again.
+func TestStoreFlagsAddsAndRemoves(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Konu", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	before, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil || len(before) != 1 {
+		t.Fatalf("FetchFlags() = %v, %v", before, err)
+	}
+	uid := before[0].UID
+
+	if err := be.StoreFlags(ctx, []uint32{uid}, []string{model.FlagFlagged}, true); err != nil {
+		t.Fatalf("StoreFlags(add) error: %v", err)
+	}
+	if !hasFlag(t, be, uid, model.FlagFlagged) {
+		t.Error("the flag was not added")
+	}
+
+	if err := be.StoreFlags(ctx, []uint32{uid}, []string{model.FlagFlagged}, false); err != nil {
+		t.Fatalf("StoreFlags(remove) error: %v", err)
+	}
+	if hasFlag(t, be, uid, model.FlagFlagged) {
+		t.Error("the flag was not removed")
+	}
+}
+
+// Adding a flag twice has to be harmless: the queue retries, and a retry that
+// corrupted state would make every dropped connection a data problem.
+func TestStoreFlagsIsIdempotent(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Konu", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+	got, _ := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	uid := got[0].UID
+
+	for range 3 {
+		if err := be.StoreFlags(ctx, []uint32{uid}, []string{model.FlagFlagged}, true); err != nil {
+			t.Fatalf("StoreFlags() error: %v", err)
+		}
+	}
+
+	after, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	var flagged int
+	for _, f := range after[0].Flags {
+		if strings.EqualFold(f, model.FlagFlagged) {
+			flagged++
+		}
+	}
+	if flagged != 1 {
+		t.Errorf("the flag appears %d times after three adds", flagged)
+	}
+}
+
+func TestMoveRelocatesMessages(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps(imap.CapMove))
+	if err := user.Create("Arşiv", nil); err != nil {
+		t.Fatalf("create Arşiv: %v", err)
+	}
+	appendMessage(t, user, "INBOX", htmlMessage("Taşınacak", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+	got, _ := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+
+	if err := be.Move(ctx, []uint32{got[0].UID}, "Arşiv"); err != nil {
+		t.Fatalf("Move() error: %v", err)
+	}
+
+	if left, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0); err != nil || len(left) != 0 {
+		t.Errorf("INBOX still holds %v after the move (err %v)", left, err)
+	}
+	if _, err := be.Select(ctx, "Arşiv"); err != nil {
+		t.Fatalf("Select(Arşiv) error: %v", err)
+	}
+	arrived, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil || len(arrived) != 1 {
+		t.Errorf("Arşiv holds %v after the move (err %v)", arrived, err)
+	}
+}
+
+func TestExpungeRemovesTheNamedMessages(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps(imap.CapUIDPlus))
+	for range 2 {
+		appendMessage(t, user, "INBOX", htmlMessage("Silinecek", "a@example.com", "<p>x</p>"))
+	}
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+	got, _ := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if len(got) != 2 {
+		t.Fatalf("precondition failed: INBOX holds %d messages", len(got))
+	}
+
+	if err := be.Expunge(ctx, []uint32{got[0].UID}); err != nil {
+		t.Fatalf("Expunge() error: %v", err)
+	}
+
+	left, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(left) != 1 || left[0].UID != got[1].UID {
+		t.Errorf("INBOX holds %v, want only the message that was not named", left)
+	}
+}
+
+// An operation naming nothing would send a command with an empty set, which
+// some servers reject and others answer surprisingly.
+func TestWriteCommandsRejectAnEmptyUIDSet(t *testing.T) {
+	addr, _ := startFakeServer(t, serverCaps())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	if err := be.StoreFlags(ctx, nil, []string{model.FlagSeen}, true); err == nil {
+		t.Error("StoreFlags() accepted an empty UID set")
+	}
+	if err := be.Move(ctx, nil, "INBOX"); err == nil {
+		t.Error("Move() accepted an empty UID set")
+	}
+	if err := be.Expunge(ctx, nil); err == nil {
+		t.Error("Expunge() accepted an empty UID set")
+	}
+}
+
+func hasFlag(t *testing.T, be MailBackend, uid uint32, flag string) bool {
+	t.Helper()
+
+	updates, err := be.FetchFlags(context.Background(), UIDRange{Start: uid, End: uid}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(updates) == 0 {
+		return false
+	}
+	for _, f := range updates[0].Flags {
+		if strings.EqualFold(f, flag) {
+			return true
+		}
+	}
+	return false
+}

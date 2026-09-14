@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,10 @@ type fakeBackend struct {
 	idleWake  chan struct{}
 	idleErr   error
 	idleCalls atomic.Int32
+
+	// writes records every outgoing command; writeErr makes them all fail.
+	writes   []writeCall
+	writeErr error
 
 	selectCalls int
 	closed      bool
@@ -351,4 +356,129 @@ func (f *fakeBackend) wakeIdle() {
 	case f.idleWake <- struct{}{}:
 	default:
 	}
+}
+
+// writeCall records one outgoing command, so a test can assert what actually
+// reached the server rather than only what the database says afterwards.
+type writeCall struct {
+	kind  string // "store", "move", "expunge"
+	path  string
+	uids  []uint32
+	flags []string
+	add   bool
+	dest  string
+}
+
+func (f *fakeBackend) StoreFlags(_ context.Context, uids []uint32, flags []string, add bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.writes = append(f.writes, writeCall{
+		kind: "store", path: f.selected, uids: uids, flags: flags, add: add,
+	})
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+
+	for _, uid := range uids {
+		for i := range f.messages[f.selected] {
+			if f.messages[f.selected][i].UID != uid {
+				continue
+			}
+			f.messages[f.selected][i].Flags = applyFlags(
+				f.messages[f.selected][i].Flags, flags, add)
+			f.bumpModSeqLocked(f.selected, uid)
+		}
+	}
+	return nil
+}
+
+func (f *fakeBackend) Move(_ context.Context, uids []uint32, destPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.writes = append(f.writes, writeCall{
+		kind: "move", path: f.selected, uids: uids, dest: destPath,
+	})
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+
+	gone := map[uint32]bool{}
+	for _, uid := range uids {
+		gone[uid] = true
+	}
+	kept := f.messages[f.selected][:0]
+	for _, m := range f.messages[f.selected] {
+		if gone[m.UID] {
+			f.messages[destPath] = append(f.messages[destPath], m)
+			continue
+		}
+		kept = append(kept, m)
+	}
+	f.messages[f.selected] = kept
+	return nil
+}
+
+func (f *fakeBackend) Expunge(_ context.Context, uids []uint32) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.writes = append(f.writes, writeCall{kind: "expunge", path: f.selected, uids: uids})
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+
+	gone := map[uint32]bool{}
+	for _, uid := range uids {
+		gone[uid] = true
+	}
+	kept := f.messages[f.selected][:0]
+	for _, m := range f.messages[f.selected] {
+		if !gone[m.UID] {
+			kept = append(kept, m)
+		}
+	}
+	f.messages[f.selected] = kept
+	return nil
+}
+
+// recordedWrites returns a copy of the commands the fake received.
+func (f *fakeBackend) recordedWrites() []writeCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	out := make([]writeCall, len(f.writes))
+	copy(out, f.writes)
+	return out
+}
+
+// applyFlags mirrors what a server does to a message's flag set.
+func applyFlags(current, change []string, add bool) []string {
+	has := func(list []string, f string) bool {
+		for _, got := range list {
+			if strings.EqualFold(got, f) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !add {
+		var kept []string
+		for _, f := range current {
+			if !has(change, f) {
+				kept = append(kept, f)
+			}
+		}
+		return kept
+	}
+
+	out := append([]string{}, current...)
+	for _, f := range change {
+		if !has(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }

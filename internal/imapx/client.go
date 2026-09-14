@@ -90,6 +90,7 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 			QResync:   caps.Has(imap.CapQResync),
 			Move:      caps.Has(imap.CapMove),
 			Idle:      caps.Has(imap.CapIdle),
+			UIDPlus:   caps.Has(imap.CapUIDPlus),
 		},
 	}, nil
 }
@@ -212,6 +213,111 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 }
 
 // FetchBody pulls one whole message and extracts its text and HTML parts.
+// StoreFlags adds or removes flags on a UID set.
+//
+// Add and remove rather than set: two clients touching the same message should
+// not undo each other, and SET would replace the whole flag list with ours,
+// wiping anything the other one added.
+//
+// Both directions are idempotent, which is what makes the outgoing queue safe
+// to retry. Adding a flag that is already there changes nothing.
+func (cl *client) StoreFlags(_ context.Context, uids []uint32, flags []string, add bool) error {
+	set, err := uidSet(uids)
+	if err != nil {
+		return err
+	}
+
+	op := imap.StoreFlagsDel
+	if add {
+		op = imap.StoreFlagsAdd
+	}
+
+	converted := make([]imap.Flag, 0, len(flags))
+	for _, f := range flags {
+		converted = append(converted, imap.Flag(f))
+	}
+
+	// Silent: the server would otherwise answer with an untagged FETCH per
+	// message, which we would throw away — the next delta pass is what reads
+	// the resulting state.
+	cmd := cl.c.Store(set, &imap.StoreFlags{
+		Op: op, Flags: converted, Silent: true,
+	}, nil)
+	if _, err := cmd.Collect(); err != nil {
+		return fmt.Errorf("imapx: STORE flags failed: %w", err)
+	}
+	return nil
+}
+
+// Move relocates messages to another mailbox.
+//
+// go-imap falls back to COPY plus STORE plus EXPUNGE on servers without the
+// MOVE extension, so the caller does not have to care which it is talking to.
+func (cl *client) Move(_ context.Context, uids []uint32, destPath string) error {
+	set, err := uidSet(uids)
+	if err != nil {
+		return err
+	}
+	if destPath == "" {
+		return fmt.Errorf("imapx: MOVE needs a destination mailbox")
+	}
+
+	if _, err := cl.c.Move(set, destPath).Wait(); err != nil {
+		return fmt.Errorf("imapx: MOVE to %q failed: %w", destPath, err)
+	}
+	return nil
+}
+
+// Expunge permanently removes the named messages.
+//
+// Two steps, because IMAP has no single "delete this message" command: flag
+// them deleted, then expunge.
+//
+// The expunge is scoped with UIDPLUS where the server has it. Where it does
+// not, the messages are left flagged and nothing is expunged — deliberately.
+// The only other EXPUNGE available removes *every* message in the mailbox
+// flagged deleted, including ones flagged by another client or left over from
+// a session that never finished, and destroying someone else's mail to carry
+// out our own delete is not a trade worth making. The flagged messages
+// disappear from every client's view and go on the server's next expunge.
+func (cl *client) Expunge(_ context.Context, uids []uint32) error {
+	set, err := uidSet(uids)
+	if err != nil {
+		return err
+	}
+
+	cmd := cl.c.Store(set, &imap.StoreFlags{
+		Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagDeleted}, Silent: true,
+	}, nil)
+	if _, err := cmd.Collect(); err != nil {
+		return fmt.Errorf("imapx: flagging messages deleted failed: %w", err)
+	}
+
+	if !cl.caps.UIDPlus {
+		return nil
+	}
+	if _, err := cl.c.UIDExpunge(set).Collect(); err != nil {
+		return fmt.Errorf("imapx: UID EXPUNGE failed: %w", err)
+	}
+	return nil
+}
+
+// uidSet converts our UID list into go-imap's set type, refusing an empty one.
+//
+// An empty set is a command that names nothing: some servers answer with an
+// error, others with something surprising, and neither is what the caller
+// meant to ask.
+func uidSet(uids []uint32) (imap.UIDSet, error) {
+	if len(uids) == 0 {
+		return nil, fmt.Errorf("imapx: no UIDs given")
+	}
+	var set imap.UIDSet
+	for _, uid := range uids {
+		set.AddNum(imap.UID(uid))
+	}
+	return set, nil
+}
+
 // Idle waits for the server to say the selected mailbox changed.
 //
 // Returns true when the server announced something, or ctx.Err() when the

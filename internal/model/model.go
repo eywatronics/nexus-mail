@@ -114,7 +114,61 @@ type Message struct {
 	BodyFetched    bool
 }
 
-// RetentionPolicy bounds how much of a folder is kept on disk.
+// OperationKind is what an outgoing operation asks the server to do.
+//
+// The set is deliberately small. Each one maps to a single IMAP command, so a
+// worker never has to decide what a queued row "means" — only when to send it.
+type OperationKind string
+
+const (
+	OpAddFlags    OperationKind = "add_flags"
+	OpRemoveFlags OperationKind = "remove_flags"
+	OpMove        OperationKind = "move"
+	OpDelete      OperationKind = "delete"
+)
+
+// OperationState tracks one queued change through its life.
+//
+// Dropped is not a failure. It means the server recreated the mailbox while
+// the change was waiting, so the UIDs it names now refer to different
+// messages; applying it would act on the wrong mail. See the UIDVALIDITY stamp
+// in the design doc.
+type OperationState string
+
+const (
+	OpPending OperationState = "pending"
+	OpDone    OperationState = "done"
+	OpFailed  OperationState = "failed"
+	OpDropped OperationState = "dropped"
+)
+
+// Operation is one change waiting to reach the server.
+//
+// UIDValidity is the generation of the mailbox this was queued against. The
+// worker compares it before sending: a mailbox the server has recreated has a
+// new UID space, and the same number now names a different message.
+type Operation struct {
+	ID          int64
+	AccountID   int64
+	FolderID    int64
+	UIDValidity uint32
+	Kind        OperationKind
+	State       OperationState
+
+	// UIDs is what the operation acts on, in the folder it was queued against.
+	UIDs []uint32
+	// Flags carries the flags for OpAddFlags and OpRemoveFlags.
+	Flags []string
+	// TargetFolderID is where OpMove is going.
+	TargetFolderID int64
+
+	Attempts      int
+	LastError     string
+	CreatedAt     time.Time
+	NextAttemptAt time.Time
+}
+
+// RetentionPolicy bounds how much of a folder is kept on disk.// RetentionPolicy bounds how much of a folder is kept on disk.
 //
 // IDLE running for months is what makes this necessary: the initial fetch is
 // capped, but nothing caps growth afterwards. On a busy account that is

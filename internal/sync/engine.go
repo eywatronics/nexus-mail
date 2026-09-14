@@ -8,6 +8,7 @@ package sync
 import (
 	"context"
 	"sync"
+	"time"
 
 	"nexusmail/internal/imapx"
 	"nexusmail/internal/model"
@@ -34,6 +35,11 @@ type Store interface {
 	SetMessageFlags(ctx context.Context, folderID int64, updates []model.FlagUpdate) error
 	DeleteMessagesByUID(ctx context.Context, folderID int64, uids []uint32) error
 	PurgeFolder(ctx context.Context, folderID int64, policy model.RetentionPolicy) (int, error)
+	ClaimOperations(ctx context.Context, accountID int64, limit int) ([]model.Operation, error)
+	MarkOperationDone(ctx context.Context, id int64) error
+	MarkOperationDropped(ctx context.Context, id int64) error
+	MarkOperationFailed(ctx context.Context, id int64, reason string, retryAt time.Time) error
+	MarkOperationPermanentlyFailed(ctx context.Context, id int64, reason string) error
 	SetMessageBody(ctx context.Context, messageID int64, html, text string) error
 	GetMessageBody(ctx context.Context, messageID int64) (html, text string, err error)
 }

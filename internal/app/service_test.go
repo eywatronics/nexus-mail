@@ -693,3 +693,7 @@ func TestLoadConfigRejectsNegativeRetention(t *testing.T) {
 		}
 	}
 }
+
+func (stubBackend) StoreFlags(context.Context, []uint32, []string, bool) error { return nil }
+func (stubBackend) Move(context.Context, []uint32, string) error               { return nil }
+func (stubBackend) Expunge(context.Context, []uint32) error                    { return nil }
