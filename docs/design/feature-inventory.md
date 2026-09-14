@@ -39,15 +39,15 @@ içindeki `eIMAPCapabilityFlag` sabitlerinde sayılı; pazarlık
 | Uzantı | Ne sağlar | KT | Karar |
 |---|---|---|---|
 | IMAP4rev1 (RFC 3501), rev2 | Temel protokol | ✔ M1 | go-imap v2 |
-| STARTTLS / örtük TLS | Şifreli taşıma | ✔ M1 | Yalnızca örtük TLS; düz metin bağlantı reddediliyor |
-| AUTH: PLAIN, LOGIN, CRAM-MD5 | Parola kimlik doğrulama | ✔ M1 kısmi | PLAIN var; CRAM-MD5 eski sunucular için M8 |
+| STARTTLS / örtük TLS | Şifreli taşıma | ✔ M5 | İkisi de var, hesap başına seçilir. Yükseltme zorunlu, fırsatçı değil; düz metin yalnızca loopback test sunucusu için |
+| AUTH: PLAIN, LOGIN, CRAM-MD5 | Parola kimlik doğrulama | ✔ M5 kısmi | PLAIN → SASL LOGIN → LOGIN komutu sırasıyla deneniyor; CRAM-MD5 eski sunucular için M8 |
 | AUTH: XOAUTH2 | Google/Microsoft OAuth | ✔ M1 | Elle uygulandı, go-sasl'da yok |
-| AUTH: GSSAPI (Kerberos), NTLM | Kurumsal Windows etki alanı | M10 | Graph işiyle birlikte |
+| AUTH: GSSAPI (Kerberos), NTLM | Kurumsal Windows etki alanı | M10 | Graph işiyle birlikte. Şirket içi Exchange temel kimlik doğrulamayı kapatmışsa tek yol budur; hata mesajı sunucunun sunduğu mekanizmaları adlandırıyor, yani bu duruma düşüldüğü anlaşılıyor |
 | AUTH: EXTERNAL | İstemci sertifikası | — | Niş |
 | IDLE (RFC 2177) | Sunucu itmeli yeni posta | M2 | Planlı |
 | CONDSTORE (RFC 4551) | `HIGHESTMODSEQ` ile delta senkron | M2 | Planlı |
 | **QRESYNC (RFC 7162)** | Silinenleri VANISHED ile doğrudan bildirir | — (bkz. not) | **Thunderbird'de yok. go-imap v2 beta.7'de de yok:** yalnızca yetenek adı tanımlı, SELECT parametresi ve VANISHED ayrıştırması yok. Yukarı akışa bağlı |
-| SPECIAL-USE (RFC 6154) / XLIST | `\Sent \Drafts \Trash \Archive \Junk` klasör rolleri | M5 | M6 gönderme için şart: "Gönderilenler" hangi klasör? |
+| SPECIAL-USE (RFC 6154) / XLIST | `\Sent \Drafts \Trash \Archive \Junk` klasör rolleri | ✔ M5 | Öznitelik otorite, klasör adı yalnızca yedek |
 | UIDPLUS (RFC 4315) | `APPENDUID` / `COPYUID` | M6 | Gönderilen kopyanın UID'sini öğrenmek |
 | MOVE (RFC 6851) | Tek komutla taşıma | M3 | Yoksa COPY + STORE `\Deleted` + EXPUNGE |
 | NAMESPACE (RFC 2342) | Kişisel / paylaşılan / diğer kullanıcı alanları | M8 | Kurumsal paylaşılan posta kutuları |

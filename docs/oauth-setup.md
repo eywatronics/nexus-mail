@@ -89,3 +89,44 @@ Yaygın sağlayıcılar (Yandex, Zoho, Fastmail, iCloud, Yahoo ve diğerleri) i�
 sunucu adresleri gömülüdür; adresinizi yazmanız yeterli. Kurumsal bir alan adı
 kullanıyorsanız IMAP sunucusunu ve portunu elle girmeniz gerekir — kurumsal
 sunucular tahmin edilemez.
+
+---
+
+## Şirket içi Exchange
+
+**OAuth gerekmez.** Bu sayfadaki client ID kurulumu yalnızca Microsoft 365 ve
+Gmail bulut hesapları içindir; kendi sunucunuzdaki Exchange'e parolayla
+bağlanılır.
+
+1. Hesap eklerken **Other IMAP server** seçin.
+2. **IMAP host**: BT'nin verdiği iç sunucu adı (`mail.sirket.com.tr` gibi).
+3. **Encryption**: **STARTTLS**. Exchange'in IMAP4 servisi varsayılan olarak
+   143'te yayınlanır ve `LoginType` değeri `SecureLogin` olduğu için bağlantı
+   yükseltilmeden parola kabul etmez. Port otomatik 143'e geçer. Sunucu 993'te
+   yayınlanıyorsa **SSL/TLS** seçin.
+4. Parolanız etki alanı parolanızdır.
+
+Şifrelemesiz seçenek yoktur ve olmayacaktır. Açık gönderilen parola verilmiş
+paroladır; seçeneği sunmak yanlış yapılandırmayı imkânsız olmaktan çıkarıp
+sessiz yapardı.
+
+### Takıldığınız yerler
+
+**"certificate signed by unknown authority"** — sunucu kurumunuzun kendi
+sertifika otoritesini kullanıyor ve makine ona güvenmiyor. Etki alanına bağlı
+bir Windows makinesinde kök sertifika genelde kuruludur; değilse BT'den
+istemeniz gerekir. Nexus Mail sertifika doğrulamasını kapatma seçeneği
+sunmuyor.
+
+**"the server offers NTLM, GSSAPI, none of which is a password mechanism this
+client can use"** — kurum IMAP'te temel kimlik doğrulamayı kapatmış. NTLM
+desteği henüz yok (M10). BT'den `IMAP4` servisinde `PlainTextLogin` ya da
+`SecureLogin` istemeniz gerekir.
+
+**"this server will not take a password on this connection"** — sunucu
+`LOGINDISABLED` duyuruyor. Genelde IMAP'in posta kutusu için kapalı olması
+demektir; BT `Set-CASMailbox -ImapEnabled $true` çalıştırmalı.
+
+**Bağlantı hiç kurulmuyor** — port ve şifreleme eşleşmiyor olabilir. 993 ilk
+bayttan itibaren TLS konuşur, 143 konuşmaz; hata mesajı hangisinin yanlış
+olduğunu söylüyor.

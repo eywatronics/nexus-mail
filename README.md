@@ -86,7 +86,15 @@ neyin **bilerek dışarıda** bırakıldığı:
 |---|---|---|
 | Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Kendi Entra uygulama kaydınız gerekir |
 | Gmail / Google Workspace | OAuth 2.0 (XOAUTH2) | Kendi Google Cloud client ID'niz gerekir |
+| Şirket içi Exchange | Parola | IMAP üzerinden; 143/STARTTLS veya 993/TLS |
 | Genel IMAP | Parola veya uygulama parolası | Kayıt gerekmez |
+
+Şirket içi Exchange IMAP üzerinden bağlanır: hesap eklerken *Other IMAP
+server*, sunucu adı BT'nin verdiği iç adres, şifreleme olarak **STARTTLS**
+(Exchange'in IMAP4 servisi varsayılan olarak 143'te yayınlanır ve bağlantı
+yükseltilmeden parola kabul etmez). Kayıt ya da client ID gerekmez. Kurum
+temel kimlik doğrulamayı kapatmışsa NTLM gerekir ve o henüz yok — bu durumda
+hata mesajı sunucunun hangi mekanizmaları sunduğunu adlandırır.
 
 Microsoft ve Google için kendi OAuth istemcinizi kaydetmeniz gerekir — bu, açık
 kaynak olmanın bir sonucu ve aslında bir avantaj: posta kutunuza erişim sizin

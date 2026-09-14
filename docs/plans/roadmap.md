@@ -41,12 +41,29 @@ başına teslim edilebilir.
 - ~~Ek indirme, açma, kaydetme~~ — **bitti**
 - ~~Kaynağı görüntüle, `.eml` kaydet~~ — **bitti**
 - ~~Kodlamayı onar: yanlış çözülmüş mesaj için charset seçici~~ — **bitti**
-- Konuşma gruplama — `thread_id` şemada var, arayüz yok
-- Gövde kipi: özgün HTML / sade HTML / düz metin
+- ~~Konuşma gruplama~~ — **bitti**
+- ~~Gövde kipi: özgün HTML / sade HTML / düz metin~~ — **bitti**
+- ~~SPECIAL-USE ile klasör rolleri~~ — **bitti**
+- ~~STARTTLS ve kimlik doğrulama mekanizması seçimi~~ — **bitti** (aşağıya bakın)
 - Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
-- SPECIAL-USE ile klasör rolleri — M6'nın "Gönderilenler hangi klasör" sorusunun cevabı
 - UTF8=ACCEPT: Türkçe klasör adları
 - Mesajda bul, okundu işaretleme davranışı, geri al/yinele
+
+### Şirket içi Exchange
+
+Planda olmayan ama gerçek kullanımın dayattığı iş. Bağlantı güvenliği kodda
+993/örtük TLS olarak sabitti; şirket içi Exchange böyle yayınlanmıyor. IMAP4
+servisinin varsayılan `LoginType` değeri `SecureLogin`'dir — bağlantı
+yükseltilmeden parola kabul edilmez — ve pek çok kurulum 993'ü hiç açmaz.
+
+Eklenen: hesap başına STARTTLS/örtük TLS seçimi (migration 003), zorunlu
+yükseltme, düz metnin loopback dışında reddi, port ve sertifika hatalarının
+adlandırılması, ve PLAIN → SASL LOGIN → LOGIN komutu sırası.
+
+**Kalan tek boşluk NTLM/GSSAPI.** Temel kimlik doğrulamayı kapatmış bir
+kurumda tek yol budur ve `internal/auth`'ta karşılığı yok. Hata mesajı
+sunucunun sunduğu mekanizmaları adlandırdığı için bu duruma düşüldüğü
+anlaşılıyor; uygulaması M10'da Graph işiyle birlikte.
 
 ### Yazdırma neden burada değil
 
