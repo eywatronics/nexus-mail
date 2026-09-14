@@ -29,6 +29,9 @@ type fakeBackend struct {
 	uidValidity map[string]uint32
 	messages    map[string][]model.Message
 	bodies      map[uint32]imapx.Body
+	// raws holds the on-the-wire form of a message, for the tests that care
+	// about the original bytes rather than the parsed body.
+	raws map[uint32]string
 
 	// modseq tracks a CONDSTORE modification sequence per message, and
 	// highestModSeq what SELECT reports. A real server bumps these on every
@@ -77,6 +80,7 @@ func newFakeBackend() *fakeBackend {
 		uidValidity:   map[string]uint32{},
 		messages:      map[string][]model.Message{},
 		bodies:        map[uint32]imapx.Body{},
+		raws:          map[uint32]string{},
 		modseq:        map[string]map[uint32]uint64{},
 		highestModSeq: map[string]uint64{},
 		idleWake:      make(chan struct{}, 1),
@@ -312,6 +316,24 @@ func (f *fakeBackend) FetchBody(_ context.Context, uid uint32) (imapx.Body, erro
 		return imapx.Body{}, fmt.Errorf("no message with UID %d", uid)
 	}
 	return b, nil
+}
+
+// FetchRaw hands back whatever raw bytes the test stored for the UID. A test
+// that never set any gets the HTML body wrapped in a minimal header block,
+// which is enough for anything that only needs "something that looks like a
+// message".
+func (f *fakeBackend) FetchRaw(_ context.Context, uid uint32) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if raw, ok := f.raws[uid]; ok {
+		return []byte(raw), nil
+	}
+	b, ok := f.bodies[uid]
+	if !ok {
+		return nil, fmt.Errorf("no message with UID %d", uid)
+	}
+	return []byte("Subject: fake\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" + b.HTML), nil
 }
 
 func (f *fakeBackend) Close() error {

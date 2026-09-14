@@ -112,5 +112,9 @@ type MailBackend interface {
 	// FetchBody returns the HTML and plain-text parts of one message.
 	FetchBody(ctx context.Context, uid uint32) (Body, error)
 
+	// FetchRaw returns the message as it arrived, headers and all. It is what
+	// "view source", "save as .eml" and the charset repair all work from.
+	FetchRaw(ctx context.Context, uid uint32) ([]byte, error)
+
 	Close() error
 }

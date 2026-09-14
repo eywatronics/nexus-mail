@@ -373,30 +373,23 @@ func TestFetchFlagsReportsSystemFlags(t *testing.T) {
 		t.Fatalf("Select() error: %v", err)
 	}
 
-	// Reading the body is what makes the server set \Seen.
-	updates, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
-	if err != nil {
-		t.Fatalf("FetchFlags() error: %v", err)
-	}
-	if len(updates) != 1 {
-		t.Fatalf("got %d updates, want 1", len(updates))
-	}
-	if _, err := be.FetchBody(ctx, updates[0].UID); err != nil {
-		t.Fatalf("FetchBody() error: %v", err)
+	// The flag is set deliberately, the way marking a message read does it.
+	// This test used to reach it by fetching the body and relying on the
+	// server's \Seen side effect, which is exactly the side effect the client
+	// now avoids.
+	if err := be.StoreFlags(ctx, []uint32{1}, []string{model.FlagSeen}, true); err != nil {
+		t.Fatalf("StoreFlags() error: %v", err)
 	}
 
 	after, err := be.FetchFlags(ctx, UIDRange{Start: 1}, 0)
 	if err != nil {
-		t.Fatalf("second FetchFlags() error: %v", err)
+		t.Fatalf("FetchFlags() error: %v", err)
 	}
-	seen := false
-	for _, f := range after[0].Flags {
-		if strings.EqualFold(f, model.FlagSeen) {
-			seen = true
-		}
+	if len(after) != 1 {
+		t.Fatalf("got %d updates, want 1", len(after))
 	}
-	if !seen {
-		t.Errorf("flags = %v, want the seen flag after the body was read", after[0].Flags)
+	if !(model.Message{Flags: after[0].Flags}).HasFlag(model.FlagSeen) {
+		t.Errorf("flags = %v, want the seen flag reported", after[0].Flags)
 	}
 }
 
@@ -759,4 +752,106 @@ func mixedMessage() string {
 		// "%PDF-1.4 test" base64-encoded.
 		"JVBERi0xLjQgdGVzdA==\r\n" +
 		"--sinir--\r\n"
+}
+
+// serverFlagsOf reports the flags the server currently holds for a UID.
+func serverFlagsOf(t *testing.T, be MailBackend, uid uint32) []string {
+	t.Helper()
+
+	updates, err := be.FetchFlags(context.Background(), UIDRange{Start: uid, End: uid}, 0)
+	if err != nil {
+		t.Fatalf("FetchFlags() error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("FetchFlags() returned %d results for UID %d, want 1", len(updates), uid)
+	}
+	return updates[0].Flags
+}
+
+// Reading a message must not change its state on the server behind the app's
+// back. A plain BODY[] fetch sets \Seen as a protocol side effect, which would
+// mark a message read on every other device the moment the reading pane
+// rendered it — and without going through the outgoing queue, so the app would
+// not even know it had happened. Marking read is a decision the user makes;
+// BODY.PEEK is what keeps it one.
+func TestFetchingABodyDoesNotMarkItSeenOnTheServer(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Peek", "a@example.com", "<p>Hi</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	if _, err := be.FetchBody(ctx, 1); err != nil {
+		t.Fatalf("FetchBody() error: %v", err)
+	}
+
+	if flags := serverFlagsOf(t, be, 1); (model.Message{Flags: flags}).HasFlag(model.FlagSeen) {
+		t.Errorf("flags after reading = %v, want the message still unread", flags)
+	}
+}
+
+// Same rule for attachments: opening a file out of a message is not the same
+// decision as having read the message.
+func TestFetchingAPartDoesNotMarkItSeenOnTheServer(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", mixedMessage())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	if _, err := be.FetchPart(ctx, 1, "2", "base64"); err != nil {
+		t.Fatalf("FetchPart() error: %v", err)
+	}
+
+	if flags := serverFlagsOf(t, be, 1); (model.Message{Flags: flags}).HasFlag(model.FlagSeen) {
+		t.Errorf("flags after downloading an attachment = %v, want the message still unread", flags)
+	}
+}
+
+// View source and "save as .eml" both need the bytes exactly as they arrived,
+// headers included — not the parsed-and-reassembled version, which would no
+// longer be evidence of what was actually received.
+func TestFetchRawReturnsTheMessageAsItArrived(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps())
+	appendMessage(t, user, "INBOX", htmlMessage("Ham", "a@example.com", "<p>Gövde</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	raw, err := be.FetchRaw(ctx, 1)
+	if err != nil {
+		t.Fatalf("FetchRaw() error: %v", err)
+	}
+
+	for _, want := range []string{"Subject: Ham", "Message-ID:", "Content-Type: text/html", "<p>Gövde</p>"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("raw message does not contain %q; got:\n%s", want, raw)
+		}
+	}
+	if flags := serverFlagsOf(t, be, 1); (model.Message{Flags: flags}).HasFlag(model.FlagSeen) {
+		t.Errorf("flags after viewing the source = %v, want the message still unread", flags)
+	}
+}
+
+func TestFetchRawReportsAMissingMessage(t *testing.T) {
+	addr, _ := startFakeServer(t, serverCaps())
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+
+	if _, err := be.FetchRaw(ctx, 9999); err == nil {
+		t.Error("FetchRaw() succeeded for a UID that does not exist")
+	}
 }

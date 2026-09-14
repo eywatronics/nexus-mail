@@ -235,7 +235,7 @@ func (cl *client) FetchPart(_ context.Context, uid uint32, partID, encoding stri
 		return nil, fmt.Errorf("imapx: no part number given")
 	}
 
-	section := &imap.FetchItemBodySection{Part: parsePartNumber(partID)}
+	section := &imap.FetchItemBodySection{Part: parsePartNumber(partID), Peek: true}
 	buffers, err := cl.c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{
 		BodySection: []*imap.FetchItemBodySection{section},
 	}).Collect()
@@ -482,10 +482,18 @@ func (cl *client) FetchFlags(_ context.Context, r UIDRange, changedSince uint64)
 	return out, nil
 }
 
+// FetchBody returns the renderable parts of one message.
+//
+// Peek is set, and that is not an optimisation. A plain BODY[] fetch sets the
+// \Seen flag as a protocol side effect, so rendering a message in the reading
+// pane would mark it read on every other device — without passing through the
+// outgoing queue, so this app would not even know it had happened. Whether a
+// message counts as read is the reader's decision; BODY.PEEK is what keeps it
+// one.
 func (cl *client) FetchBody(_ context.Context, uid uint32) (Body, error) {
 	set := imap.UIDSet{imap.UIDRange{Start: imap.UID(uid), Stop: imap.UID(uid)}}
 	opts := &imap.FetchOptions{
-		BodySection: []*imap.FetchItemBodySection{{}},
+		BodySection: []*imap.FetchItemBodySection{{Peek: true}},
 	}
 
 	buffers, err := cl.c.Fetch(set, opts).Collect()
@@ -508,6 +516,33 @@ func (cl *client) FetchBody(_ context.Context, uid uint32) (Body, error) {
 		return Body{}, fmt.Errorf("imapx: parsing message %d: %w", uid, err)
 	}
 	return Body{HTML: html, Text: text}, nil
+}
+
+// FetchRaw returns the message exactly as it sits on the server, headers and
+// all.
+//
+// Not reassembled from the parsed parts. "View source" and "save as .eml" are
+// both asking the same question — what did this machine actually receive — and
+// an answer this client had rewritten would not be evidence of anything. It is
+// also the input the charset repair needs, because repairing means decoding
+// the original bytes differently.
+func (cl *client) FetchRaw(_ context.Context, uid uint32) ([]byte, error) {
+	section := &imap.FetchItemBodySection{Peek: true}
+	buffers, err := cl.c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{
+		BodySection: []*imap.FetchItemBodySection{section},
+	}).Collect()
+	if err != nil {
+		return nil, fmt.Errorf("imapx: FETCH raw message %d failed: %w", uid, err)
+	}
+	if len(buffers) == 0 {
+		return nil, fmt.Errorf("imapx: no message with UID %d", uid)
+	}
+
+	raw := buffers[0].FindBodySection(section)
+	if raw == nil {
+		return nil, fmt.Errorf("imapx: message %d returned no body section", uid)
+	}
+	return raw, nil
 }
 
 // leafName returns the display name of a mailbox path: "Parent/Child" becomes

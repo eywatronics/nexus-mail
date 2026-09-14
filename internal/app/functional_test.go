@@ -556,8 +556,19 @@ func TestDeltaSyncAgainstARealServer(t *testing.T) {
 		"Date: Tue, 03 Feb 2026 11:00:00 +0300\r\n"+
 		"Content-Type: text/plain; charset=utf-8\r\n\r\nIki.\r\n")
 
-	// Reading a body is what makes a real server set \Seen, which is the same
-	// thing that happens when someone opens the message on their phone.
+	// Somebody reads the first message on their phone: a second client, its own
+	// connection, issuing the STORE this app never made. That is the change the
+	// delta pass has to notice.
+	//
+	// This used to be done by fetching the body through this app and letting
+	// the server's \Seen side effect do it. It no longer can — the client
+	// fetches with BODY.PEEK precisely so that rendering a message does not
+	// silently mark it read everywhere — so the other device has to be a real
+	// other device.
+	markSeenElsewhere(t, host, port, 1)
+
+	// Reading it locally too, which must not be what makes the assertion pass:
+	// the render path no longer touches flags at all.
 	handler := NewBodyHandler(svc)
 	messages, err := svc.ListMessages(inbox.ID, 50, 0)
 	if err != nil {
@@ -603,6 +614,37 @@ func TestDeltaSyncAgainstARealServer(t *testing.T) {
 	}
 	if read != 1 {
 		t.Errorf("%d messages are marked read, want exactly the one that was opened", read)
+	}
+}
+
+// markSeenElsewhere opens a second connection and marks a UID read, standing
+// in for the same mailbox being read on another device.
+func markSeenElsewhere(t *testing.T, host string, port int, uid uint32) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	secrets, err := auth.NewFileStore(dir, "other-device")
+	if err != nil {
+		t.Fatalf("NewFileStore() error: %v", err)
+	}
+	if err := secrets.Set("ref", fnPass); err != nil {
+		t.Fatalf("Set() error: %v", err)
+	}
+
+	be, err := imapx.Dial(ctx, imapx.Config{
+		Host: host, Port: port, TLS: false, Username: fnUser,
+	}, auth.NewPasswordProvider(fnUser, "ref", secrets))
+	if err != nil {
+		t.Fatalf("the second device could not connect: %v", err)
+	}
+	defer func() { _ = be.Close() }()
+
+	if _, err := be.Select(ctx, "INBOX"); err != nil {
+		t.Fatalf("Select() error: %v", err)
+	}
+	if err := be.StoreFlags(ctx, []uint32{uid}, []string{model.FlagSeen}, true); err != nil {
+		t.Fatalf("StoreFlags() error: %v", err)
 	}
 }
 
