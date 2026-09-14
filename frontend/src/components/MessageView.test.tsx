@@ -415,3 +415,23 @@ describe('reloading after a repair', () => {
     expect(both).toContain('v=2')
   })
 })
+
+describe('body view in the URL', () => {
+  // The default is omitted rather than spelled out, so an ordinary body URL
+  // stays the short one.
+  it('names the view only when it is not the default', () => {
+    expect(bodyURL(1, false, 0, 'rich')).toBe('/mail-body/1')
+    expect(bodyURL(1, false, 0, 'simple')).toContain('view=simple')
+    expect(bodyURL(1, false, 0, 'text')).toContain('view=text')
+  })
+
+  // Consent, the repair counter and the view are three independent things and
+  // have to survive each other.
+  it('carries the view alongside consent and the reload counter', () => {
+    const url = bodyURL(9, true, 3, 'text')
+
+    expect(url).toContain('remote=1')
+    expect(url).toContain('v=3')
+    expect(url).toContain('view=text')
+  })
+})

@@ -146,10 +146,18 @@ export const addOAuthAccount = (email: string, displayName: string, provider: st
  * frame is keyed on its URL, so after an encoding repair rewrites the body the
  * frame would otherwise sit on the identical URL and never re-request it.
  */
-export const bodyURL = (messageId: number, allowRemote: boolean, version = 0) => {
+export const bodyURL = (
+  messageId: number,
+  allowRemote: boolean,
+  version = 0,
+  view: 'rich' | 'simple' | 'text' = 'rich',
+) => {
   const params = new URLSearchParams()
   if (allowRemote) params.set('remote', '1')
   if (version > 0) params.set('v', String(version))
+  // The default is omitted rather than spelled out, so an ordinary body URL
+  // stays the short one the tests and the logs already show.
+  if (view !== 'rich') params.set('view', view)
 
   const query = params.toString()
   return `/mail-body/${messageId}${query ? `?${query}` : ''}`

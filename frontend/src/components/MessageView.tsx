@@ -1,6 +1,7 @@
 import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL, sourceURL } from '../lib/api'
+import { useBodyView } from '../lib/bodyView'
 import { applyDelete, applyRead, applyStar } from '../lib/actions'
 import { AttachmentList } from './AttachmentList'
 import { MessageActionsMenu } from './MessageActionsMenu'
@@ -50,6 +51,7 @@ export function MessageView() {
   const [allowRemote, setAllowRemote] = useState(false)
   const [showSource, setShowSource] = useState(false)
   const [bodyVersion, setBodyVersion] = useState(0)
+  const [bodyView, setBodyView] = useBodyView()
 
   useEffect(() => {
     // Consent is per message and never sticky: carrying it forward would
@@ -74,8 +76,8 @@ export function MessageView() {
     if (settledId === null) return null
     return showSource
       ? sourceURL(settledId)
-      : bodyURL(settledId, allowRemote, bodyVersion)
-  }, [settledId, allowRemote, showSource, bodyVersion])
+      : bodyURL(settledId, allowRemote, bodyVersion, bodyView)
+  }, [settledId, allowRemote, showSource, bodyVersion, bodyView])
 
   // Reading a message marks it read. Tied to the settled id rather than the
   // selection, so holding j through a folder does not mark fifty messages read
@@ -179,6 +181,8 @@ export function MessageView() {
                 showingSource={showSource}
                 onToggleSource={() => setShowSource((was) => !was)}
                 onRepaired={() => setBodyVersion((was) => was + 1)}
+                view={bodyView}
+                onChangeView={setBodyView}
               />
             </div>
           </div>

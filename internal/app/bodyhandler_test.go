@@ -280,3 +280,64 @@ func extractToken(t *testing.T, html string) string {
 	}
 	return rest[:end]
 }
+
+// The three views are three different documents. A cache that answered one
+// request with another's render would make the menu look broken.
+func TestBodyHandlerServesEachViewSeparately(t *testing.T) {
+	h, id := newBodyHandler(t,
+		`<p style="color:red" class="hero">Merhaba</p>`)
+
+	rich := get(t, h, fmt.Sprintf("%s%d", bodyPath, id)).Body.String()
+	simple := get(t, h, fmt.Sprintf("%s%d?view=simple", bodyPath, id)).Body.String()
+	text := get(t, h, fmt.Sprintf("%s%d?view=text", bodyPath, id)).Body.String()
+
+	if !strings.Contains(rich, "style=") {
+		t.Errorf("the default view dropped the styling:\n%s", rich)
+	}
+	if strings.Contains(simple, "style=") || strings.Contains(simple, "class=") {
+		t.Errorf("the simple view kept the decoration:\n%s", simple)
+	}
+	// "<p" would also match the "<pre>" the text view wraps its output in,
+	// which is exactly the tag that proves it worked.
+	if strings.Contains(text, "<p>") || strings.Contains(text, "<p ") {
+		t.Errorf("the text view still has markup:\n%s", text)
+	}
+	if !strings.Contains(text, "<pre>") {
+		t.Errorf("the text view is not wrapped as preformatted text:\n%s", text)
+	}
+	for _, doc := range []string{rich, simple, text} {
+		if !strings.Contains(doc, "Merhaba") {
+			t.Errorf("a view lost the message:\n%s", doc)
+		}
+	}
+}
+
+// The parameter arrives in a URL, and the answer to a malformed one is the
+// default view, not a blank reading pane.
+func TestAnUnknownViewFallsBackToTheDefault(t *testing.T) {
+	h, id := newBodyHandler(t, `<p style="color:red">Merhaba</p>`)
+
+	rec := get(t, h, fmt.Sprintf("%s%d?view=nonsense", bodyPath, id))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d for an unknown view, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "style=") {
+		t.Errorf("an unknown view did not fall back to the rich render:\n%s", rec.Body.String())
+	}
+}
+
+// Plenty of mail is HTML only, and on exactly that mail the reader is most
+// likely to want the decoration gone. Handing back the HTML would be answering
+// a different question.
+func TestTheTextViewReducesAMessageWithNoPlainPart(t *testing.T) {
+	h, id := newBodyHandler(t, `<div><h1>Başlık</h1><p>Gövde</p></div>`)
+
+	body := get(t, h, fmt.Sprintf("%s%d?view=text", bodyPath, id)).Body.String()
+
+	if strings.Contains(body, "<h1") || strings.Contains(body, "<div") {
+		t.Errorf("the text view served markup:\n%s", body)
+	}
+	if !strings.Contains(body, "Başlık") || !strings.Contains(body, "Gövde") {
+		t.Errorf("the text view lost the words:\n%s", body)
+	}
+}

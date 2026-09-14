@@ -1,7 +1,16 @@
-import { CaretLeft, Code, DotsThreeVertical, FileArrowDown, TextAa } from '@phosphor-icons/react'
+import {
+  CaretLeft,
+  Check,
+  Code,
+  DotsThreeVertical,
+  FileArrowDown,
+  TextAa,
+  TextT,
+} from '@phosphor-icons/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { repairCharsets, repairEncoding, type Charset } from '../lib/api'
 import { saveMessageAsEML } from '../lib/api'
+import { BODY_VIEWS, type BodyView } from '../lib/bodyView'
 import { useDismissOnOutside } from '../lib/menu'
 import { BUTTON_GHOST, ICON, ICON_ONLY, MENU_ITEM, MENU_PANEL, TEXT } from '../lib/ui'
 
@@ -11,6 +20,8 @@ interface MessageActionsMenuProps {
   onToggleSource: () => void
   /** Called after a repair, so the pane reloads the body that just changed. */
   onRepaired: () => void
+  view: BodyView
+  onChangeView: (next: BodyView) => void
 }
 
 /**
@@ -27,16 +38,20 @@ export function MessageActionsMenu({
   showingSource,
   onToggleSource,
   onRepaired,
+  view,
+  onChangeView,
 }: MessageActionsMenuProps) {
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [pickingCharset, setPickingCharset] = useState(false)
+  const [pickingView, setPickingView] = useState(false)
   const [charsets, setCharsets] = useState<Charset[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => {
     setOpen(false)
     setPickingCharset(false)
+    setPickingView(false)
   }, [])
   useDismissOnOutside(open, containerRef, close)
 
@@ -61,6 +76,7 @@ export function MessageActionsMenu({
   useEffect(() => {
     setSaved(false)
     setPickingCharset(false)
+    setPickingView(false)
   }, [messageId])
 
   return (
@@ -79,7 +95,48 @@ export function MessageActionsMenu({
 
       {open && (
         <div role="menu" data-testid="message-actions-menu" className={`${MENU_PANEL} w-64`}>
-          {pickingCharset ? (
+          {pickingView ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="view-back"
+                onClick={() => setPickingView(false)}
+                className={MENU_ITEM}
+              >
+                <CaretLeft size={ICON.size} weight={ICON.weight} aria-hidden className="shrink-0" />
+                <span>Back</span>
+              </button>
+
+              {BODY_VIEWS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={option.value === view}
+                  data-testid="view-option"
+                  data-view={option.value}
+                  onClick={() => {
+                    close()
+                    onChangeView(option.value)
+                  }}
+                  className={MENU_ITEM}
+                >
+                  {option.value === view ? (
+                    <Check
+                      size={ICON.size}
+                      weight={ICON.weight}
+                      aria-hidden
+                      className="shrink-0 text-[var(--color-accent)]"
+                    />
+                  ) : (
+                    <span className="shrink-0" style={{ width: ICON.size }} />
+                  )}
+                  <span className="truncate">{option.label}</span>
+                </button>
+              ))}
+            </>
+          ) : pickingCharset ? (
             <>
               <button
                 type="button"
@@ -128,6 +185,21 @@ export function MessageActionsMenu({
               >
                 <Code size={ICON.size} weight={ICON.weight} aria-hidden className="shrink-0" />
                 <span>{showingSource ? 'Show message' : 'View source'}</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="open-view-picker"
+                aria-haspopup="menu"
+                onClick={() => setPickingView(true)}
+                className={MENU_ITEM}
+              >
+                <TextT size={ICON.size} weight={ICON.weight} aria-hidden className="shrink-0" />
+                <span className="flex-1">Message body</span>
+                <span className={`truncate text-xs ${TEXT.muted}`}>
+                  {BODY_VIEWS.find((v) => v.value === view)?.label}
+                </span>
               </button>
 
               <button

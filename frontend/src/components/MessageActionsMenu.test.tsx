@@ -1,6 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageActionsMenu } from './MessageActionsMenu'
+import type { BodyView } from '../lib/bodyView'
 
 const saveMessageAsEML = vi.fn()
 const repairCharsets = vi.fn()
@@ -28,6 +29,8 @@ const renderMenu = (
   showingSource = false,
   onToggleSource = () => {},
   onRepaired = () => {},
+  onChangeView: (next: BodyView) => void = () => {},
+  view: BodyView = 'rich',
 ) =>
   render(
     <MessageActionsMenu
@@ -35,6 +38,8 @@ const renderMenu = (
       showingSource={showingSource}
       onToggleSource={onToggleSource}
       onRepaired={onRepaired}
+      view={view}
+      onChangeView={onChangeView}
     />,
   )
 
@@ -176,5 +181,56 @@ describe('encoding repair', () => {
     expect(queryByTestId('charset-option')).toBeNull()
     expect(getByTestId('save-eml')).toBeTruthy()
     expect(repairEncoding).not.toHaveBeenCalled()
+  })
+})
+
+describe('body view', () => {
+  // Somebody who prefers plain text prefers it for their mail, not for one
+  // message, so the choice is shown as a setting with a current value rather
+  // than as a one-shot action.
+  it('shows which view is in force', () => {
+    const { getByTestId } = renderMenu(false, () => {}, () => {}, () => {}, 'text')
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    expect(getByTestId('open-view-picker').textContent).toContain('Plain text')
+  })
+
+  it('offers the three views and marks the current one', () => {
+    const { getByTestId, getAllByTestId } = renderMenu(
+      false, () => {}, () => {}, () => {}, 'simple',
+    )
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('open-view-picker'))
+
+    const options = getAllByTestId('view-option')
+    expect(options).toHaveLength(3)
+
+    const checked = options.filter((o) => o.getAttribute('aria-checked') === 'true')
+    expect(checked).toHaveLength(1)
+    expect(checked[0].getAttribute('data-view')).toBe('simple')
+  })
+
+  it('hands the choice back to the reading pane', () => {
+    const onChangeView = vi.fn()
+    const { getByTestId, getAllByTestId } = renderMenu(false, () => {}, () => {}, onChangeView)
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('open-view-picker'))
+    fireEvent.click(getAllByTestId('view-option')[2])
+
+    expect(onChangeView).toHaveBeenCalledWith('text')
+  })
+
+  it('can back out of the view picker', () => {
+    const onChangeView = vi.fn()
+    const { getByTestId, queryByTestId } = renderMenu(false, () => {}, () => {}, onChangeView)
+
+    fireEvent.click(getByTestId('open-message-actions'))
+    fireEvent.click(getByTestId('open-view-picker'))
+    fireEvent.click(getByTestId('view-back'))
+
+    expect(queryByTestId('view-option')).toBeNull()
+    expect(onChangeView).not.toHaveBeenCalled()
   })
 })

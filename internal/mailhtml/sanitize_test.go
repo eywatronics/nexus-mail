@@ -323,3 +323,83 @@ func TestSenderSuppliedHostSchemeIsDropped(t *testing.T) {
 		}
 	}
 }
+
+// Marketing mail is laid out for a wide screen in colours chosen for a light
+// background. In a narrow reading pane on a dark theme the result is often
+// worse than no styling at all, so the reader can ask for the structure
+// without the decoration.
+func TestSimplePresentationDropsTheDecorationAndKeepsTheStructure(t *testing.T) {
+	const raw = `<style>b{color:red}</style>` +
+		`<table bgcolor="#ff0000" width="800"><tr>` +
+		`<td colspan="2" style="font-size:48px" class="hero">` +
+		`<font color="#fff" size="7">Kampanya</font> <a href="https://x.example">detay</a>` +
+		`</td></tr></table>`
+
+	got, err := Sanitize(raw, Options{Presentation: PresentationSimple})
+	if err != nil {
+		t.Fatalf("Sanitize() error: %v", err)
+	}
+
+	// Everything that says how it should look.
+	for _, gone := range []string{"bgcolor", "width=", "style=", "class=", "<font", "color:red"} {
+		if strings.Contains(got.HTML, gone) {
+			t.Errorf("simple render still carries %q:\n%s", gone, got.HTML)
+		}
+	}
+	// Everything that says what it is.
+	for _, kept := range []string{"<table", "colspan", "Kampanya", "https://x.example"} {
+		if !strings.Contains(got.HTML, kept) {
+			t.Errorf("simple render lost %q:\n%s", kept, got.HTML)
+		}
+	}
+}
+
+// bluemonday strips a disallowed element but keeps what was inside it, so
+// without skipping the content the reader gets a wall of CSS where the message
+// should be.
+func TestSimplePresentationDoesNotSpillStylesheetTextIntoTheMessage(t *testing.T) {
+	got, err := Sanitize(
+		`<style>.x{background:url(http://t.example/p.png)}</style><p>Merhaba</p>`,
+		Options{Presentation: PresentationSimple})
+	if err != nil {
+		t.Fatalf("Sanitize() error: %v", err)
+	}
+
+	if strings.Contains(got.HTML, "background") || strings.Contains(got.HTML, ".x{") {
+		t.Errorf("the stylesheet's text survived its tag:\n%s", got.HTML)
+	}
+	if !strings.Contains(got.HTML, "Merhaba") {
+		t.Errorf("the message is missing:\n%s", got.HTML)
+	}
+}
+
+// The default has to stay the rich render: a message the sender laid out
+// carefully should not be flattened without being asked.
+func TestTheDefaultPresentationKeepsTheSendersStyling(t *testing.T) {
+	got, err := Sanitize(`<p style="color:#333">Merhaba</p>`, Options{})
+	if err != nil {
+		t.Fatalf("Sanitize() error: %v", err)
+	}
+	if !strings.Contains(got.HTML, "style=") {
+		t.Errorf("the default render dropped the styling:\n%s", got.HTML)
+	}
+}
+
+// The simple render is a readability choice, not a security one — but it must
+// not quietly undo a security one either.
+func TestSimplePresentationStillBlocksRemoteContent(t *testing.T) {
+	got, err := Sanitize(`<img src="http://tracker.example/p.png">`,
+		Options{Presentation: PresentationSimple})
+	if err != nil {
+		t.Fatalf("Sanitize() error: %v", err)
+	}
+
+	// The space matters: without it this also matches the tail of
+	// data-nexus-blocked-src=, which is the marker saying the block worked.
+	if strings.Contains(got.HTML, " src=\"http") {
+		t.Errorf("the simple render left a fetching attribute:\n%s", got.HTML)
+	}
+	if got.BlockedRemoteCount != 1 {
+		t.Errorf("BlockedRemoteCount = %d, want 1", got.BlockedRemoteCount)
+	}
+}

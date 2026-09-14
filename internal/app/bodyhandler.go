@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"nexusmail/internal/imapx"
 	"nexusmail/internal/mailhtml"
 	"nexusmail/internal/model"
 )
@@ -87,6 +88,31 @@ type renderedBody struct {
 	html   string
 	remote map[string]string
 	mode   mailhtml.Mode
+	view   bodyView
+}
+
+// bodyView is how much of the sender's presentation the reader asked for.
+type bodyView int
+
+const (
+	viewRich bodyView = iota
+	viewSimple
+	viewText
+)
+
+// viewFromQuery reads the view the window asked for. An unrecognised value
+// falls back to the rich render rather than erroring: the parameter comes from
+// a URL, and the answer to a malformed one is the default view, not a blank
+// reading pane.
+func viewFromQuery(value string) bodyView {
+	switch value {
+	case "simple":
+		return viewSimple
+	case "text":
+		return viewText
+	default:
+		return viewRich
+	}
 }
 
 func NewBodyHandler(svc *MailService) *BodyHandler {
@@ -117,8 +143,9 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("remote") == "1" {
 		mode = mailhtml.ModeProxy
 	}
+	view := viewFromQuery(r.URL.Query().Get("view"))
 
-	rendered, err := h.render(r.Context(), id, mode, requestOrigin(r))
+	rendered, err := h.render(r.Context(), id, mode, view, requestOrigin(r))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			// The user moved on before this finished. Holding the arrow keys
@@ -142,8 +169,10 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 
 // render produces the sanitised body for a message, fetching and caching it if
 // necessary. Cancellation is honoured before each expensive step.
-func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode, origin string) (*renderedBody, error) {
-	if cached := h.lookup(id, mode); cached != nil {
+func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode,
+	view bodyView, origin string) (*renderedBody, error) {
+
+	if cached := h.lookup(id, mode, view); cached != nil {
 		return cached, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -166,13 +195,33 @@ func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode, 
 		return nil, err
 	}
 
+	if view == viewText {
+		text, err := plainTextOf(body)
+		if err != nil {
+			return nil, err
+		}
+		// Nothing to sanitise and nothing to proxy: the text is escaped and
+		// shown as text, so no markup of the sender's survives to be dangerous.
+		rendered := &renderedBody{
+			html: "<pre>" + htmlEscape(text) + "</pre>", mode: mode, view: view,
+		}
+		h.store(id, rendered)
+		return rendered, nil
+	}
+
 	raw := body.HTML
 	if raw == "" {
 		raw = "<pre>" + htmlEscape(body.Text) + "</pre>"
 	}
 
+	presentation := mailhtml.PresentationRich
+	if view == viewSimple {
+		presentation = mailhtml.PresentationSimple
+	}
+
 	res, err := mailhtml.Sanitize(raw, mailhtml.Options{
-		Mode: mode,
+		Mode:         mode,
+		Presentation: presentation,
 		ProxyURL: func(token string) string {
 			return fmt.Sprintf("%s%s%d/%s", origin, assetPath, id, token)
 		},
@@ -181,18 +230,34 @@ func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode, 
 		return nil, err
 	}
 
-	rendered := &renderedBody{html: res.HTML, remote: res.RemoteURLs, mode: mode}
+	rendered := &renderedBody{html: res.HTML, remote: res.RemoteURLs, mode: mode, view: view}
 	h.store(id, rendered)
 	return rendered, nil
 }
 
-func (h *BodyHandler) lookup(id int64, mode mailhtml.Mode) *renderedBody {
+// plainTextOf answers "show me the text" for any message.
+//
+// The message's own text/plain part when it has one, because that is what the
+// sender wrote. Plenty of mail is HTML only, though, and on exactly that mail
+// the reader is most likely to want the decoration gone — so the HTML is
+// reduced rather than handed back as HTML, which would be answering a
+// different question.
+func plainTextOf(body imapx.Body) (string, error) {
+	if strings.TrimSpace(body.Text) != "" {
+		return body.Text, nil
+	}
+	return mailhtml.PlainText(body.HTML)
+}
+
+func (h *BodyHandler) lookup(id int64, mode mailhtml.Mode, view bodyView) *renderedBody {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	// A cached block-mode render cannot answer a proxy-mode request: it has no
-	// token map and no image references at all.
-	if got, ok := h.cache[id]; ok && got.mode == mode {
+	// token map and no image references at all. Nor can a render made for one
+	// view answer a request for another — that is the whole difference between
+	// them.
+	if got, ok := h.cache[id]; ok && got.mode == mode && got.view == view {
 		return got
 	}
 	return nil
@@ -233,6 +298,19 @@ func (h *BodyHandler) store(id int64, rendered *renderedBody) {
 	}
 }
 
+// lookupProxied finds a proxy-mode render whatever view produced it. The token
+// map is the same either way: the views differ in styling, not in which
+// remote resources the message refers to.
+func (h *BodyHandler) lookupProxied(id int64) *renderedBody {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if got, ok := h.cache[id]; ok && got.mode == mailhtml.ModeProxy {
+		return got
+	}
+	return nil
+}
+
 // serveAsset fetches one remote image on the reader's behalf.
 //
 // This is what makes "load remote content" safe to offer at all: the request
@@ -248,7 +326,7 @@ func (h *BodyHandler) serveAsset(w http.ResponseWriter, r *http.Request) {
 
 	// The token must come from a render this session produced. An arbitrary
 	// URL supplied by the page would turn the proxy into an open relay.
-	rendered := h.lookup(id, mailhtml.ModeProxy)
+	rendered := h.lookupProxied(id)
 	if rendered == nil {
 		http.Error(w, "unknown asset", http.StatusNotFound)
 		return

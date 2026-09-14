@@ -78,11 +78,33 @@ type Result struct {
 // it receives identifies the resource within this message.
 type ProxyURLFunc func(token string) string
 
+// Presentation selects how much of the sender's styling survives.
+type Presentation int
+
+const (
+	// PresentationRich keeps the message looking the way it was written:
+	// stylesheets, inline styles, fonts, table backgrounds. The default,
+	// because a message the sender laid out carefully should not be flattened
+	// without being asked.
+	PresentationRich Presentation = iota
+	// PresentationSimple keeps the structure and drops the decoration.
+	//
+	// Not a security control — the sandbox and the whitelist are that. This is
+	// for readability: marketing mail is laid out for a wide screen in colours
+	// chosen for a light background, and in a narrow reading pane on a dark
+	// theme the result is frequently worse than no styling at all. It also
+	// defuses the layout games that hide text from a reader while leaving it
+	// in the document.
+	PresentationSimple
+)
+
 // Options configures one sanitising pass.
 type Options struct {
 	Mode Mode
 	// ProxyURL is required in ModeProxy.
 	ProxyURL ProxyURLFunc
+	// Presentation defaults to PresentationRich.
+	Presentation Presentation
 }
 
 // Sanitize cleans raw mail HTML.
@@ -114,7 +136,7 @@ func Sanitize(raw string, opts Options) (Result, error) {
 		// bluemonday runs last as a safety net over the whitelist of tags and
 		// attributes. The walk above handles what a whitelist cannot express —
 		// rewriting a URL rather than dropping the element that carried it.
-		HTML:               policy().Sanitize(buf.String()),
+		HTML:               policy(opts.Presentation).Sanitize(buf.String()),
 		BlockedRemoteCount: st.blocked,
 	}
 	if opts.Mode == ModeProxy {
@@ -176,11 +198,28 @@ func walk(n *html.Node, st *state) {
 	}
 }
 
+// presentationalAttrs say how an element should look rather than what it is.
+// Dropped in PresentationSimple, kept otherwise.
+//
+// The list has to be applied here rather than by narrowing the final
+// whitelist, because bluemonday's UGC policy permits several of these on
+// tables of its own accord and a policy cannot un-allow what it allowed.
+var presentationalAttrs = map[string]bool{
+	"style": true, "class": true, "bgcolor": true, "background": true,
+	"width": true, "height": true, "align": true, "valign": true,
+	"cellpadding": true, "cellspacing": true, "border": true,
+	"color": true, "face": true, "size": true, "hspace": true, "vspace": true,
+}
+
 func cleanElement(n *html.Node, st *state) {
 	kept := n.Attr[:0]
 
 	for _, attr := range n.Attr {
 		name := strings.ToLower(attr.Key)
+
+		if st.opts.Presentation == PresentationSimple && presentationalAttrs[name] {
+			continue
+		}
 
 		// Inline handlers are executable code wearing an attribute's syntax.
 		if strings.HasPrefix(name, "on") {
@@ -300,16 +339,30 @@ func isFetching(name string) bool {
 // href is kept: a link is not a fetch, nothing loads until the user clicks,
 // and hiding where a link points would make phishing harder to spot rather
 // than easier.
-func policy() *bluemonday.Policy {
+func policy(pres Presentation) *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 
-	p.AllowElements("table", "thead", "tbody", "tfoot", "tr", "td", "th",
-		"style", "center", "font", "big", "small")
-	p.AllowAttrs("style").Globally()
-	p.AllowAttrs("class", "id", "align", "valign", "width", "height",
-		"cellpadding", "cellspacing", "border", "bgcolor", "colspan", "rowspan").Globally()
-	p.AllowAttrs("color", "face", "size").OnElements("font")
+	p.AllowElements("table", "thead", "tbody", "tfoot", "tr", "td", "th")
+	// colspan and rowspan describe what the table is, not what it looks like,
+	// so they survive both presentations: dropping them turns a merged cell
+	// into a misaligned row.
+	p.AllowAttrs("colspan", "rowspan").Globally()
+	// The blocked-resource markers are how the reader is told what was
+	// withheld. They are this app's own data attributes, not the sender's.
 	p.AllowDataAttributes()
+
+	if pres == PresentationRich {
+		p.AllowElements("style", "center", "font", "big", "small")
+		p.AllowAttrs("style").Globally()
+		p.AllowAttrs("class", "id", "align", "valign", "width", "height",
+			"cellpadding", "cellspacing", "border", "bgcolor").Globally()
+		p.AllowAttrs("color", "face", "size").OnElements("font")
+	} else {
+		// Without this the stylesheet's text survives its tag and the reader
+		// gets a wall of CSS at the top of the message. bluemonday strips a
+		// disallowed element but keeps what was inside it.
+		p.SkipElementsContent("style")
+	}
 
 	// cid: refers to a part already inside the message, so resolving it is not
 	// a network fetch. Proxied images are rewritten to ordinary http(s) URLs
