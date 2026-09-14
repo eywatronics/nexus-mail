@@ -50,13 +50,19 @@ Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
 
 ## Durum
 
-Geliştirme aşamasında. Şu an **M1 (salt okunur istemci)** üzerinde çalışılıyor.
+Geliştirme aşamasında. **M1–M3 bitti:** hesap bağlama, canlı senkron ve
+çevrimdışı dayanıklı durum yazma çalışıyor. Uygulama artık salt okunur değil —
+okundu, yıldız, taşı ve sil işlemleri anında görünüyor, kuyruğa alınıyor ve
+bağlantı geldiğinde sunucuya gidiyor.
+
+Henüz **gönderme yok** (M6) ve **ek indirme yok** (M5); sıradaki iş sistem
+tepsisi ve bildirimler (M4).
 
 | Kilometre taşı | Kapsam | Durum |
 |---|---|---|
-| **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Devam ediyor |
-| **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Planlandı |
-| **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Planlandı |
+| **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
+| **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
+| **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
 | **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Planlandı |
 | **M5** | Ekler, konuşma gruplama, kaynak/yazdır/kaydet, kodlama onarımı | Planlandı |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |

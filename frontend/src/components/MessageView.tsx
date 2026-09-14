@@ -2,6 +2,7 @@ import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/r
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL } from '../lib/api'
 import { applyDelete, applyRead, applyStar } from '../lib/actions'
+import { MoveMenu } from './MoveMenu'
 import { useMailStore } from '../store/useMailStore'
 import { BUTTON_GHOST, BUTTON_SECONDARY, ICON, SURFACE, TEXT } from '../lib/ui'
 
@@ -131,6 +132,8 @@ export function MessageView() {
                   className={message.isStarred ? 'text-[var(--color-accent)]' : undefined}
                 />
               </button>
+
+              <MoveMenu messageId={message.id} folderId={message.folderId} />
 
               <button
                 type="button"

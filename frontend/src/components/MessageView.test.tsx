@@ -202,3 +202,86 @@ describe('message actions', () => {
     expect(container.querySelector('[data-testid="toggle-read"]')).toBeNull()
   })
 })
+
+describe('move menu', () => {
+  const folder = (id: number, name: string, accountId = 1) => ({
+    id,
+    accountId,
+    name,
+    path: name,
+    totalCount: 0,
+    unreadCount: 0,
+    isInbox: name === 'INBOX',
+  })
+
+  const seedForMove = (folders: ReturnType<typeof folder>[]) =>
+    useMailStore.setState({
+      folders,
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          subject: 'Konu',
+          fromName: 'Gönderen',
+          fromAddr: 'g@example.com',
+          snippet: 'önizleme',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+        },
+      ],
+    })
+
+  it('offers the other folders of the same account', async () => {
+    seedForMove([folder(1, 'INBOX'), folder(2, 'Arşiv'), folder(3, 'Çöp')])
+    const { getByTestId, getAllByTestId } = await renderSelected(1)
+
+    getByTestId('open-move-menu').click()
+
+    await waitFor(() => {
+      const names = getAllByTestId('move-destination').map((b) => b.textContent)
+      expect(names).toEqual(['Arşiv', 'Çöp'])
+    })
+  })
+
+  // A cross-account move is a copy, an upload and a delete. Offering it behind
+  // the same label would be three operations hiding under one, which is how a
+  // client loses mail.
+  it('never offers another account as a destination', async () => {
+    seedForMove([folder(1, 'INBOX'), folder(2, 'Arşiv'), folder(9, 'Other INBOX', 2)])
+    const { getByTestId, getAllByTestId } = await renderSelected(1)
+
+    getByTestId('open-move-menu').click()
+
+    await waitFor(() => {
+      const names = getAllByTestId('move-destination').map((b) => b.textContent)
+      expect(names).toEqual(['Arşiv'])
+    })
+  })
+
+  it('takes the message out of the list when a destination is picked', async () => {
+    seedForMove([folder(1, 'INBOX'), folder(2, 'Arşiv')])
+    const { getByTestId, getAllByTestId } = await renderSelected(1)
+
+    getByTestId('open-move-menu').click()
+    await waitFor(() => expect(getAllByTestId('move-destination')).toHaveLength(1))
+    getAllByTestId('move-destination')[0].click()
+
+    await waitFor(() => {
+      expect(useMailStore.getState().messages).toHaveLength(0)
+    })
+  })
+
+  // An account with one folder has nowhere to move to, and a button that
+  // opens an empty menu is worse than no button.
+  it('is not shown when there is nowhere to move to', async () => {
+    seedForMove([folder(1, 'INBOX')])
+    const { queryByTestId } = await renderSelected(1)
+
+    expect(queryByTestId('open-move-menu')).toBeNull()
+  })
+})
