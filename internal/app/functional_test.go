@@ -132,7 +132,7 @@ func newLiveService(t *testing.T, host string, port int) (*MailService, *store.S
 		}
 		provider := auth.NewPasswordProvider(acct.Email, acct.SecretRef, secrets)
 		return imapx.Dial(ctx, imapx.Config{
-			Host: acct.IMAPHost, Port: acct.IMAPPort, TLS: false, Username: acct.Email,
+			Host: acct.IMAPHost, Port: acct.IMAPPort, Insecure: true, Username: acct.Email,
 		}, provider)
 	})
 
@@ -192,7 +192,7 @@ func TestReadingMailEndToEndAgainstARealServer(t *testing.T) {
 	svc, db := newLiveService(t, host, port)
 
 	// --- adding the account -------------------------------------------------
-	acct, err := svc.AddPasswordAccount(fnUser, "Test", host, port, "", 0, fnPass)
+	acct, err := svc.AddPasswordAccount(fnUser, "Test", host, port, "tls", "", 0, fnPass)
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestTheRealDialerRefusesAnythingButVerifiedTLS(t *testing.T) {
 			t.Fatalf("NewFileStore() error: %v", err)
 		}
 		svc := NewMailService(db, secrets, nil, Config{Emit: func(string, any) {}})
-		if _, err := svc.AddPasswordAccount(fnUser, "T", host, port, "", 0, fnPass); err != nil {
+		if _, err := svc.AddPasswordAccount(fnUser, "T", host, port, "tls", "", 0, fnPass); err != nil {
 			t.Fatalf("AddPasswordAccount() error: %v", err)
 		}
 		return DialerFor(db, secrets, Config{})
@@ -518,7 +518,7 @@ func TestDeltaSyncAgainstARealServer(t *testing.T) {
 		"Content-Type: text/plain; charset=utf-8\r\n\r\nBir.\r\n")
 
 	svc, db := newLiveService(t, host, port)
-	acct, err := svc.AddPasswordAccount(fnUser, "Test", host, port, "", 0, fnPass)
+	acct, err := svc.AddPasswordAccount(fnUser, "Test", host, port, "tls", "", 0, fnPass)
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -633,7 +633,7 @@ func markSeenElsewhere(t *testing.T, host string, port int, uid uint32) {
 	}
 
 	be, err := imapx.Dial(ctx, imapx.Config{
-		Host: host, Port: port, TLS: false, Username: fnUser,
+		Host: host, Port: port, Insecure: true, Username: fnUser,
 	}, auth.NewPasswordProvider(fnUser, "ref", secrets))
 	if err != nil {
 		t.Fatalf("the second device could not connect: %v", err)

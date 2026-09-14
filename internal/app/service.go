@@ -60,8 +60,17 @@ func (s *MailService) ListAccounts() ([]AccountDTO, error) {
 // AddPasswordAccount registers an account authenticated with a password or app
 // password. The secret goes straight to the SecretStore; only its ref reaches
 // the database.
+// AddPasswordAccount registers an account authenticated with a password or app
+// password. The secret goes straight to the SecretStore; only its ref reaches
+// the database.
+//
+// imapSecurity is "tls" or "starttls". Anything else, including empty, is read
+// as implicit TLS — the stronger of the two, and the only safe direction to
+// resolve an unrecognised value in. On-premises Exchange is the reason the
+// choice exists: its IMAP4 service is usually published on 143, where the
+// connection has to be upgraded before it will take a password.
 func (s *MailService) AddPasswordAccount(email, displayName, imapHost string, imapPort int,
-	smtpHost string, smtpPort int, password string) (AccountDTO, error) {
+	imapSecurity string, smtpHost string, smtpPort int, password string) (AccountDTO, error) {
 
 	if email == "" {
 		return AccountDTO{}, errors.New("app: an email address is required")
@@ -70,23 +79,32 @@ func (s *MailService) AddPasswordAccount(email, displayName, imapHost string, im
 		return AccountDTO{}, errors.New("app: a password is required")
 	}
 
+	security := model.SecurityOrDefault(imapSecurity)
+
 	provider := model.ProviderGeneric
 	if preset, ok := auth.PresetFor(email); ok {
 		provider = preset.Provider
 		if imapHost == "" {
 			imapHost, imapPort = preset.IMAPHost, preset.IMAPPort
 			smtpHost, smtpPort = preset.SMTPHost, preset.SMTPPort
+			// A preset names a host that answers on 993; taking the user's
+			// STARTTLS choice with it would point the upgrade at a port that
+			// has nothing to upgrade.
+			security = model.SecurityTLS
 		}
 	}
 	if imapHost == "" {
 		return AccountDTO{}, fmt.Errorf(
 			"app: no IMAP host given and no preset for %q; corporate servers must be entered manually", email)
 	}
+	if imapPort == 0 {
+		imapPort = model.DefaultIMAPPort(security)
+	}
 
 	return s.saveAccount(model.Account{
 		Email: email, DisplayName: displayName, Provider: provider,
 		AuthKind: model.AuthPassword,
-		IMAPHost: imapHost, IMAPPort: imapPort,
+		IMAPHost: imapHost, IMAPPort: imapPort, IMAPSecurity: security,
 		SMTPHost: smtpHost, SMTPPort: smtpPort,
 	}, password)
 }
@@ -398,10 +416,14 @@ func DialerFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Di
 			return nil, fmt.Errorf("app: unknown auth kind %q for account %d", acct.AuthKind, accountID)
 		}
 
-		// TLS is not configurable: PLAIN over a cleartext connection would put
-		// the password on the wire.
+		// Encryption is chosen between implicit TLS and STARTTLS, never
+		// switched off: the cleartext path exists only for the loopback test
+		// server and imapx refuses it for anything else.
 		return imapx.Dial(ctx, imapx.Config{
-			Host: acct.IMAPHost, Port: acct.IMAPPort, TLS: true, Username: acct.Email,
+			Host:     acct.IMAPHost,
+			Port:     acct.IMAPPort,
+			Security: acct.IMAPSecurity,
+			Username: acct.Email,
 		}, provider)
 	}
 }

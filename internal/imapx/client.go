@@ -3,7 +3,9 @@ package imapx
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime/quotedprintable"
@@ -55,17 +57,16 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 		},
 	}
 
-	var (
-		c   *imapclient.Client
-		err error
-	)
-	if cfg.TLS {
-		c, err = imapclient.DialTLS(addr, opts)
-	} else {
-		c, err = imapclient.DialInsecure(addr, opts)
+	// Checked before a socket is opened rather than after: this is the one
+	// rule that, broken, puts a password on the wire, and the earliest place
+	// to enforce it is before there is a wire.
+	if err := checkSecurity(cfg); err != nil {
+		return nil, err
 	}
+
+	c, err := connect(addr, cfg, opts)
 	if err != nil {
-		return nil, fmt.Errorf("imapx: dial %s: %w", addr, err)
+		return nil, err
 	}
 
 	saslClient, err := provider.SASLClient(ctx)
@@ -549,6 +550,95 @@ func (cl *client) FetchRaw(_ context.Context, uid uint32) ([]byte, error) {
 		return nil, fmt.Errorf("imapx: message %d returned no body section", uid)
 	}
 	return raw, nil
+}
+
+// checkSecurity refuses a cleartext connection to anything but loopback.
+//
+// Insecure exists for one reason: the in-memory IMAP server the engine is
+// tested against speaks no TLS. That server is always on 127.0.0.1, so the
+// legitimate use is fully described by "loopback" — and every other use of the
+// flag is a mistake that would send a password across a network in the clear.
+//
+// A comment saying "tests only" does not survive the first person who copies
+// the struct literal. This does.
+func checkSecurity(cfg Config) error {
+	if !cfg.Insecure {
+		return nil
+	}
+	if isLoopback(cfg.Host) {
+		return nil
+	}
+	return fmt.Errorf(
+		"imapx: refusing an unencrypted connection to %q; plaintext is for the "+
+			"loopback test server and nothing else", cfg.Host)
+}
+
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// connect opens the transport the configuration asks for.
+//
+// STARTTLS is mandatory rather than opportunistic. go-imap's DialStartTLS
+// fails if the server does not offer the upgrade, which is the behaviour we
+// want: a network attacker able to strip the STARTTLS advertisement from the
+// greeting would otherwise be handed the password, and that attack is the
+// reason opportunistic encryption is not encryption.
+func connect(addr string, cfg Config, opts *imapclient.Options) (*imapclient.Client, error) {
+	var (
+		c   *imapclient.Client
+		err error
+	)
+	switch {
+	case cfg.Insecure:
+		c, err = imapclient.DialInsecure(addr, opts)
+	case cfg.Security == model.SecuritySTARTTLS:
+		c, err = imapclient.DialStartTLS(addr, opts)
+	default:
+		c, err = imapclient.DialTLS(addr, opts)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("imapx: dial %s: %w", addr, describeDialError(cfg, err))
+	}
+	return c, nil
+}
+
+// describeDialError adds what the operator needs in order to fix the two
+// mistakes this step actually fails on.
+//
+// A certificate error on an internal server is almost never a real attack; it
+// is an internal CA the machine does not trust, and the generic Go message
+// sends people looking in the wrong place. Choosing the wrong port is the
+// other one: 993 speaks TLS from the first byte and 143 does not, so pointing
+// implicit TLS at 143 produces a handshake failure that says nothing about
+// ports.
+func describeDialError(cfg Config, err error) error {
+	var certErr x509.UnknownAuthorityError
+	var hostErr x509.HostnameError
+	switch {
+	case errors.As(err, &certErr):
+		return fmt.Errorf("%w — the server's certificate was issued by an authority "+
+			"this machine does not trust, which on an internal server usually means "+
+			"the organisation's root certificate is not installed", err)
+	case errors.As(err, &hostErr):
+		return fmt.Errorf("%w — the certificate does not name this host; check the "+
+			"server name against the one the certificate was issued for", err)
+	case cfg.Security != model.SecuritySTARTTLS && cfg.Port == 143:
+		return fmt.Errorf("%w — port 143 does not speak TLS from the first byte; "+
+			"this account is set to implicit TLS, which belongs on 993", err)
+	case cfg.Security == model.SecuritySTARTTLS && cfg.Port == 993:
+		return fmt.Errorf("%w — port 993 is encrypted from the first byte and has no "+
+			"STARTTLS to negotiate; this account is set to STARTTLS, which belongs "+
+			"on 143", err)
+	default:
+		return err
+	}
 }
 
 // leafName returns the display name of a mailbox path: "Parent/Child" becomes

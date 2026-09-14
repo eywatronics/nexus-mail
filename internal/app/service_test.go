@@ -112,7 +112,7 @@ func TestAddPasswordAccountKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 
 	const password = "CANARY-APP-PASSWORD"
 	acct, err := svc.AddPasswordAccount("u@example.com", "Test User",
-		"imap.example.com", 993, "smtp.example.com", 587, password)
+		"imap.example.com", 993, "tls", "smtp.example.com", 587, password)
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestAddPasswordAccountKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 func TestAddPasswordAccountUsesAPresetWhenTheHostIsBlank(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("someone@gmail.com", "G", "", 0, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("someone@gmail.com", "G", "", 0, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestAddPasswordAccountUsesAPresetWhenTheHostIsBlank(t *testing.T) {
 func TestAddPasswordAccountRefusesABlankHostWithNoPreset(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	_, err := svc.AddPasswordAccount("someone@ozdilek.com.tr", "K", "", 0, "", 0, "pw")
+	_, err := svc.AddPasswordAccount("someone@example.com.tr", "K", "", 0, "tls", "", 0, "pw")
 	if err == nil {
 		t.Fatal("AddPasswordAccount() invented a host for a corporate domain")
 	}
@@ -165,10 +165,10 @@ func TestAddPasswordAccountRefusesABlankHostWithNoPreset(t *testing.T) {
 func TestAddPasswordAccountRejectsEmptyInput(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	if _, err := svc.AddPasswordAccount("", "n", "h", 993, "", 0, "pw"); err == nil {
+	if _, err := svc.AddPasswordAccount("", "n", "h", 993, "tls", "", 0, "pw"); err == nil {
 		t.Error("AddPasswordAccount() accepted an empty email")
 	}
-	if _, err := svc.AddPasswordAccount("u@example.com", "n", "h", 993, "", 0, ""); err == nil {
+	if _, err := svc.AddPasswordAccount("u@example.com", "n", "h", 993, "tls", "", 0, ""); err == nil {
 		t.Error("AddPasswordAccount() accepted an empty password")
 	}
 }
@@ -178,11 +178,11 @@ func TestAddPasswordAccountRejectsEmptyInput(t *testing.T) {
 func TestAddPasswordAccountRemovesTheSecretWhenTheRowFails(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	if _, err := svc.AddPasswordAccount("dup@example.com", "A", "h", 993, "", 0, "pw"); err != nil {
+	if _, err := svc.AddPasswordAccount("dup@example.com", "A", "h", 993, "tls", "", 0, "pw"); err != nil {
 		t.Fatalf("first AddPasswordAccount() error: %v", err)
 	}
 	// The UNIQUE constraint on email rejects the second one.
-	if _, err := svc.AddPasswordAccount("dup@example.com", "B", "h", 993, "", 0, "pw2"); err == nil {
+	if _, err := svc.AddPasswordAccount("dup@example.com", "B", "h", 993, "tls", "", 0, "pw2"); err == nil {
 		t.Fatal("the duplicate account was accepted")
 	}
 
@@ -219,7 +219,7 @@ func TestAddOAuthAccountRejectsAProviderWithoutOAuth(t *testing.T) {
 func TestSyncAccountEmitsStartAndFinish(t *testing.T) {
 	svc, rec, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestSyncAccountEmitsTheErrorClassOnFailure(t *testing.T) {
 		failFetch: fmtError("imapx: authentication failed for u@example.com"),
 	})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSyncAccountReportsAnUnknownAccount(t *testing.T) {
 func TestOpenFolderSyncsALazyFolder(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestOpenFolderSyncsALazyFolder(t *testing.T) {
 func TestListMessagesClampsThePageSize(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -428,7 +428,7 @@ func (e *simpleError) Error() string { return e.msg }
 func TestSearchMessagesSpansFoldersAndClampsTheLimit(t *testing.T) {
 	svc, _, s := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestSearchMessagesSpansFoldersAndClampsTheLimit(t *testing.T) {
 func TestSearchMessagesReturnsNothingForABlankQuery(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -517,7 +517,7 @@ func (stubBackend) Idle(ctx context.Context) (bool, error) {
 func TestStartWatchingRunsALoopPerAccount(t *testing.T) {
 	svc, rec, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestSyncAccountStartsWatchingTheAccount(t *testing.T) {
 		t.Fatalf("precondition failed: %d watchers before any account", svc.watcherCount())
 	}
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestSyncAccountStartsWatchingTheAccount(t *testing.T) {
 func TestStartWatchingIsIdempotent(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -591,7 +591,7 @@ func TestStartWatchingIsIdempotent(t *testing.T) {
 func TestCancellingTheContextStopsEveryWatcher(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -708,7 +708,7 @@ func syncedAccountWithMessages(t *testing.T) (*MailService, *store.Store, Accoun
 	t.Helper()
 
 	svc, _, s := newTestService(t, stubBackend{})
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -864,7 +864,7 @@ func TestListAttachmentsReturnsWhatTheSyncRecorded(t *testing.T) {
 	ctx := context.Background()
 	svc, _, s := newTestService(t, attachmentBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -902,7 +902,7 @@ func TestDownloadAttachmentWritesTheFileAndRemembersIt(t *testing.T) {
 	dir := t.TempDir()
 	svc.cfg.AttachmentDir = func() (string, error) { return dir, nil }
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -954,7 +954,7 @@ func TestDownloadAttachmentDoesNotLetAFilenameEscapeTheDirectory(t *testing.T) {
 	dir := t.TempDir()
 	svc.cfg.AttachmentDir = func() (string, error) { return dir, nil }
 
-	acct, _ := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, _ := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err := svc.SyncAccount(acct.ID); err != nil {
 		t.Fatalf("SyncAccount() error: %v", err)
 	}
@@ -1010,7 +1010,7 @@ func (attachmentBackend) FetchPart(context.Context, uint32, string, string) ([]b
 func TestThreadedAndFlatListsHoldTheSameMessages(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
@@ -1061,5 +1061,88 @@ func TestThreadedAndFlatListsHoldTheSameMessages(t *testing.T) {
 		if m.ThreadCount < 1 {
 			t.Errorf("the threaded list reports ThreadCount %d for message %d", m.ThreadCount, m.ID)
 		}
+	}
+}
+
+// On-premises Exchange is why the choice exists, and the choice is worthless
+// if the wizard's answer does not reach the connection.
+func TestAddPasswordAccountRecordsTheConnectionSecurity(t *testing.T) {
+	svc, _, db := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("bt@sirket.local", "BT",
+		"mail.sirket.local", 143, "starttls", "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	stored, err := db.GetAccount(context.Background(), acct.ID)
+	if err != nil {
+		t.Fatalf("GetAccount() error: %v", err)
+	}
+	if stored.IMAPSecurity != model.SecuritySTARTTLS {
+		t.Errorf("IMAPSecurity = %q, want starttls", stored.IMAPSecurity)
+	}
+}
+
+// Anything unrecognised resolves to implicit TLS. A typo must not produce a
+// weaker connection than the one the user thought they were choosing.
+func TestAnUnrecognisedSecurityBecomesTLS(t *testing.T) {
+	svc, _, db := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("x@sirket.local", "X",
+		"mail.sirket.local", 993, "sslv3-maybe", "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	stored, _ := db.GetAccount(context.Background(), acct.ID)
+	if stored.IMAPSecurity != model.SecurityTLS {
+		t.Errorf("IMAPSecurity = %q for a nonsense value, want tls", stored.IMAPSecurity)
+	}
+}
+
+// A blank port is the common case for someone who was told "STARTTLS" and
+// nothing else. Guessing it from the security is better than failing on a
+// field they did not know to fill in.
+func TestTheDefaultPortFollowsTheSecurity(t *testing.T) {
+	svc, _, db := newTestService(t, stubBackend{})
+
+	starttls, err := svc.AddPasswordAccount("a@sirket.local", "A",
+		"mail.sirket.local", 0, "starttls", "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	tlsAcct, err := svc.AddPasswordAccount("b@sirket.local", "B",
+		"mail.sirket.local", 0, "tls", "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	ctx := context.Background()
+	a, _ := db.GetAccount(ctx, starttls.ID)
+	b, _ := db.GetAccount(ctx, tlsAcct.ID)
+
+	if a.IMAPPort != 143 {
+		t.Errorf("STARTTLS account got port %d, want 143", a.IMAPPort)
+	}
+	if b.IMAPPort != 993 {
+		t.Errorf("TLS account got port %d, want 993", b.IMAPPort)
+	}
+}
+
+// A preset names a host that answers on 993. Carrying a STARTTLS choice into
+// it would point the upgrade at a port with nothing to upgrade.
+func TestAPresetOverridesAChosenSTARTTLS(t *testing.T) {
+	svc, _, db := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("someone@gmail.com", "G", "", 0, "starttls", "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	stored, _ := db.GetAccount(context.Background(), acct.ID)
+	if stored.IMAPSecurity != model.SecurityTLS || stored.IMAPPort != 993 {
+		t.Errorf("preset account is %s on port %d, want tls on 993",
+			stored.IMAPSecurity, stored.IMAPPort)
 	}
 }

@@ -14,7 +14,7 @@ import (
 var ErrNotFound = errors.New("store: not found")
 
 const accountColumns = `id, email, display_name, provider, auth_kind,
-	imap_host, imap_port, smtp_host, smtp_port, secret_ref, created_at`
+	imap_host, imap_port, imap_security, smtp_host, smtp_port, secret_ref, created_at`
 
 // InsertAccount records a new account. The secret is not part of Account's
 // stored form: only SecretRef, which names an entry in the SecretStore.
@@ -22,10 +22,11 @@ func (s *Store) InsertAccount(ctx context.Context, a model.Account) (int64, erro
 	res, err := s.write.ExecContext(ctx,
 		`INSERT INTO accounts
 		   (email, display_name, provider, auth_kind, imap_host, imap_port,
-		    smtp_host, smtp_port, secret_ref, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    imap_security, smtp_host, smtp_port, secret_ref, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.Email, a.DisplayName, string(a.Provider), string(a.AuthKind),
-		a.IMAPHost, a.IMAPPort, a.SMTPHost, a.SMTPPort,
+		a.IMAPHost, a.IMAPPort, string(model.SecurityOrDefault(string(a.IMAPSecurity))),
+		a.SMTPHost, a.SMTPPort,
 		a.SecretRef, a.CreatedAt.Unix())
 	if err != nil {
 		return 0, fmt.Errorf("store: insert account %q: %w", a.Email, err)
@@ -76,17 +77,21 @@ type scanner interface {
 
 func scanAccount(sc scanner) (model.Account, error) {
 	var (
-		a                  model.Account
-		provider, authKind string
-		createdAt          int64
+		a                            model.Account
+		provider, authKind, security string
+		createdAt                    int64
 	)
 	if err := sc.Scan(&a.ID, &a.Email, &a.DisplayName, &provider, &authKind,
-		&a.IMAPHost, &a.IMAPPort, &a.SMTPHost, &a.SMTPPort,
+		&a.IMAPHost, &a.IMAPPort, &security, &a.SMTPHost, &a.SMTPPort,
 		&a.SecretRef, &createdAt); err != nil {
 		return model.Account{}, err
 	}
 	a.Provider = model.Provider(provider)
 	a.AuthKind = model.AuthKind(authKind)
+	// Read through the default rather than cast: rows written before the
+	// column existed carry an empty string, and an account that connected over
+	// TLS yesterday must not quietly move to something weaker today.
+	a.IMAPSecurity = model.SecurityOrDefault(security)
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return a, nil
 }

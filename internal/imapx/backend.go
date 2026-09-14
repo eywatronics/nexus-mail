@@ -17,9 +17,16 @@ import (
 type Config struct {
 	Host string
 	Port int
-	// TLS selects implicit TLS on connect (port 993). Tests set it false to
-	// talk to a plaintext loopback server; production always sets it true.
-	TLS bool
+	// Security is how the connection is encrypted. The zero value is implicit
+	// TLS, so a caller that forgets to set it gets the safe answer.
+	Security model.ConnectionSecurity
+	// Insecure talks to the server in the clear, with no upgrade.
+	//
+	// Only tests set this, against a loopback server, and imapx refuses to
+	// send a password over such a connection regardless — see Dial. It exists
+	// because the in-memory server the sync engine is tested against speaks no
+	// TLS, not because plaintext is a configuration anyone should have.
+	Insecure bool
 	// Username is the address sent in the SASL exchange.
 	Username string
 }

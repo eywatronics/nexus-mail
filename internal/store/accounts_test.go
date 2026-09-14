@@ -117,3 +117,81 @@ func TestGetAccountByID(t *testing.T) {
 		t.Error("GetAccount() with an unknown id returned no error")
 	}
 }
+
+// The connection security is per account and has to survive a round trip:
+// getting it wrong means either a connection that cannot be made or, worse,
+// one made more weakly than the user chose.
+func TestAccountConnectionSecurityRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	id, err := s.InsertAccount(ctx, model.Account{
+		Email: "bt@sirket.local", Provider: model.ProviderGeneric,
+		AuthKind: model.AuthPassword, IMAPHost: "mail.sirket.local", IMAPPort: 143,
+		IMAPSecurity: model.SecuritySTARTTLS, SecretRef: "ref",
+	})
+	if err != nil {
+		t.Fatalf("InsertAccount() error: %v", err)
+	}
+
+	got, err := s.GetAccount(ctx, id)
+	if err != nil {
+		t.Fatalf("GetAccount() error: %v", err)
+	}
+	if got.IMAPSecurity != model.SecuritySTARTTLS {
+		t.Errorf("IMAPSecurity = %q, want starttls", got.IMAPSecurity)
+	}
+}
+
+// Rows written before the column existed carry an empty string. An account
+// that connected over implicit TLS yesterday must not quietly move to
+// something weaker today, so the default has to resolve upwards.
+func TestAnAccountWithNoRecordedSecurityReadsAsTLS(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	id, err := s.InsertAccount(ctx, model.Account{
+		Email: "eski@example.com", Provider: model.ProviderGeneric,
+		AuthKind: model.AuthPassword, IMAPHost: "imap.example.com", IMAPPort: 993,
+		SecretRef: "ref",
+	})
+	if err != nil {
+		t.Fatalf("InsertAccount() error: %v", err)
+	}
+
+	// Put the column back to what migration 003 would have left on an existing
+	// row, which the insert above cannot produce on its own.
+	if _, err := s.Write().ExecContext(ctx,
+		`UPDATE accounts SET imap_security = '' WHERE id = ?`, id); err != nil {
+		t.Fatalf("blanking the column: %v", err)
+	}
+
+	got, err := s.GetAccount(ctx, id)
+	if err != nil {
+		t.Fatalf("GetAccount() error: %v", err)
+	}
+	if got.IMAPSecurity != model.SecurityTLS {
+		t.Errorf("IMAPSecurity = %q for a pre-migration row, want tls", got.IMAPSecurity)
+	}
+}
+
+// An unrecognised value is a value nobody can act on. Resolving it to the
+// stronger option is the only safe direction to guess in.
+func TestAnUnknownSecurityValueReadsAsTLS(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	id, _ := s.InsertAccount(ctx, model.Account{
+		Email: "x@example.com", Provider: model.ProviderGeneric,
+		AuthKind: model.AuthPassword, IMAPHost: "h", IMAPPort: 993, SecretRef: "ref",
+	})
+	if _, err := s.Write().ExecContext(ctx,
+		`UPDATE accounts SET imap_security = 'plaintext' WHERE id = ?`, id); err != nil {
+		t.Fatalf("writing a bad value: %v", err)
+	}
+
+	got, _ := s.GetAccount(ctx, id)
+	if got.IMAPSecurity != model.SecurityTLS {
+		t.Errorf("IMAPSecurity = %q for an unknown value, want tls", got.IMAPSecurity)
+	}
+}

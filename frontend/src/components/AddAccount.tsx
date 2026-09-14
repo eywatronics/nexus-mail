@@ -45,6 +45,24 @@ const MODES: Array<{ value: Mode; label: string; hint: string; icon: Icon }> = [
   },
 ]
 
+type Security = 'tls' | 'starttls'
+
+/**
+ * Both options encrypt. There is no third one: a password sent in the clear is
+ * a password given away, and offering that choice would make a
+ * misconfiguration silent instead of impossible.
+ *
+ * STARTTLS is here because of on-premises Exchange. Its IMAP4 service defaults
+ * to LoginType SecureLogin, which will not accept a password until the
+ * connection has been upgraded, and plenty of deployments publish only 143.
+ */
+const SECURITIES: Array<{ value: Security; label: string; hint: string }> = [
+  { value: 'tls', label: 'SSL/TLS', hint: 'Port 993' },
+  { value: 'starttls', label: 'STARTTLS', hint: 'Port 143' },
+]
+
+const DEFAULT_PORTS: Record<Security, number> = { tls: 993, starttls: 143 }
+
 const PROMISES: Array<{ icon: Icon; title: string; body: string }> = [
   {
     icon: HardDrives,
@@ -74,6 +92,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
   const [displayName, setDisplayName] = useState('')
   const [imapHost, setImapHost] = useState('')
   const [imapPort, setImapPort] = useState(993)
+  const [security, setSecurity] = useState<Security>('tls')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -84,7 +103,16 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
     try {
       const account =
         mode === 'password'
-          ? await addPasswordAccount(email, displayName, imapHost, imapPort, '', 0, password)
+          ? await addPasswordAccount(
+              email,
+              displayName,
+              imapHost,
+              imapPort,
+              security,
+              '',
+              0,
+              password,
+            )
           : await addOAuthAccount(email, displayName, mode)
 
       // Drop the password from component state the moment it is stored, so it
@@ -164,6 +192,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                       name="mode"
                       value={value}
                       checked={active}
+                      data-testid={`mode-${value}`}
                       onChange={() => setMode(value)}
                       className="sr-only"
                     />
@@ -190,6 +219,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
               </label>
               <input
                 id="email"
+                data-testid="email"
                 type="email"
                 autoComplete="email"
                 placeholder="you@example.com"
@@ -215,6 +245,54 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
 
             {mode === 'password' ? (
               <>
+                {/* Above the host and port because it decides the port. Asked
+                    for rather than guessed from the number typed: a server on
+                    a non-standard port would be guessed wrong, and guessing
+                    wrong means either a connection that cannot be made or one
+                    made more weakly than intended. */}
+                <div className="flex flex-col gap-2">
+                  <span className={`text-xs font-medium ${TEXT.secondary}`}>Encryption</span>
+                  <div role="radiogroup" aria-label="Encryption" className="flex gap-1.5">
+                    {SECURITIES.map(({ value, label, hint }) => {
+                      const active = security === value
+                      return (
+                        <label
+                          key={value}
+                          className={[
+                            RADIUS,
+                            'flex flex-1 cursor-pointer flex-col gap-0.5 border px-3 py-2 transition-colors',
+                            active
+                              ? 'border-[var(--color-accent)] bg-[var(--color-surface-selected)] dark:bg-[var(--color-surface-selected-dark)]'
+                              : `${SURFACE.divider} hover:bg-neutral-100 dark:hover:bg-neutral-900`,
+                          ].join(' ')}
+                        >
+                          <input
+                            type="radio"
+                            name="security"
+                            value={value}
+                            checked={active}
+                            data-testid={`security-${value}`}
+                            onChange={() => {
+                              setSecurity(value)
+                              // The port follows, unless the user has already
+                              // moved it off a standard one — in which case
+                              // they know something this code does not.
+                              setImapPort((was) =>
+                                was === 993 || was === 143 ? DEFAULT_PORTS[value] : was,
+                              )
+                            }}
+                            className="sr-only"
+                          />
+                          <span className={`text-sm ${active ? TEXT.primary : TEXT.secondary}`}>
+                            {label}
+                          </span>
+                          <span className={`text-xs ${TEXT.muted}`}>{hint}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-[1fr_6rem] gap-3">
                   <div className="flex flex-col gap-2">
                     <label htmlFor="imap-host" className={`text-xs font-medium ${TEXT.secondary}`}>
@@ -222,6 +300,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                     </label>
                     <input
                       id="imap-host"
+                      data-testid="imap-host"
                       type="text"
                       placeholder="imap.example.com"
                       value={imapHost}
@@ -229,7 +308,8 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                       className={INPUT}
                     />
                     <p className={`text-xs ${TEXT.muted}`}>
-                      Leave blank for well-known providers.
+                      Leave blank for well-known providers. For on-premises
+                      Exchange this is the internal server name your IT gave you.
                     </p>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -238,6 +318,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                     </label>
                     <input
                       id="imap-port"
+                      data-testid="imap-port"
                       type="number"
                       value={imapPort}
                       onChange={(e) => setImapPort(Number(e.target.value))}
@@ -252,6 +333,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                   </label>
                   <input
                     id="password"
+                    data-testid="password"
                     type="password"
                     autoComplete="off"
                     placeholder="Password or app password"
@@ -289,6 +371,7 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                data-testid="submit-account"
                 onClick={submit}
                 disabled={busy || email === ''}
                 className={`${BUTTON_PRIMARY} inline-flex items-center gap-2 whitespace-nowrap`}

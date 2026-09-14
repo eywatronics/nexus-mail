@@ -44,10 +44,61 @@ type Account struct {
 	IMAPPort    int
 	SMTPHost    string
 	SMTPPort    int
+	// IMAPSecurity is how the connection is encrypted. Empty means SecurityTLS,
+	// which is what every account created before this field existed used.
+	IMAPSecurity ConnectionSecurity
 	// SecretRef names the entry in the SecretStore. The secret itself is never
 	// stored in the database.
 	SecretRef string
 	CreatedAt time.Time
+}
+
+// ConnectionSecurity is how a connection to a mail server is encrypted.
+//
+// There is no "none". A password sent in the clear is a password given away,
+// and every mechanism this client can authenticate with sends something worth
+// stealing. Offering the option would make a misconfiguration silent instead
+// of impossible.
+type ConnectionSecurity string
+
+const (
+	// SecurityTLS is implicit TLS: the connection is encrypted from the first
+	// byte. Port 993. The default, and correct wherever it is offered.
+	SecurityTLS ConnectionSecurity = "tls"
+	// SecuritySTARTTLS opens in the clear and upgrades before authenticating.
+	// Port 143.
+	//
+	// Worth supporting because on-premises Exchange is usually handed out this
+	// way: its IMAP4 service defaults to LoginType SecureLogin, which requires
+	// the upgrade before it will accept a password, and many deployments
+	// publish only 143.
+	//
+	// The upgrade is mandatory, never opportunistic. A server that will not
+	// upgrade is refused rather than talked to in the clear, because a network
+	// attacker who can strip the STARTTLS advertisement gets the password.
+	SecuritySTARTTLS ConnectionSecurity = "starttls"
+)
+
+// SecurityOrDefault reads a stored value, treating anything unrecognised as
+// implicit TLS.
+//
+// Unrecognised includes empty, which is every account created before the
+// column existed. Defaulting to the stronger option is the only safe direction
+// to guess in.
+func SecurityOrDefault(value string) ConnectionSecurity {
+	if ConnectionSecurity(value) == SecuritySTARTTLS {
+		return SecuritySTARTTLS
+	}
+	return SecurityTLS
+}
+
+// DefaultIMAPPort is the port that goes with a connection security, used when
+// the user has not given one.
+func DefaultIMAPPort(security ConnectionSecurity) int {
+	if security == SecuritySTARTTLS {
+		return 143
+	}
+	return 993
 }
 
 type Folder struct {

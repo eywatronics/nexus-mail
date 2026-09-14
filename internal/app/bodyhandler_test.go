@@ -28,7 +28,7 @@ func newBodyHandler(t *testing.T, messageHTML string) (*BodyHandler, int64) {
 
 	svc, _, _ := newTestService(t, bodyBackend{html: messageHTML})
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}

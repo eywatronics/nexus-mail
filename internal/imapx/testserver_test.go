@@ -1,10 +1,18 @@
 package imapx
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"net"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
@@ -79,7 +87,7 @@ func configFor(t *testing.T, addr string) Config {
 	if err != nil {
 		t.Fatalf("parse port %q: %v", portStr, err)
 	}
-	return Config{Host: host, Port: port, TLS: false, Username: testUser}
+	return Config{Host: host, Port: port, Insecure: true, Username: testUser}
 }
 
 func testProvider(t *testing.T, password string) auth.CredentialProvider {
@@ -127,4 +135,80 @@ func htmlMessage(subject, from, body string) string {
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/html; charset=utf-8\r\n" +
 		"\r\n" + body + "\r\n"
+}
+
+// startSTARTTLSServer runs a plaintext listener that offers the upgrade, which
+// is how on-premises Exchange publishes IMAP: port 143, encrypted only once
+// the client asks for it.
+//
+// A nil tlsCfg makes the server refuse to upgrade, which is the case the
+// mandatory-upgrade test needs.
+func startSTARTTLSServer(t *testing.T, tlsCfg *tls.Config) (addr string, user *imapmemserver.User) {
+	t.Helper()
+
+	mem := imapmemserver.New()
+	user = imapmemserver.NewUser(testUser, testPass)
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create INBOX: %v", err)
+	}
+	mem.AddUser(user)
+
+	srv := imapserver.New(&imapserver.Options{
+		NewSession: func(_ *imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		Caps:         serverCaps(),
+		TLSConfig:    tlsCfg,
+		InsecureAuth: true,
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	return ln.Addr().String(), user
+}
+
+// ownCA issues a certificate for 127.0.0.1 and returns a pool that trusts it.
+//
+// This is what an on-premises server looks like on a domain-joined machine:
+// the certificate is issued by the organisation's own authority, which the
+// machine trusts. Switching verification off to make the test pass would have
+// tested nothing at all — the pool is what keeps the handshake real.
+func ownCA(t *testing.T) (*tls.Config, *x509.CertPool) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+		MinVersion:   tls.VersionTLS12,
+	}, pool
 }

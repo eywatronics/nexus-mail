@@ -128,6 +128,8 @@ export const addPasswordAccount = (
   displayName: string,
   imapHost: string,
   imapPort: number,
+  /** "tls" (implicit, 993) or "starttls" (upgrade, 143). Anything else reads as tls. */
+  imapSecurity: string,
   smtpHost: string,
   smtpPort: number,
   password: string,
@@ -137,6 +139,7 @@ export const addPasswordAccount = (
     displayName,
     imapHost,
     imapPort,
+    imapSecurity,
     smtpHost,
     smtpPort,
     password,

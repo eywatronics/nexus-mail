@@ -27,7 +27,7 @@ func (b rawBackend) FetchRaw(context.Context, uint32) ([]byte, error) {
 func firstMessage(t *testing.T, svc *MailService) int64 {
 	t.Helper()
 
-	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
 		t.Fatalf("AddPasswordAccount() error: %v", err)
 	}
