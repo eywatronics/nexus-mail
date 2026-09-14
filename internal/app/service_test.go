@@ -17,18 +17,31 @@ import (
 )
 
 type recorder struct {
-	mu     sync.Mutex
-	names  []string
-	events []SyncEvent
+	mu      sync.Mutex
+	names   []string
+	events  []SyncEvent
+	newMail []NewMailEvent
 }
 
 func (r *recorder) emit(name string, data any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.names = append(r.names, name)
-	if ev, ok := data.(SyncEvent); ok {
+	switch ev := data.(type) {
+	case SyncEvent:
 		r.events = append(r.events, ev)
+	case NewMailEvent:
+		r.newMail = append(r.newMail, ev)
 	}
+}
+
+// arrivals returns the new-mail announcements, copied under the lock: the
+// watch goroutines emit from their own goroutine and a test reading the slice
+// directly would be a data race.
+func (r *recorder) arrivals() []NewMailEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]NewMailEvent(nil), r.newMail...)
 }
 
 func (r *recorder) recorded() ([]string, []SyncEvent) {

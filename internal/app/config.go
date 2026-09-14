@@ -23,6 +23,11 @@ type fileConfig struct {
 	// something they can actually say; absent means "use the default".
 	RetentionDays        *int `json:"retentionDays,omitempty"`
 	RetentionMaxMessages *int `json:"retentionMaxMessages,omitempty"`
+
+	// A pointer for the same reason: absent has to mean "the default", and the
+	// default here is on. A plain bool would make a config file that never
+	// mentioned notifications silently turn their content off.
+	NotificationPreview *bool `json:"notificationPreview,omitempty"`
 }
 
 // Config carries wiring the service cannot construct for itself.
@@ -54,6 +59,17 @@ type Config struct {
 	// same reason as LogDir: a test must be able to point it at a temporary
 	// directory rather than the user's real one.
 	AttachmentDir func() (string, error)
+
+	// NotificationPreview puts the sender and subject in the new-mail
+	// notification, rather than only a count.
+	//
+	// A setting because of where notifications end up. Windows shows them on
+	// the lock screen unless told otherwise, and a client that argues for
+	// privacy should not be the one deciding that a stranger standing at the
+	// desk gets to read who wrote and about what. On by default: a
+	// notification saying only "3 new messages" is one nobody can act on, and
+	// Windows has its own switch for hiding content when locked.
+	NotificationPreview bool
 
 	// InvalidateBody drops a message from the reading pane's render cache.
 	//
@@ -95,10 +111,11 @@ func LoadConfig(dir string) (Config, error) {
 	}
 
 	return Config{
-		GoogleClientID:    fc.GoogleClientID,
-		MicrosoftClientID: fc.MicrosoftClientID,
-		OAuthRedirectPort: fc.OAuthRedirectPort,
-		Retention:         retention,
+		GoogleClientID:      fc.GoogleClientID,
+		MicrosoftClientID:   fc.MicrosoftClientID,
+		OAuthRedirectPort:   fc.OAuthRedirectPort,
+		Retention:           retention,
+		NotificationPreview: fc.NotificationPreview == nil || *fc.NotificationPreview,
 	}, nil
 }
 

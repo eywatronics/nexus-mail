@@ -71,6 +71,10 @@ func (s *MailService) startWatcherLocked(acct model.Account) {
 			// The pass already wrote whatever changed; this only tells the
 			// window to read it again.
 			s.cfg.Emit(EventSyncFinished, SyncEvent{AccountID: acct.ID, Email: acct.Email})
+			// And, separately, whether any of it was worth interrupting the
+			// reader for. Most passes are not: the loop wakes on flag changes
+			// and expunges too, and only arrivals are news.
+			s.announceNewMail(acct)
 		})
 		if err != nil && ctx.Err() == nil {
 			s.cfg.Emit(EventSyncFailed, SyncEvent{

@@ -36,6 +36,11 @@ type MailService struct {
 	watchMu  sync.Mutex
 	watchCtx context.Context
 	watching map[int64]context.CancelFunc
+
+	// arrivals is the highest message id each account has already been
+	// announced. Guarded by watchMu, which is already the lock for everything
+	// the watch goroutines touch.
+	arrivals map[int64]int64
 }
 
 func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engine, cfg Config) *MailService {

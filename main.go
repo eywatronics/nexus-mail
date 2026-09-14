@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"nexusmail/internal/app"
 	"nexusmail/internal/auth"
@@ -56,6 +59,59 @@ func refreshTrayTooltip(tray *application.SystemTray, service *app.MailService, 
 		return
 	}
 	tray.SetTooltip(app.TrayTooltip(unread))
+}
+
+// notifyNewMail turns an arrival into an operating system notification.
+//
+// Skipped while the window is on screen and focused: a reader watching the
+// list does not need to be told what they can already see, and a toast for it
+// is the kind of noise that gets notifications switched off entirely.
+//
+// The decision about how much the notification says was already made in the
+// service, which knows whether the reader allowed previews. Nothing here
+// reaches back into the message.
+func notifyNewMail(notifier *notifications.NotificationService, window application.Window,
+	event *application.CustomEvent, logger *slog.Logger) {
+
+	if window.IsVisible() && window.IsFocused() {
+		return
+	}
+
+	arrival, ok := newMailEventFrom(event)
+	if !ok {
+		return
+	}
+
+	err := notifier.SendNotification(notifications.NotificationOptions{
+		// One id per account, so a second arrival replaces the first rather
+		// than stacking a column of toasts nobody reads.
+		ID:    fmt.Sprintf("new-mail-%d", arrival.AccountID),
+		Title: app.NotificationTitle(arrival),
+		Body:  app.NotificationBody(arrival),
+	})
+	if err != nil {
+		// Not fatal, and deliberately not retried: the mail is already in the
+		// database and the tray tooltip already says so.
+		logger.Error("could not deliver a new mail notification", "err", err)
+	}
+}
+
+// newMailEventFrom recovers the payload from the event bus.
+//
+// Wails round-trips custom event data through JSON, so what comes back is a
+// map rather than the struct that went in. Re-marshalling is the smallest way
+// to get the struct back without duplicating its field names here, where they
+// would drift from the ones the service actually sends.
+func newMailEventFrom(event *application.CustomEvent) (app.NewMailEvent, bool) {
+	raw, err := json.Marshal(event.Data)
+	if err != nil {
+		return app.NewMailEvent{}, false
+	}
+	var arrival app.NewMailEvent
+	if err := json.Unmarshal(raw, &arrival); err != nil {
+		return app.NewMailEvent{}, false
+	}
+	return arrival, true
 }
 
 // syncEverything runs a sync for every account, which is what the tray's
@@ -143,6 +199,11 @@ func run(debug bool) error {
 		}
 	}
 
+	// Registered as a service so Wails performs the platform's own setup — on
+	// Windows that means an app user model id, without which a toast is
+	// delivered to nothing at all.
+	notifier := notifications.New()
+
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
 	service := app.NewMailService(db, secrets, engine, cfg)
@@ -153,6 +214,7 @@ func run(debug bool) error {
 		Description: "Local-first, privacy-focused mail client",
 		Services: []application.Service{
 			application.NewService(service),
+			application.NewService(notifier),
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
@@ -223,6 +285,10 @@ func run(debug bool) error {
 		refreshTrayTooltip(tray, service, logger)
 	})
 	refreshTrayTooltip(tray, service, logger)
+
+	wailsApp.Event.On(app.EventNewMail, func(event *application.CustomEvent) {
+		notifyNewMail(notifier, window, event, logger)
+	})
 
 	// Live sync starts before the window opens and stops when Run returns.
 	// Everything the IDLE loop does hangs off this context, so closing the
