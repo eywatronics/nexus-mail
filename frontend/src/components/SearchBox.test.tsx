@@ -13,6 +13,7 @@ const message = (id: number, folderId = 1): Message => ({
   folderId,
   uid: id,
   threadId: `<t${id}@x>`,
+  threadCount: 1,
   subject: `Konu ${id}`,
   fromName: 'Gönderen',
   fromAddr: 'g@example.com',

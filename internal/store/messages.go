@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"nexusmail/internal/model"
@@ -108,42 +109,85 @@ func (s *Store) ListMessages(ctx context.Context, folderID int64, limit, offset 
 	return scanMessageRows(rows)
 }
 
-// scanMessageRows decodes rows selected with messageColumns.
+// prefixedMessageColumns is messageColumns qualified with the alias "m", for
+// the reads that join another table and would otherwise be ambiguous.
 //
-// Shared by every read path rather than copied into each one: the scan order
-// has to match the column list exactly, and a second copy is a place for the
-// two to drift the first time a field is added.
+// Derived from the one list rather than written out again: the scan order has
+// to match the column order exactly, and a second hand-maintained copy is
+// where the two drift apart the first time a column is added.
+var prefixedMessageColumns = prefixColumns(messageColumns, "m")
+
+func prefixColumns(columns, alias string) string {
+	parts := strings.Split(columns, ",")
+	for i, p := range parts {
+		parts[i] = alias + "." + strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// rawMessage holds the columns that arrive as text or integers and become
+// something else on the model.
+type rawMessage struct {
+	refs, to, cc, flags string
+	date, internal      int64
+	hasAtt, bodyFetched int
+}
+
+// scanTargets maps messageColumns onto a message, in the same order.
+//
+// One definition rather than one per read path: the scan order has to match
+// the column list exactly, and a second copy is where the two drift apart the
+// first time a column is added.
+func scanTargets(m *model.Message, raw *rawMessage) []any {
+	return []any{
+		&m.ID, &m.AccountID, &m.FolderID, &m.UID, &m.MessageID,
+		&m.ThreadID, &m.InReplyTo, &raw.refs, &m.Subject, &m.From.Name, &m.From.Addr,
+		&raw.to, &raw.cc, &raw.date, &raw.internal, &m.Size, &m.Snippet, &raw.flags,
+		&raw.hasAtt, &raw.bodyFetched,
+	}
+}
+
+// scanMessageRows decodes rows selected with messageColumns.
 func scanMessageRows(rows *sql.Rows) ([]model.Message, error) {
+	return scanRows(rows, false)
+}
+
+// scanThreadedRows decodes rows selected with messageColumns plus a trailing
+// thread_count.
+func scanThreadedRows(rows *sql.Rows) ([]model.Message, error) {
+	return scanRows(rows, true)
+}
+
+func scanRows(rows *sql.Rows, withThreadCount bool) ([]model.Message, error) {
 	var out []model.Message
 	for rows.Next() {
 		var (
-			m                   model.Message
-			refs, to, cc, flags string
-			date, internal      int64
-			hasAtt, bodyFetched int
+			m   model.Message
+			raw rawMessage
 		)
-		if err := rows.Scan(&m.ID, &m.AccountID, &m.FolderID, &m.UID, &m.MessageID,
-			&m.ThreadID, &m.InReplyTo, &refs, &m.Subject, &m.From.Name, &m.From.Addr,
-			&to, &cc, &date, &internal, &m.Size, &m.Snippet, &flags,
-			&hasAtt, &bodyFetched); err != nil {
+		targets := scanTargets(&m, &raw)
+		if withThreadCount {
+			targets = append(targets, &m.ThreadCount)
+		}
+		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
-		if err := unmarshalIfSet(refs, &m.References); err != nil {
+		if err := unmarshalIfSet(raw.refs, &m.References); err != nil {
 			return nil, err
 		}
-		if err := unmarshalIfSet(to, &m.To); err != nil {
+		if err := unmarshalIfSet(raw.to, &m.To); err != nil {
 			return nil, err
 		}
-		if err := unmarshalIfSet(cc, &m.Cc); err != nil {
+		if err := unmarshalIfSet(raw.cc, &m.Cc); err != nil {
 			return nil, err
 		}
-		if err := unmarshalIfSet(flags, &m.Flags); err != nil {
+		if err := unmarshalIfSet(raw.flags, &m.Flags); err != nil {
 			return nil, err
 		}
-		m.Date = time.Unix(date, 0)
-		m.InternalDate = time.Unix(internal, 0)
-		m.HasAttachments = hasAtt == 1
-		m.BodyFetched = bodyFetched == 1
+		m.Date = time.Unix(raw.date, 0)
+		m.InternalDate = time.Unix(raw.internal, 0)
+		m.HasAttachments = raw.hasAtt == 1
+		m.BodyFetched = raw.bodyFetched == 1
 		out = append(out, m)
 	}
 	return out, rows.Err()

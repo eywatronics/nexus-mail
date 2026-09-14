@@ -46,7 +46,7 @@ func newBodyHandler(t *testing.T, messageHTML string) (*BodyHandler, int64) {
 			inboxID = f.ID
 		}
 	}
-	msgs, err := svc.ListMessages(inboxID, 10, 0)
+	msgs, err := svc.ListMessages(inboxID, 10, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}

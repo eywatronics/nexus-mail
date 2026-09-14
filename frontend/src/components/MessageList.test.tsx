@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMailStore } from '../store/useMailStore'
 import { MessageList } from './MessageList'
@@ -10,6 +10,7 @@ function makeMessages(count: number): Message[] {
     folderId: 1,
     uid: i + 1,
     threadId: `<t${i}@x>`,
+    threadCount: 1,
     subject: `Subject ${i + 1}`,
     fromName: `Sender ${i + 1}`,
     fromAddr: `s${i + 1}@example.com`,
@@ -156,5 +157,81 @@ describe('selection is visible', () => {
 
     expect(unselected.className).toContain('border-l-2')
     expect(unselected.className).toContain('border-l-transparent')
+  })
+})
+
+describe('conversation grouping', () => {
+  const threadMessage = (id: number, threadId: string, threadCount: number) => ({
+    id,
+    folderId: 1,
+    uid: id,
+    threadId,
+    threadCount,
+    subject: `Konu ${id}`,
+    fromName: `Gönderen ${id}`,
+    fromAddr: `g${id}@example.com`,
+    snippet: 'önizleme',
+    internalDateUnix: 1700000000 + id,
+    isRead: true,
+    isStarred: false,
+    hasAttachments: false,
+    bodyFetched: false,
+  })
+
+  const seedThread = () =>
+    useMailStore.setState({
+      selectedFolderId: 1,
+      threaded: true,
+      messages: [
+        threadMessage(1, '<a>', 2),
+        threadMessage(2, '<a>', 2),
+        threadMessage(3, '<b>', 1),
+      ],
+    })
+
+  it('draws a conversation as one row with its size', () => {
+    seedThread()
+    const { getAllByTestId, getByTestId } = render(<MessageList onLoadMore={() => {}} />)
+
+    expect(getAllByTestId('thread-row')).toHaveLength(1)
+    expect(getByTestId('thread-count').textContent).toBe('2')
+    // The conversation of one is still an ordinary row.
+    expect(getAllByTestId('message-row')).toHaveLength(1)
+  })
+
+  it('opens a conversation when its row is clicked', async () => {
+    seedThread()
+    const { getByTestId, getAllByTestId } = render(<MessageList onLoadMore={() => {}} />)
+
+    fireEvent.click(getByTestId('thread-row'))
+
+    await waitFor(() => {
+      // The header stays, so there is still something to click to close it.
+      expect(getByTestId('thread-row').getAttribute('aria-expanded')).toBe('true')
+      expect(getAllByTestId('message-row')).toHaveLength(3)
+    })
+  })
+
+  // j and k walk every message, including ones inside a closed conversation.
+  // A selection the reader cannot see is a selection they cannot act on.
+  it('opens the conversation the selection moves into', async () => {
+    seedThread()
+    const { getAllByTestId } = render(<MessageList onLoadMore={() => {}} />)
+
+    useMailStore.setState({ selectedMessageId: 1 })
+
+    await waitFor(() => {
+      expect(getAllByTestId('message-row')).toHaveLength(3)
+    })
+  })
+
+  it('shows every message individually when grouping is off', () => {
+    seedThread()
+    useMailStore.setState({ threaded: false })
+
+    const { getAllByTestId, queryByTestId } = render(<MessageList onLoadMore={() => {}} />)
+
+    expect(queryByTestId('thread-row')).toBeNull()
+    expect(getAllByTestId('message-row')).toHaveLength(3)
   })
 })

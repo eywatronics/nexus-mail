@@ -1,14 +1,19 @@
-import { CircleNotch, MagnifyingGlass, X } from '@phosphor-icons/react'
+import { ChatsCircle, CircleNotch, MagnifyingGlass, X } from '@phosphor-icons/react'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
 import { isTypingTarget } from '../lib/keyboard'
-import { ICON, INPUT, SURFACE, TEXT } from '../lib/ui'
+import { BUTTON_GHOST, ICON, ICON_ONLY, INPUT, SURFACE, TEXT } from '../lib/ui'
 
 /**
- * The box sits at the head of the message column rather than in the sidebar,
- * because that column is what it changes. A control in one column that
- * silently rewrites another is how a person ends up not noticing the search is
- * still open.
+ * The header strip of the message column.
+ *
+ * It sits here rather than in the sidebar because this column is what its
+ * controls change. A control in one column that silently rewrites another is
+ * how a person ends up not noticing the search is still open.
+ *
+ * The conversation toggle shares the strip rather than getting a bar of its
+ * own: this is a dense interface, and a second row of chrome costs the list a
+ * message's worth of height for one button.
  */
 export function SearchBox() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -17,6 +22,9 @@ export function SearchBox() {
   const searchPending = useMailStore((s) => s.searchPending)
   const setSearchQuery = useMailStore((s) => s.setSearchQuery)
   const clearSearch = useMailStore((s) => s.clearSearch)
+  const threaded = useMailStore((s) => s.threaded)
+  const setThreaded = useMailStore((s) => s.setThreaded)
+  const searching = useMailStore((s) => s.searching)
 
   useEffect(() => {
     // "/" is the shortcut every reader-shaped application uses, and it has to
@@ -36,8 +44,8 @@ export function SearchBox() {
   }, [])
 
   return (
-    <div className={`border-b p-2 ${SURFACE.divider}`}>
-      <div className="relative">
+    <div className={`flex items-center gap-1.5 border-b p-2 ${SURFACE.divider}`}>
+      <div className="relative min-w-0 flex-1">
         <MagnifyingGlass
           size={ICON.size}
           weight={ICON.weight}
@@ -90,7 +98,31 @@ export function SearchBox() {
           </button>
         )}
       </div>
+
+      {/* Disabled while searching rather than hidden: results span folders and
+          are ranked by relevance, so there is nothing to group. A control that
+          vanished would leave the reader wondering where it went. */}
+      <button
+        type="button"
+        data-testid="toggle-threading"
+        aria-pressed={threaded}
+        disabled={searching}
+        aria-label={threaded ? 'Show messages individually' : 'Group by conversation'}
+        title={threaded ? 'Show messages individually' : 'Group by conversation'}
+        onClick={() => setThreaded(!threaded)}
+        className={[
+          BUTTON_GHOST,
+          ICON_ONLY,
+          'shrink-0 disabled:cursor-not-allowed disabled:opacity-40',
+          threaded ? 'text-[var(--color-accent)]' : '',
+        ].join(' ')}
+      >
+        <ChatsCircle
+          size={ICON.size}
+          weight={threaded ? 'fill' : ICON.weight}
+          aria-hidden
+        />
+      </button>
     </div>
   )
 }
-

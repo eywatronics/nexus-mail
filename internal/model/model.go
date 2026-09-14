@@ -210,18 +210,22 @@ type Address struct {
 }
 
 type Message struct {
-	ID         int64
-	AccountID  int64
-	FolderID   int64
-	UID        uint32
-	MessageID  string
-	ThreadID   string
-	InReplyTo  string
-	References []string
-	Subject    string
-	From       Address
-	To         []Address
-	Cc         []Address
+	ID        int64
+	AccountID int64
+	FolderID  int64
+	UID       uint32
+	MessageID string
+	ThreadID  string
+	// ThreadCount is how many messages of this conversation are in this
+	// folder. Filled in only by the reads that group by conversation; zero
+	// everywhere else, which reads as "not asked".
+	ThreadCount int
+	InReplyTo   string
+	References  []string
+	Subject     string
+	From        Address
+	To          []Address
+	Cc          []Address
 	// Date comes from the Date: header, reconciled against InternalDate on
 	// ingest: an unparseable or implausible header is replaced by the server's
 	// delivery time. Sorting and display use InternalDate regardless.

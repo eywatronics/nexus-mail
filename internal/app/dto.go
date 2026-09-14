@@ -35,10 +35,13 @@ type MessageDTO struct {
 	FolderID int64  `json:"folderId"`
 	UID      uint32 `json:"uid"`
 	ThreadID string `json:"threadId"`
-	Subject  string `json:"subject"`
-	FromName string `json:"fromName"`
-	FromAddr string `json:"fromAddr"`
-	Snippet  string `json:"snippet"`
+	// ThreadCount is how many messages this conversation has in this folder.
+	// Zero outside the threaded list, where it was never asked for.
+	ThreadCount int    `json:"threadCount"`
+	Subject     string `json:"subject"`
+	FromName    string `json:"fromName"`
+	FromAddr    string `json:"fromAddr"`
+	Snippet     string `json:"snippet"`
 	// InternalDateUnix is seconds since the epoch. An explicit integer avoids
 	// the timezone ambiguity that string dates cause across the JS boundary,
 	// and it is the server's delivery time rather than the forgeable Date:
@@ -79,6 +82,7 @@ func messageToDTO(m model.Message) MessageDTO {
 		FolderID:         m.FolderID,
 		UID:              m.UID,
 		ThreadID:         m.ThreadID,
+		ThreadCount:      m.ThreadCount,
 		Subject:          m.Subject,
 		FromName:         m.From.Name,
 		FromAddr:         m.From.Addr,

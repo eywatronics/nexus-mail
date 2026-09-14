@@ -44,6 +44,7 @@ export default function App() {
   const applySyncEvent = useMailStore((s) => s.applySyncEvent)
   const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const messageCount = useMailStore((s) => s.messages.length)
+  const threaded = useMailStore((s) => s.threaded)
   const folders = useMailStore((s) => s.folders)
   const searchQuery = useMailStore((s) => s.searchQuery)
   const searching = useMailStore((s) => s.searching)
@@ -86,7 +87,7 @@ export default function App() {
     if (state.selectedFolderId === null || state.searching) return
 
     const count = Math.max(PAGE_SIZE, state.messages.length)
-    listMessages(state.selectedFolderId, count, 0)
+    listMessages(state.selectedFolderId, count, 0, state.threaded)
       .then((page) => state.replaceMessages(page, page.length === count))
       .catch(() => {})
   }, [])
@@ -117,10 +118,13 @@ export default function App() {
     if (selectedFolderId === null) return
 
     startMessageLoad()
-    openFolder(selectedFolderId, PAGE_SIZE)
+    openFolder(selectedFolderId, PAGE_SIZE, threaded)
       .then((page) => appendMessages(page, page.length === PAGE_SIZE))
       .catch(() => appendMessages([], false))
-  }, [selectedFolderId, startMessageLoad, appendMessages])
+    // threaded is a dependency because it changes the order the backend
+    // returns, so switching views has to refetch rather than re-sort what is
+    // already loaded: thread ranking is over the whole folder, not the page.
+  }, [selectedFolderId, threaded, startMessageLoad, appendMessages])
 
   useEffect(() => {
     if (!searching || activeAccountId === null) return
@@ -139,10 +143,10 @@ export default function App() {
     if (selectedFolderId === null) return
 
     startMessageLoad()
-    listMessages(selectedFolderId, PAGE_SIZE, messageCount)
+    listMessages(selectedFolderId, PAGE_SIZE, messageCount, threaded)
       .then((page) => appendMessages(page, page.length === PAGE_SIZE))
       .catch(() => appendMessages([], false))
-  }, [selectedFolderId, messageCount, startMessageLoad, appendMessages])
+  }, [selectedFolderId, messageCount, threaded, startMessageLoad, appendMessages])
 
   if (!ready) {
     return (

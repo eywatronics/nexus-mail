@@ -45,7 +45,7 @@ func firstMessage(t *testing.T, svc *MailService) int64 {
 			inbox = f
 		}
 	}
-	msgs, err := svc.ListMessages(inbox.ID, 10, 0)
+	msgs, err := svc.ListMessages(inbox.ID, 10, 0, false)
 	if err != nil || len(msgs) == 0 {
 		t.Fatalf("ListMessages() = %v, %v", msgs, err)
 	}

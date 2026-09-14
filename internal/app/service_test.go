@@ -250,7 +250,7 @@ func TestSyncAccountEmitsStartAndFinish(t *testing.T) {
 		t.Fatal("no folder was flagged as the inbox")
 	}
 
-	msgs, err := svc.ListMessages(inbox.ID, 50, 0)
+	msgs, err := svc.ListMessages(inbox.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestOpenFolderSyncsALazyFolder(t *testing.T) {
 		t.Fatal("the Projects folder was not stored")
 	}
 
-	before, err := svc.ListMessages(projects.ID, 50, 0)
+	before, err := svc.ListMessages(projects.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestOpenFolderSyncsALazyFolder(t *testing.T) {
 		t.Fatalf("the lazy folder already holds %d messages", len(before))
 	}
 
-	after, err := svc.OpenFolder(projects.ID, 50)
+	after, err := svc.OpenFolder(projects.ID, 50, false)
 	if err != nil {
 		t.Fatalf("OpenFolder() error: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestListMessagesClampsThePageSize(t *testing.T) {
 	// A runaway limit would materialise the whole mailbox on both sides of the
 	// bridge; a negative offset would be a SQL error.
 	for _, limit := range []int{0, -1, 100000} {
-		if _, err := svc.ListMessages(folders[0].ID, limit, -5); err != nil {
+		if _, err := svc.ListMessages(folders[0].ID, limit, -5, false); err != nil {
 			t.Errorf("ListMessages(limit=%d) error: %v", limit, err)
 		}
 	}
@@ -726,7 +726,7 @@ func syncedAccountWithMessages(t *testing.T) (*MailService, *store.Store, Accoun
 			inbox = f
 		}
 	}
-	msgs, err := svc.ListMessages(inbox.ID, 50, 0)
+	msgs, err := svc.ListMessages(inbox.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
@@ -757,7 +757,7 @@ func TestMarkReadUpdatesLocallyAndQueues(t *testing.T) {
 		t.Fatalf("MarkRead() error: %v", err)
 	}
 
-	after, err := svc.ListMessages(inbox.ID, 50, 0)
+	after, err := svc.ListMessages(inbox.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestSetStarredUpdatesLocallyAndQueues(t *testing.T) {
 		t.Fatalf("SetStarred() error: %v", err)
 	}
 
-	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	after, _ := svc.ListMessages(inbox.ID, 50, 0, false)
 	if !after[0].IsStarred {
 		t.Error("the message is not starred in the window")
 	}
@@ -794,7 +794,7 @@ func TestDeleteMessagesRemovesLocallyAndQueues(t *testing.T) {
 		t.Fatalf("DeleteMessages() error: %v", err)
 	}
 
-	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	after, _ := svc.ListMessages(inbox.ID, 50, 0, false)
 	for _, m := range after {
 		if m.ID == msgs[0].ID {
 			t.Error("the deleted message is still in the window")
@@ -823,7 +823,7 @@ func TestMoveMessagesRemovesFromTheSourceAndQueues(t *testing.T) {
 		t.Fatalf("MoveMessages() error: %v", err)
 	}
 
-	after, _ := svc.ListMessages(inbox.ID, 50, 0)
+	after, _ := svc.ListMessages(inbox.ID, 50, 0, false)
 	for _, m := range after {
 		if m.ID == msgs[0].ID {
 			t.Error("the moved message is still in the source folder")
@@ -880,7 +880,7 @@ func TestListAttachmentsReturnsWhatTheSyncRecorded(t *testing.T) {
 			inbox = f
 		}
 	}
-	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0, false)
 
 	got, err := svc.ListAttachments(msgs[0].ID)
 	if err != nil {
@@ -917,7 +917,7 @@ func TestDownloadAttachmentWritesTheFileAndRemembersIt(t *testing.T) {
 			inbox = f
 		}
 	}
-	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0, false)
 	listed, _ := svc.ListAttachments(msgs[0].ID)
 
 	got, err := svc.DownloadAttachment(listed[0].ID)
@@ -965,7 +965,7 @@ func TestDownloadAttachmentDoesNotLetAFilenameEscapeTheDirectory(t *testing.T) {
 			inbox = f
 		}
 	}
-	msgs, _ := svc.ListMessages(inbox.ID, 10, 0)
+	msgs, _ := svc.ListMessages(inbox.ID, 10, 0, false)
 	listed, _ := svc.ListAttachments(msgs[0].ID)
 
 	got, err := svc.DownloadAttachment(listed[0].ID)
@@ -1003,4 +1003,63 @@ func (b attachmentBackend) FetchHeaders(context.Context, imapx.UIDRange) ([]mode
 
 func (attachmentBackend) FetchPart(context.Context, uint32, string, string) ([]byte, error) {
 	return []byte("dosya icerigi"), nil
+}
+
+// The threaded view is a different order, not a different set. A reader
+// switching views must not find messages missing from one of them.
+func TestThreadedAndFlatListsHoldTheSameMessages(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "", 0, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+	if err := svc.SyncAccount(acct.ID); err != nil {
+		t.Fatalf("SyncAccount() error: %v", err)
+	}
+
+	folders, _ := svc.ListFolders(acct.ID)
+	var inbox FolderDTO
+	for _, f := range folders {
+		if f.IsInbox {
+			inbox = f
+		}
+	}
+
+	flat, err := svc.ListMessages(inbox.ID, 50, 0, false)
+	if err != nil {
+		t.Fatalf("flat ListMessages() error: %v", err)
+	}
+	threaded, err := svc.ListMessages(inbox.ID, 50, 0, true)
+	if err != nil {
+		t.Fatalf("threaded ListMessages() error: %v", err)
+	}
+
+	if len(flat) != len(threaded) {
+		t.Fatalf("flat has %d messages, threaded has %d", len(flat), len(threaded))
+	}
+
+	seen := map[int64]bool{}
+	for _, m := range flat {
+		seen[m.ID] = true
+	}
+	for _, m := range threaded {
+		if !seen[m.ID] {
+			t.Errorf("message %d is in the threaded list but not the flat one", m.ID)
+		}
+	}
+
+	// The count is the threaded list's answer and nothing else's: reporting it
+	// in the flat list would have the window draw conversation groups in a
+	// view that is not grouping anything.
+	for _, m := range flat {
+		if m.ThreadCount != 0 {
+			t.Errorf("the flat list reports ThreadCount %d for message %d", m.ThreadCount, m.ID)
+		}
+	}
+	for _, m := range threaded {
+		if m.ThreadCount < 1 {
+			t.Errorf("the threaded list reports ThreadCount %d for message %d", m.ThreadCount, m.ID)
+		}
+	}
 }

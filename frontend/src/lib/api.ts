@@ -36,6 +36,8 @@ export interface Message {
   folderId: number
   uid: number
   threadId: string
+  /** How many messages this conversation has here. Zero outside the threaded list. */
+  threadCount: number
   subject: string
   fromName: string
   fromAddr: string
@@ -79,11 +81,15 @@ export const listAccounts = () => MailService.ListAccounts() as Promise<Account[
 export const listFolders = (accountId: number) =>
   MailService.ListFolders(accountId) as Promise<Folder[]>
 
-export const listMessages = (folderId: number, limit: number, offset: number) =>
-  MailService.ListMessages(folderId, limit, offset) as Promise<Message[]>
+export const listMessages = (
+  folderId: number,
+  limit: number,
+  offset: number,
+  threaded: boolean,
+) => MailService.ListMessages(folderId, limit, offset, threaded) as Promise<Message[]>
 
-export const openFolder = (folderId: number, limit: number) =>
-  MailService.OpenFolder(folderId, limit) as Promise<Message[]>
+export const openFolder = (folderId: number, limit: number, threaded: boolean) =>
+  MailService.OpenFolder(folderId, limit, threaded) as Promise<Message[]>
 
 export const searchMessages = (accountId: number, query: string, limit: number) =>
   MailService.SearchMessages(accountId, query, limit) as Promise<Message[]>

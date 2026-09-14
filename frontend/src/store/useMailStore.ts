@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { EVENTS, type ErrorClass, type SyncEventPayload } from '../lib/events'
+import { readPref, writePref } from '../lib/prefs'
 import type { Account, Folder, Message, PendingChanges } from '../lib/api'
 
 export type SyncStatus =
@@ -28,6 +29,16 @@ interface MailState {
 
   /** Per account: how much of the user's intent has not reached the server. */
   pendingChanges: Record<number, PendingChanges>
+
+  /**
+   * Whether the list groups messages into conversations.
+   *
+   * Held here rather than in the list component because it changes what the
+   * backend is asked for, not just how the result is drawn: the threaded order
+   * comes from the database. Remembered across restarts, like the theme.
+   */
+  threaded: boolean
+  setThreaded: (next: boolean) => void
 
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
@@ -65,6 +76,9 @@ interface MailState {
   reset: () => void
 }
 
+const THREADED_KEY = 'nexus-mail-threaded'
+const THREADED_VALUES = ['on', 'off'] as const
+
 const initialState = {
   accounts: [] as Account[],
   folders: [] as Folder[],
@@ -79,10 +93,19 @@ const initialState = {
   searchPending: false,
   searching: false,
   pendingChanges: {} as Record<number, PendingChanges>,
+  threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
+
+  setThreaded: (next) => {
+    writePref(THREADED_KEY, next ? 'on' : 'off')
+    // The order is different, so the loaded page is no longer the right page.
+    // Clearing it rather than re-sorting locally: the backend ranks threads by
+    // their newest message across the whole folder, which a page cannot.
+    set({ threaded: next, messages: [], hasMore: true })
+  },
 
   visibleMessages: () => {
     const state = get()

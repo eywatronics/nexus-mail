@@ -8,6 +8,7 @@ const message = (id: number): Message => ({
   folderId: 1,
   uid: id,
   threadId: `<t${id}@x>`,
+  threadCount: 1,
   subject: `Subject ${id}`,
   fromName: 'Sender',
   fromAddr: 'sender@example.com',

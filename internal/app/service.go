@@ -258,7 +258,7 @@ func (s *MailService) ListFolders(accountID int64) ([]FolderDTO, error) {
 // OpenFolder fetches headers for a folder the initial sync left empty, then
 // returns its first page. Ordinary folders are lazy, so this is what the UI
 // calls when the user clicks one.
-func (s *MailService) OpenFolder(folderID int64, limit int) ([]MessageDTO, error) {
+func (s *MailService) OpenFolder(folderID int64, limit int, threaded bool) ([]MessageDTO, error) {
 	ctx := context.Background()
 
 	folder, acct, err := s.locateFolder(ctx, folderID)
@@ -275,10 +275,17 @@ func (s *MailService) OpenFolder(folderID int64, limit int) ([]MessageDTO, error
 			return nil, err
 		}
 	}
-	return s.ListMessages(folderID, limit, 0)
+	return s.ListMessages(folderID, limit, 0, threaded)
 }
 
-func (s *MailService) ListMessages(folderID int64, limit, offset int) ([]MessageDTO, error) {
+// ListMessages returns one page of a folder.
+//
+// threaded changes the order, not the contents: conversations come back with
+// their messages adjacent and are ranked by their newest, so the window can
+// group runs of adjacent rows. It is a parameter rather than two methods
+// because it is one question — what order — and the caller answers it per
+// request; the reader can switch views without anything being resynced.
+func (s *MailService) ListMessages(folderID int64, limit, offset int, threaded bool) ([]MessageDTO, error) {
 	if limit <= 0 || limit > maxPageSize {
 		limit = 100
 	}
@@ -286,7 +293,13 @@ func (s *MailService) ListMessages(folderID int64, limit, offset int) ([]Message
 		offset = 0
 	}
 
-	msgs, err := s.store.ListMessages(context.Background(), folderID, limit, offset)
+	ctx := context.Background()
+	list := s.store.ListMessages
+	if threaded {
+		list = s.store.ListThreadedMessages
+	}
+
+	msgs, err := list(ctx, folderID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

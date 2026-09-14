@@ -219,7 +219,7 @@ func TestReadingMailEndToEndAgainstARealServer(t *testing.T) {
 	}
 
 	// --- the inbox ----------------------------------------------------------
-	inbox, err := svc.OpenFolder(byName["INBOX"].ID, 50)
+	inbox, err := svc.OpenFolder(byName["INBOX"].ID, 50, false)
 	if err != nil {
 		t.Fatalf("OpenFolder(INBOX) error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestReadingMailEndToEndAgainstARealServer(t *testing.T) {
 	}
 
 	// --- a folder the initial sync deliberately left alone ------------------
-	archive, err := svc.OpenFolder(byName["Arşiv"].ID, 50)
+	archive, err := svc.OpenFolder(byName["Arşiv"].ID, 50, false)
 	if err != nil {
 		t.Fatalf("OpenFolder(Arşiv) error: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestDeltaSyncAgainstARealServer(t *testing.T) {
 	// Reading it locally too, which must not be what makes the assertion pass:
 	// the render path no longer touches flags at all.
 	handler := NewBodyHandler(svc)
-	messages, err := svc.ListMessages(inbox.ID, 50, 0)
+	messages, err := svc.ListMessages(inbox.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
@@ -602,7 +602,7 @@ func TestDeltaSyncAgainstARealServer(t *testing.T) {
 		t.Errorf("inbox holds %v after the delta pass, want two messages", after)
 	}
 
-	final, err := svc.ListMessages(inbox.ID, 50, 0)
+	final, err := svc.ListMessages(inbox.ID, 50, 0, false)
 	if err != nil {
 		t.Fatalf("ListMessages() error: %v", err)
 	}
