@@ -145,6 +145,25 @@ Yarış dedektörü (`-race`) cgo gerektirir ve CI'da çalışır.
 Bu dizinde `mail.db`, ekler, `config.json` ve loglar bulunur. Sırlar buraya
 **yazılmaz** — yalnızca işletim sisteminin anahtarlığına gider.
 
+### Saklama penceresi
+
+Canlı senkron aylarca çalıştıkça veritabanı sürekli büyür. Varsayılan olarak
+klasör başına **son 365 gün veya 25.000 mesaj** tutulur; hangisi önce dolarsa.
+Dışarıda kalanlar yerel veritabanından silinir — **sunucuya dokunulmaz**, mailler
+orada durmaya devam eder. **Yıldızlı mesajlar yaşına bakılmaksızın muaftır.**
+
+`config.json` ile değiştirilebilir:
+
+```json
+{
+  "retentionDays": 365,
+  "retentionMaxMessages": 25000
+}
+```
+
+Her ikisine de `0` yazmak pencereyi kapatır: **her şey tutulur.** Diski nasıl
+kullanacağınız sizin kararınız; yerel-önce bir uygulamada doğru varsayılan bu.
+
 ## Katkıda bulunma
 
 CI yalnızca testleri değil, mimariyi de denetler:

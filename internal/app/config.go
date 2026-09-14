@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
+
+	"nexusmail/internal/model"
 )
 
 const configFileName = "config.json"
@@ -14,6 +17,12 @@ type fileConfig struct {
 	GoogleClientID    string `json:"googleClientId"`
 	MicrosoftClientID string `json:"microsoftClientId"`
 	OAuthRedirectPort int    `json:"oauthRedirectPort"`
+
+	// Pointers so that absent and zero are different answers. Zero is the
+	// user turning a limit off, which on a local-first client has to be
+	// something they can actually say; absent means "use the default".
+	RetentionDays        *int `json:"retentionDays,omitempty"`
+	RetentionMaxMessages *int `json:"retentionMaxMessages,omitempty"`
 }
 
 // Config carries wiring the service cannot construct for itself.
@@ -36,6 +45,10 @@ type Config struct {
 	// LogDir reports where the log files live. Injected rather than resolved
 	// here so tests can point the export at a temporary directory.
 	LogDir func() (string, error)
+
+	// Retention bounds how much mail stays on disk. A zero policy keeps
+	// everything.
+	Retention model.RetentionPolicy
 }
 
 // LoadConfig reads config.json from the data directory, creating an empty one
@@ -52,7 +65,7 @@ func LoadConfig(dir string) (Config, error) {
 		if writeErr := os.WriteFile(path, blank, 0o600); writeErr != nil {
 			return Config{}, fmt.Errorf("app: creating %s: %w", configFileName, writeErr)
 		}
-		return Config{}, nil
+		return Config{Retention: model.DefaultRetention}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("app: reading %s: %w", configFileName, err)
@@ -62,9 +75,42 @@ func LoadConfig(dir string) (Config, error) {
 	if err := json.Unmarshal(raw, &fc); err != nil {
 		return Config{}, fmt.Errorf("app: %s is not valid JSON: %w", configFileName, err)
 	}
+	retention, err := fc.retention()
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		GoogleClientID:    fc.GoogleClientID,
 		MicrosoftClientID: fc.MicrosoftClientID,
 		OAuthRedirectPort: fc.OAuthRedirectPort,
+		Retention:         retention,
 	}, nil
+}
+
+// retention resolves the two optional limits against the defaults.
+//
+// A negative value is rejected rather than clamped. Clamping it to zero would
+// turn a typo into "keep everything" — the user would believe they had set a
+// limit and find the database growing without bound, with nothing said.
+func (fc fileConfig) retention() (model.RetentionPolicy, error) {
+	policy := model.DefaultRetention
+
+	if fc.RetentionDays != nil {
+		if *fc.RetentionDays < 0 {
+			return policy, fmt.Errorf(
+				"app: retentionDays is %d; it cannot be negative (0 keeps everything)",
+				*fc.RetentionDays)
+		}
+		policy.MaxAge = time.Duration(*fc.RetentionDays) * 24 * time.Hour
+	}
+	if fc.RetentionMaxMessages != nil {
+		if *fc.RetentionMaxMessages < 0 {
+			return policy, fmt.Errorf(
+				"app: retentionMaxMessages is %d; it cannot be negative (0 keeps everything)",
+				*fc.RetentionMaxMessages)
+		}
+		policy.MaxMessages = *fc.RetentionMaxMessages
+	}
+	return policy, nil
 }

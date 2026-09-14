@@ -619,3 +619,77 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition never became true")
 }
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	return dir
+}
+
+// Most people never touch this, so the default has to be sane on its own.
+func TestLoadConfigUsesTheDefaultRetentionWhenUnset(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"googleClientId": "x"}`))
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Retention != model.DefaultRetention {
+		t.Errorf("Retention = %+v, want the default %+v", cfg.Retention, model.DefaultRetention)
+	}
+}
+
+// "Keep everything" has to be expressible. Zero and absent mean different
+// things here, which is why the fields are pointers: a user who writes 0 is
+// making a decision, and silently replacing it with the default would delete
+// mail they asked to keep.
+func TestLoadConfigLetsTheUserTurnRetentionOff(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"retentionDays": 0, "retentionMaxMessages": 0}`))
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Retention.Enabled() {
+		t.Errorf("Retention = %+v, want nothing purged", cfg.Retention)
+	}
+}
+
+func TestLoadConfigHonoursCustomRetention(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"retentionDays": 30, "retentionMaxMessages": 500}`))
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Retention.MaxAge != 30*24*time.Hour {
+		t.Errorf("MaxAge = %s, want 720h", cfg.Retention.MaxAge)
+	}
+	if cfg.Retention.MaxMessages != 500 {
+		t.Errorf("MaxMessages = %d, want 500", cfg.Retention.MaxMessages)
+	}
+}
+
+// One limit set and the other left out is a reasonable thing to write, and the
+// missing one should stay at its default rather than silently becoming "off".
+func TestLoadConfigFillsInTheRetentionLimitNotGiven(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"retentionDays": 30}`))
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Retention.MaxMessages != model.DefaultRetention.MaxMessages {
+		t.Errorf("MaxMessages = %d, want the default %d",
+			cfg.Retention.MaxMessages, model.DefaultRetention.MaxMessages)
+	}
+}
+
+// A negative value is a typo. Treating it as "off" would keep everything while
+// the user believes they set a limit; saying so is the only honest option.
+func TestLoadConfigRejectsNegativeRetention(t *testing.T) {
+	for _, body := range []string{
+		`{"retentionDays": -1}`,
+		`{"retentionMaxMessages": -5}`,
+	} {
+		if _, err := LoadConfig(writeConfig(t, body)); err == nil {
+			t.Errorf("LoadConfig(%s) accepted a negative value", body)
+		}
+	}
+}

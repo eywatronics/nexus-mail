@@ -9,6 +9,7 @@ import (
 
 	"nexusmail/internal/imapx"
 	"nexusmail/internal/model"
+	"nexusmail/internal/store"
 )
 
 // The backoff schedule is what stops a client from hammering a server that
@@ -245,5 +246,103 @@ func TestWatchReportsAnAccountWithNoInbox(t *testing.T) {
 
 	if err := eng.Watch(ctx, model.Account{ID: acct.ID}, nil); err == nil {
 		t.Error("Watch() succeeded for an account with no inbox")
+	}
+}
+
+// The retention window only matters once live sync is running: the initial
+// fetch is capped, but nothing caps growth afterwards. So the purge belongs
+// here, on the loop that does the growing.
+func TestWatchPurgesOutsideTheRetentionWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		be := newFakeBackend()
+		eng, s, acct, folder := syncedInbox(t, be, 1, 2, 3)
+
+		// Age two of them past the window, behind the engine's back — the
+		// server still has them, which is the point: the purge is local.
+		ageStoredMessage(t, s, folder.ID, 1, 400*24*time.Hour)
+		ageStoredMessage(t, s, folder.ID, 2, 400*24*time.Hour)
+
+		eng.SetRetention(model.RetentionPolicy{MaxAge: 365 * 24 * time.Hour})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- eng.Watch(ctx, acct, nil) }()
+
+		synctest.Wait()
+		cancel()
+		<-done
+
+		left := storedUIDs(t, s, folder.ID)
+		if len(left) != 1 || left[0] != 3 {
+			t.Errorf("folder holds %v after the purge, want only the recent message", left)
+		}
+	})
+}
+
+// "Keep everything" has to actually keep everything, including on the loop
+// that would otherwise be trimming in the background.
+func TestWatchPurgesNothingWhenTheWindowIsOff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		be := newFakeBackend()
+		eng, s, acct, folder := syncedInbox(t, be, 1, 2)
+
+		ageStoredMessage(t, s, folder.ID, 1, 4000*24*time.Hour)
+		eng.SetRetention(model.RetentionPolicy{})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- eng.Watch(ctx, acct, nil) }()
+
+		synctest.Wait()
+		cancel()
+		<-done
+
+		if left := storedUIDs(t, s, folder.ID); len(left) != 2 {
+			t.Errorf("folder holds %v, want both messages kept", left)
+		}
+	})
+}
+
+// The exemption has to survive the trip through the loop, not just the store.
+// Ageing out a message somebody starred is the one failure of this feature
+// that would be unforgivable.
+func TestWatchNeverPurgesAFlaggedMessage(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		be := newFakeBackend()
+		eng, s, acct, folder := syncedInbox(t, be, 1, 2)
+
+		ageStoredMessage(t, s, folder.ID, 1, 4000*24*time.Hour)
+		ageStoredMessage(t, s, folder.ID, 2, 4000*24*time.Hour)
+		if err := s.SetMessageFlags(context.Background(), folder.ID,
+			[]model.FlagUpdate{{UID: 1, Flags: []string{model.FlagFlagged}}}); err != nil {
+			t.Fatalf("SetMessageFlags() error: %v", err)
+		}
+
+		eng.SetRetention(model.RetentionPolicy{MaxAge: 365 * 24 * time.Hour})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- eng.Watch(ctx, acct, nil) }()
+
+		synctest.Wait()
+		cancel()
+		<-done
+
+		left := storedUIDs(t, s, folder.ID)
+		if len(left) != 1 || left[0] != 1 {
+			t.Errorf("folder holds %v, want the flagged message kept and the other gone", left)
+		}
+	})
+}
+
+// ageStoredMessage backdates a stored message without going through the
+// engine, standing in for mail that has simply been sitting there for a year.
+func ageStoredMessage(t *testing.T, s *store.Store, folderID int64, uid uint32, age time.Duration) {
+	t.Helper()
+
+	if _, err := s.Write().Exec(
+		`UPDATE messages SET internal_date = ? WHERE folder_id = ? AND uid = ?`,
+		time.Now().Add(-age).Unix(), folderID, uid); err != nil {
+		t.Fatalf("ageing UID %d: %v", uid, err)
 	}
 }

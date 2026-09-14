@@ -7,6 +7,7 @@ package sync
 
 import (
 	"context"
+	"sync"
 
 	"nexusmail/internal/imapx"
 	"nexusmail/internal/model"
@@ -32,6 +33,7 @@ type Store interface {
 	ListMessageUIDs(ctx context.Context, folderID int64) ([]uint32, error)
 	SetMessageFlags(ctx context.Context, folderID int64, updates []model.FlagUpdate) error
 	DeleteMessagesByUID(ctx context.Context, folderID int64, uids []uint32) error
+	PurgeFolder(ctx context.Context, folderID int64, policy model.RetentionPolicy) (int, error)
 	SetMessageBody(ctx context.Context, messageID int64, html, text string) error
 	GetMessageBody(ctx context.Context, messageID int64) (html, text string, err error)
 }
@@ -44,8 +46,28 @@ type Dialer func(ctx context.Context, accountID int64) (imapx.MailBackend, error
 type Engine struct {
 	store Store
 	dial  Dialer
+
+	// retention bounds how much of each folder stays on disk. Guarded because
+	// the watch loop reads it from its own goroutine while the settings screen
+	// can write it.
+	retentionMu sync.RWMutex
+	retention   model.RetentionPolicy
 }
 
 func New(s Store, d Dialer) *Engine {
-	return &Engine{store: s, dial: d}
+	return &Engine{store: s, dial: d, retention: model.DefaultRetention}
+}
+
+// SetRetention replaces the retention policy. A zero policy keeps everything,
+// which is a setting the user is allowed to choose.
+func (e *Engine) SetRetention(p model.RetentionPolicy) {
+	e.retentionMu.Lock()
+	defer e.retentionMu.Unlock()
+	e.retention = p
+}
+
+func (e *Engine) retentionPolicy() model.RetentionPolicy {
+	e.retentionMu.RLock()
+	defer e.retentionMu.RUnlock()
+	return e.retention
 }

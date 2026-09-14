@@ -85,6 +85,7 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 	defer func() { _ = be.Close() }()
 
 	synced := false
+	purged := false
 	for {
 		inbox, err := e.refreshFolders(ctx, be, acct)
 		if err != nil {
@@ -94,6 +95,19 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 			return synced, ErrNoInbox
 		}
 		synced = true
+
+		// Once per connection, not once per wake. The purge walks every row in
+		// a folder, and doing that each time a message arrives would turn a
+		// twenty-five thousand row scan into a per-message cost. A connection
+		// that lives a week overshoots the window by a few hundred rows, which
+		// is noise against the cap — and the next reconnect settles it.
+		if !purged {
+			if err := e.purgeAccount(ctx, acct); err != nil {
+				return synced, err
+			}
+			purged = true
+		}
+
 		if onPass != nil {
 			onPass()
 		}
@@ -129,6 +143,34 @@ func (e *Engine) refreshFolders(ctx context.Context, be imapx.MailBackend, acct 
 		}
 	}
 	return inbox, nil
+}
+
+// purgeAccount applies the retention window to every folder that holds
+// anything.
+//
+// Deliberately local: nothing here reaches the server. Housekeeping on our own
+// disk and an IMAP delete are different operations, and confusing them would
+// mean a client destroying years of someone's mail because their laptop was
+// short of space.
+func (e *Engine) purgeAccount(ctx context.Context, acct model.Account) error {
+	policy := e.retentionPolicy()
+	if !policy.Enabled() {
+		return nil
+	}
+
+	folders, err := e.store.ListFolders(ctx, acct.ID)
+	if err != nil {
+		return err
+	}
+	for _, folder := range folders {
+		if folder.UIDNext == 0 {
+			continue
+		}
+		if _, err := e.store.PurgeFolder(ctx, folder.ID, policy); err != nil {
+			return fmt.Errorf("sync: purging %q: %w", folder.Path, err)
+		}
+	}
+	return nil
 }
 
 // waitForChange blocks until the server says something changed, or until the

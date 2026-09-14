@@ -114,6 +114,36 @@ type Message struct {
 	BodyFetched    bool
 }
 
+// RetentionPolicy bounds how much of a folder is kept on disk.
+//
+// IDLE running for months is what makes this necessary: the initial fetch is
+// capped, but nothing caps growth afterwards. On a busy account that is
+// thousands of new rows a year, forever.
+//
+// A message falls outside the window when it fails *either* limit — too old,
+// or pushed out by newer mail. Zero on a field disables that limit; zero on
+// both means keep everything, which is a setting the user is allowed to
+// choose. On a local-first client the disk is theirs to spend.
+type RetentionPolicy struct {
+	// MaxAge is how far back to keep. Zero means no age limit.
+	MaxAge time.Duration
+	// MaxMessages is the per-folder cap. Zero means no count limit.
+	MaxMessages int
+}
+
+// Enabled reports whether the policy would remove anything at all.
+func (p RetentionPolicy) Enabled() bool {
+	return p.MaxAge > 0 || p.MaxMessages > 0
+}
+
+// DefaultRetention is a year of mail, or twenty-five thousand messages per
+// folder, whichever fills first. Generous enough that most people never notice
+// it, small enough that the database does not grow without bound.
+var DefaultRetention = RetentionPolicy{
+	MaxAge:      365 * 24 * time.Hour,
+	MaxMessages: 25_000,
+}
+
 // FlagUpdate is one message's UID and the flags the server now reports for it.
 //
 // Delta sync carries flags without headers: a message going from unread to

@@ -79,6 +79,7 @@ func run(debug bool) error {
 	}
 
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
+	engine.SetRetention(cfg.Retention)
 	service := app.NewMailService(db, secrets, engine, cfg)
 	bodies := app.NewBodyHandler(service)
 
