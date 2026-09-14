@@ -6,10 +6,13 @@ import (
 	"embed"
 	"flag"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"nexusmail/internal/app"
 	"nexusmail/internal/auth"
@@ -21,6 +24,55 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+// The tray icon is the application icon. A separate monochrome glyph would sit
+// better in the Windows tray, but shipping the wrong shape is worse than
+// shipping the right one at the wrong weight.
+//
+//go:embed build/appicon.png
+var trayIcon []byte
+
+// quitting distinguishes the user asking to quit from the user closing the
+// window. Without it the closing hook would cancel the close that Quit itself
+// performs, and the application could never exit.
+var quitting atomic.Bool
+
+// showWindow brings the window back from the tray.
+//
+// Show alone is not enough on Windows: a window hidden while minimised comes
+// back minimised, which looks to the user exactly like nothing happening.
+func showWindow(window application.Window) {
+	window.Show()
+	window.Restore()
+	window.Focus()
+}
+
+// refreshTrayTooltip puts the unread count where it can be seen with the
+// window closed.
+func refreshTrayTooltip(tray *application.SystemTray, service *app.MailService, logger *slog.Logger) {
+	unread, err := service.UnreadCount()
+	if err != nil {
+		logger.Error("counting unread mail for the tray", "err", err)
+		return
+	}
+	tray.SetTooltip(app.TrayTooltip(unread))
+}
+
+// syncEverything runs a sync for every account, which is what the tray's
+// "Sync now" means. Errors are already reported as events; this only keeps
+// one failing account from stopping the others.
+func syncEverything(service *app.MailService, logger *slog.Logger) {
+	accounts, err := service.ListAccounts()
+	if err != nil {
+		logger.Error("listing accounts for a manual sync", "err", err)
+		return
+	}
+	for _, acct := range accounts {
+		if err := service.SyncAccount(acct.ID); err != nil {
+			logger.Error("manual sync failed", "account_id", acct.ID, "err", err)
+		}
+	}
+}
 
 func main() {
 	debug := flag.Bool("debug", false, "log at debug level")
@@ -107,15 +159,14 @@ func run(debug bool) error {
 			Middleware: mailContentMiddleware(bodies),
 		},
 		Mac: application.MacOptions{
-			// Closing the window quits. Running in the tray is a cluster of
-			// platform-specific behaviour — tray icon, unread badge, native
-			// notifications, launch-at-login — that belongs after live sync
-			// works, not tangled up with it.
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			// The window is hidden rather than closed, so this would not fire
+			// in normal use; false is the honest value for an app that lives
+			// in the tray, and it keeps the two platforms behaving alike.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
 
-	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Nexus Mail",
 		Width:  1280,
 		Height: 800,
@@ -126,6 +177,52 @@ func run(debug bool) error {
 		BackgroundColour: application.NewRGB(255, 255, 255),
 		URL:              "/",
 	})
+
+	// Closing the window hides it; the app keeps running.
+	//
+	// This is what makes live sync mean anything. A mail client that stops
+	// syncing when its window is closed only knows about mail that arrived
+	// while somebody was looking at it, which is the opposite of why IDLE
+	// exists. The watchers hang off a context that lives until Run returns, so
+	// keeping the process alive is the whole mechanism — nothing else has to
+	// know the window is gone.
+	//
+	// Quitting is still possible, from the tray menu. A window that could not
+	// be closed and an app that could not be quit would be worse than either.
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if quitting.Load() {
+			return
+		}
+		e.Cancel()
+		window.Hide()
+	})
+
+	tray := wailsApp.SystemTray.New()
+	tray.SetIcon(trayIcon)
+	tray.SetTooltip(app.TrayTooltip(0))
+	tray.OnClick(func() { showWindow(window) })
+	tray.OnDoubleClick(func() { showWindow(window) })
+
+	trayMenu := application.NewMenu()
+	trayMenu.Add("Open Nexus Mail").OnClick(func(*application.Context) { showWindow(window) })
+	trayMenu.Add("Sync now").OnClick(func(*application.Context) {
+		go syncEverything(service, logger)
+	})
+	trayMenu.AddSeparator()
+	trayMenu.Add("Quit").OnClick(func(*application.Context) {
+		// Marked before the quit so the closing hook lets the window go
+		// instead of hiding it and leaving a process with no way out.
+		quitting.Store(true)
+		wailsApp.Quit()
+	})
+	tray.SetMenu(trayMenu)
+
+	// The tooltip is refreshed from the same event the window redraws on, so
+	// the tray and the list never disagree about how much is unread.
+	wailsApp.Event.On(app.EventSyncFinished, func(*application.CustomEvent) {
+		refreshTrayTooltip(tray, service, logger)
+	})
+	refreshTrayTooltip(tray, service, logger)
 
 	// Live sync starts before the window opens and stops when Run returns.
 	// Everything the IDLE loop does hangs off this context, so closing the
