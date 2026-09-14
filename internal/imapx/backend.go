@@ -36,6 +36,9 @@ type Capabilities struct {
 	// EXPUNGE available removes every message in the mailbox flagged deleted,
 	// including ones another client flagged.
 	UIDPlus bool
+	// SpecialUse means the server will say which mailbox is Sent, Drafts and
+	// so on, instead of leaving the client to guess from the name.
+	SpecialUse bool
 }
 
 // SelectResult carries the mailbox state a SELECT reports. HighestModSeq is

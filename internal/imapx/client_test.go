@@ -855,3 +855,57 @@ func TestFetchRawReportsAMissingMessage(t *testing.T) {
 		t.Error("FetchRaw() succeeded for a UID that does not exist")
 	}
 }
+
+// The mailbox attributes have to survive the LIST round trip, because they are
+// what decides which mailbox is Sent — and on a Turkish account the name will
+// not tell anyone.
+//
+// SPECIAL-USE itself cannot be exercised here: imapmemserver drops
+// CreateOptions.SpecialUse on the floor, so no mailbox it serves can carry
+// \Sent. What this proves is the wiring either side of that — the attributes
+// the server does send arrive on the folder, and the client asks for the
+// special-use ones when the server says it has them.
+func TestFolderAttributesSurviveTheListRoundTrip(t *testing.T) {
+	addr, user := startFakeServer(t, serverCaps(imap.CapSpecialUse))
+	if err := user.Create("Arşiv", nil); err != nil {
+		t.Fatalf("create Arşiv: %v", err)
+	}
+	// Subscribing is the only way to make this server attach an attribute to a
+	// mailbox at all, so \Subscribed stands in for the special-use ones.
+	if err := user.Subscribe("Arşiv"); err != nil {
+		t.Fatalf("subscribe Arşiv: %v", err)
+	}
+
+	be := dialTestBackend(t, addr, testPass)
+	if !be.Capabilities().SpecialUse {
+		t.Fatal("SpecialUse was advertised but not read")
+	}
+
+	folders, err := be.ListFolders(context.Background())
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+
+	var attributed int
+	for _, f := range folders {
+		attributed += len(f.Attributes)
+	}
+	if attributed == 0 {
+		t.Error("no folder came back with any attribute; the mapping is not wired up")
+	}
+}
+
+// A server that never mentions SPECIAL-USE must not be sent the return option:
+// asking for an extension the server does not have is how a LIST turns into a
+// protocol error on exactly the old servers this has to work against.
+func TestSpecialUseIsNotClaimedWhenTheServerDoesNotHaveIt(t *testing.T) {
+	addr, _ := startFakeServer(t, serverCaps())
+
+	be := dialTestBackend(t, addr, testPass)
+	if be.Capabilities().SpecialUse {
+		t.Error("SpecialUse reported on a server that does not advertise it")
+	}
+	if _, err := be.ListFolders(context.Background()); err != nil {
+		t.Errorf("ListFolders() failed against a server without SPECIAL-USE: %v", err)
+	}
+}

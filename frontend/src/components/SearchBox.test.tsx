@@ -32,6 +32,7 @@ const folder = (id: number, name: string): Folder => ({
   totalCount: 0,
   unreadCount: 0,
   isInbox: name === 'INBOX',
+  role: name === 'INBOX' ? 'inbox' : '',
 })
 
 beforeEach(() => {

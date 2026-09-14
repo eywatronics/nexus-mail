@@ -101,7 +101,15 @@ func (s *Store) ListFolders(ctx context.Context, accountID int64) ([]model.Folde
 		f.LastSyncedAt = time.Unix(synced, 0)
 		out = append(out, f)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Path order out of SQL, then role order on top of it. Sorting here rather
+	// than in the window keeps one answer to "what order are folders in": the
+	// order is a property of what the folders are, not of how they are drawn.
+	model.SortFolders(out)
+	return out, nil
 }
 
 // ResetFolder discards every locally cached message for one folder and records

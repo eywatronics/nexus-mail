@@ -23,6 +23,11 @@ type FolderDTO struct {
 	TotalCount  int    `json:"totalCount"`
 	UnreadCount int    `json:"unreadCount"`
 	IsInbox     bool   `json:"isInbox"`
+	// Role is what the mailbox is for: "inbox", "sent", "drafts", "archive",
+	// "junk", "trash", or empty for an ordinary folder. Decided here rather
+	// than in the window, because the server's special-use attributes are the
+	// authority and the window never sees them.
+	Role string `json:"role"`
 }
 
 type MessageDTO struct {
@@ -63,6 +68,7 @@ func folderToDTO(f model.Folder) FolderDTO {
 		Path:        f.Path,
 		TotalCount:  f.TotalCount,
 		UnreadCount: f.UnreadCount,
+		Role:        string(f.Role()),
 		IsInbox:     f.IsInbox(),
 	}
 }

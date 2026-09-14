@@ -4,6 +4,7 @@
 package model
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -82,6 +83,125 @@ func (f Folder) HasAttribute(attr string) bool {
 // mailbox name IMAP defines as case-insensitive.
 func (f Folder) IsInbox() bool {
 	return strings.EqualFold(f.Path, "INBOX")
+}
+
+// FolderRole is what a mailbox is for, as opposed to what it is called.
+//
+// The name is the user's; the role is the client's. Sending needs to know
+// which mailbox to file a copy in, and "Gönderilenler" is as much the sent
+// folder as "Sent" is.
+type FolderRole string
+
+const (
+	RoleNone    FolderRole = ""
+	RoleInbox   FolderRole = "inbox"
+	RoleDrafts  FolderRole = "drafts"
+	RoleSent    FolderRole = "sent"
+	RoleArchive FolderRole = "archive"
+	RoleJunk    FolderRole = "junk"
+	RoleTrash   FolderRole = "trash"
+)
+
+// specialUseRoles maps the RFC 6154 attributes to roles. \All and \Flagged
+// are deliberately absent: they name Gmail's virtual mailboxes, which are
+// views over mail that lives elsewhere, and treating one as a real folder is
+// how a client ends up syncing every message twice.
+// Keys are lowercase because the lookup lowercases what the server sent:
+// servers are inconsistent about the case of flags, the same reason
+// Message.HasFlag compares case-insensitively.
+var specialUseRoles = map[string]FolderRole{
+	"\\drafts":  RoleDrafts,
+	"\\sent":    RoleSent,
+	"\\archive": RoleArchive,
+	"\\junk":    RoleJunk,
+	"\\trash":   RoleTrash,
+}
+
+// roleNames are the folder names that mean a role on a server that does not
+// advertise SPECIAL-USE.
+//
+// A guess, and only ever a fallback — the attribute is the authority. It is
+// worth making because the servers without SPECIAL-USE are the old ones, and
+// the old ones are exactly where a Turkish corporate account is likely to
+// live. Matching is on a prefix of the lowercased leaf name, so "Sent Items"
+// and "Gönderilmiş Öğeler" both land.
+var roleNames = []struct {
+	prefix string
+	role   FolderRole
+}{
+	{"sent", RoleSent},
+	{"gönder", RoleSent},
+	{"gonder", RoleSent},
+	{"draft", RoleDrafts},
+	{"taslak", RoleDrafts},
+	{"trash", RoleTrash},
+	{"deleted", RoleTrash},
+	{"çöp", RoleTrash},
+	{"cop", RoleTrash},
+	{"silin", RoleTrash},
+	{"archive", RoleArchive},
+	{"arşiv", RoleArchive},
+	{"arsiv", RoleArchive},
+	{"junk", RoleJunk},
+	{"spam", RoleJunk},
+	{"gereksiz", RoleJunk},
+	{"istenmey", RoleJunk},
+}
+
+// Role reports what the mailbox is for.
+//
+// The special-use attribute wins whenever there is one: it is the server
+// stating the answer rather than this code inferring it. The name is consulted
+// only when there is no attribute at all.
+func (f Folder) Role() FolderRole {
+	if f.IsInbox() {
+		return RoleInbox
+	}
+	for _, attr := range f.Attributes {
+		if role, ok := specialUseRoles[strings.ToLower(attr)]; ok {
+			return role
+		}
+	}
+
+	name := strings.ToLower(f.Name)
+	for _, candidate := range roleNames {
+		if strings.HasPrefix(name, candidate.prefix) {
+			return candidate.role
+		}
+	}
+	return RoleNone
+}
+
+// roleOrder is the order roles are shown in. Mailboxes with no role follow,
+// in the order the caller already had them.
+var roleOrder = map[FolderRole]int{
+	RoleInbox:   0,
+	RoleDrafts:  1,
+	RoleSent:    2,
+	RoleArchive: 3,
+	RoleJunk:    4,
+	RoleTrash:   5,
+}
+
+// SortFolders puts the mailboxes that have a role first, in the order people
+// expect to find them, and leaves the rest alone.
+//
+// Sorted here rather than in the window, because the order is a property of
+// what the folders are, not of how they are drawn. Alphabetical order is
+// actively unhelpful in a mail client: it scatters the six mailboxes used
+// every day through a list of project folders, and on a Turkish account it
+// does not even put them in the same places as on an English one.
+func SortFolders(folders []Folder) {
+	sort.SliceStable(folders, func(i, j int) bool {
+		return folderRank(folders[i]) < folderRank(folders[j])
+	})
+}
+
+func folderRank(f Folder) int {
+	if rank, ok := roleOrder[f.Role()]; ok {
+		return rank
+	}
+	return len(roleOrder)
 }
 
 type Address struct {

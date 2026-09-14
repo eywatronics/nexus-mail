@@ -17,16 +17,24 @@ import type { Folder as MailFolder } from '../lib/api'
 /**
  * Folder icons are recognisable at a glance, which is the point: in a list of
  * twenty folders the icon finds Sent faster than the label does.
+ *
+ * The role comes from the backend, which reads it off the server's special-use
+ * attributes and falls back to the folder name only when there are none. This
+ * used to guess from the name here, which was the same guess made worse: it
+ * had never seen the attributes, so even on a server that states the answer
+ * outright it was still reading names.
  */
-function iconFor(folder: MailFolder): Icon {
-  if (folder.isInbox) return Tray
+const roleIcons: Record<string, Icon> = {
+  inbox: Tray,
+  sent: PaperPlaneTilt,
+  drafts: FileDashed,
+  trash: Trash,
+  archive: Archive,
+  junk: Warning,
+}
 
-  const name = folder.name.toLowerCase()
-  if (name.includes('sent') || name.includes('gönder')) return PaperPlaneTilt
-  if (name.includes('draft') || name.includes('taslak')) return FileDashed
-  if (name.includes('trash') || name.includes('çöp') || name.includes('deleted')) return Trash
-  if (name.includes('archive') || name.includes('arşiv')) return Archive
-  return Folder
+function iconFor(folder: MailFolder): Icon {
+  return roleIcons[folder.role] ?? Folder
 }
 
 export function FolderList() {

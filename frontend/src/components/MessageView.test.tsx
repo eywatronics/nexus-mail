@@ -213,6 +213,7 @@ describe('move menu', () => {
     totalCount: 0,
     unreadCount: 0,
     isInbox: name === 'INBOX',
+    role: name === 'INBOX' ? 'inbox' : '',
   })
 
   const seedForMove = (folders: ReturnType<typeof folder>[]) =>

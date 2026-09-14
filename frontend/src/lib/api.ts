@@ -23,6 +23,12 @@ export interface Folder {
   totalCount: number
   unreadCount: number
   isInbox: boolean
+  /**
+   * What the mailbox is for: inbox, sent, drafts, archive, junk, trash, or
+   * empty for an ordinary folder. Decided in the backend from the server's
+   * special-use attributes, which the window never sees.
+   */
+  role: string
 }
 
 export interface Message {

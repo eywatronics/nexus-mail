@@ -178,3 +178,34 @@ func TestResetFolderDeletesMessagesAndSetsNewUIDValidity(t *testing.T) {
 		}
 	}
 }
+
+// The window renders folders in the order it gets them, so the order is
+// decided here. Alphabetical order scatters the six mailboxes used every day
+// through a list of project folders.
+func TestListFoldersReturnsTheEverydayMailboxesFirst(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	acct, _ := seedInbox(t, s)
+
+	if err := s.UpsertFolders(ctx, acct, []model.Folder{
+		{Path: "Zeyilname", Name: "Zeyilname"},
+		{Path: "Çöp Kutusu", Name: "Çöp Kutusu"},
+		{Path: "Muhasebe", Name: "Muhasebe"},
+		{Path: "Gönderilmiş Öğeler", Name: "Gönderilmiş Öğeler"},
+	}); err != nil {
+		t.Fatalf("UpsertFolders() error: %v", err)
+	}
+
+	folders, err := s.ListFolders(ctx, acct)
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+
+	want := []model.FolderRole{model.RoleInbox, model.RoleSent, model.RoleTrash}
+	for i, role := range want {
+		if got := folders[i].Role(); got != role {
+			t.Errorf("position %d holds %q (role %q), want role %q",
+				i, folders[i].Name, got, role)
+		}
+	}
+}

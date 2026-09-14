@@ -90,11 +90,12 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 		c:       c,
 		changes: changes,
 		caps: Capabilities{
-			CondStore: caps.Has(imap.CapCondStore),
-			QResync:   caps.Has(imap.CapQResync),
-			Move:      caps.Has(imap.CapMove),
-			Idle:      caps.Has(imap.CapIdle),
-			UIDPlus:   caps.Has(imap.CapUIDPlus),
+			CondStore:  caps.Has(imap.CapCondStore),
+			QResync:    caps.Has(imap.CapQResync),
+			Move:       caps.Has(imap.CapMove),
+			Idle:       caps.Has(imap.CapIdle),
+			UIDPlus:    caps.Has(imap.CapUIDPlus),
+			SpecialUse: caps.Has(imap.CapSpecialUse),
 		},
 	}, nil
 }
@@ -115,6 +116,11 @@ func (cl *client) ListFolders(_ context.Context) ([]model.Folder, error) {
 			UIDNext:     true,
 			UIDValidity: true,
 		},
+		// Asked for explicitly rather than hoped for. RFC 6154 only says a
+		// server SHOULD volunteer the special-use attributes in a plain LIST,
+		// and the ones that do not are precisely the ones where guessing from
+		// the folder name goes wrong.
+		ReturnSpecialUse: cl.caps.SpecialUse,
 	}
 
 	mailboxes, err := cl.c.List("", "*", opts).Collect()
