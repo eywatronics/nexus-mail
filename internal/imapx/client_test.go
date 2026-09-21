@@ -909,3 +909,87 @@ func TestSpecialUseIsNotClaimedWhenTheServerDoesNotHaveIt(t *testing.T) {
 		t.Errorf("ListFolders() failed against a server without SPECIAL-USE: %v", err)
 	}
 }
+
+// A Turkish mailbox name is not ASCII, so it cannot travel on an IMAP4rev1
+// connection as itself: it has to be encoded as modified UTF-7 on the way out
+// and decoded on the way back. Getting that wrong turns "Gönderilmiş Öğeler"
+// into "G&APY-nderilmi&AV8- &AMY-eler" in the folder list, or into a mailbox
+// the server says does not exist.
+//
+// go-imap does the encoding, which is precisely why this is worth a test: it
+// is a thing this client depends on and does not implement, and a library
+// change would surface here rather than in a user's folder list.
+func TestNonASCIIMailboxNamesSurviveTheWire(t *testing.T) {
+	const folder = "Gönderilmiş Öğeler"
+
+	addr, user := startFakeServer(t, serverCaps())
+	if err := user.Create(folder, nil); err != nil {
+		t.Fatalf("create %q: %v", folder, err)
+	}
+	appendMessage(t, user, folder, htmlMessage("Zeyilname", "a@example.com", "<p>x</p>"))
+
+	ctx := context.Background()
+	be := dialTestBackend(t, addr, testPass)
+
+	folders, err := be.ListFolders(ctx)
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+
+	var found bool
+	for _, f := range folders {
+		if f.Path == folder {
+			found = true
+			if f.Name != folder {
+				t.Errorf("Name = %q, want %q", f.Name, folder)
+			}
+		}
+	}
+	if !found {
+		var paths []string
+		for _, f := range folders {
+			paths = append(paths, f.Path)
+		}
+		t.Fatalf("the folder list holds %v, want %q among them", paths, folder)
+	}
+
+	// The name has to work as a command argument too, not only in a response.
+	// A client that can list a mailbox but not select it is no better off.
+	if _, err := be.Select(ctx, folder); err != nil {
+		t.Fatalf("Select(%q) error: %v", folder, err)
+	}
+	msgs, err := be.FetchHeaders(ctx, UIDRange{Start: 1})
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("FetchHeaders() = %v, %v", msgs, err)
+	}
+}
+
+// Turkish is the case this client is most likely to meet, but the encoding is
+// not language-specific and a test that only covered one alphabet would pass
+// on a broken implementation of the rest.
+func TestMailboxNamesInOtherAlphabetsAlsoSurvive(t *testing.T) {
+	names := []string{"Входящие", "受信トレイ", "Αρχείο", "Ελληνικά"}
+
+	addr, user := startFakeServer(t, serverCaps())
+	for _, name := range names {
+		if err := user.Create(name, nil); err != nil {
+			t.Fatalf("create %q: %v", name, err)
+		}
+	}
+
+	be := dialTestBackend(t, addr, testPass)
+	folders, err := be.ListFolders(context.Background())
+	if err != nil {
+		t.Fatalf("ListFolders() error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, f := range folders {
+		got[f.Path] = true
+	}
+	for _, name := range names {
+		if !got[name] {
+			t.Errorf("%q did not survive the round trip", name)
+		}
+	}
+}

@@ -485,3 +485,61 @@ describe('theme in the frame', () => {
     })
   })
 })
+
+describe('what delete means', () => {
+  const seedIn = (role: string) => {
+    useMailStore.setState({
+      folders: [
+        {
+          id: 1,
+          accountId: 1,
+          name: role === 'trash' ? 'Çöp Kutusu' : 'INBOX',
+          path: role === 'trash' ? 'Çöp Kutusu' : 'INBOX',
+          totalCount: 0,
+          unreadCount: 0,
+          isInbox: role === 'inbox',
+          role,
+        },
+      ],
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          threadCount: 1,
+          subject: 'Konu',
+          fromName: 'Gönderen',
+          fromAddr: 'g@example.com',
+          snippet: 'önizleme',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+        },
+      ],
+    })
+  }
+
+  // Delete moves to the trash everywhere except in the trash, where it
+  // destroys. A button that said the same in both places would be lying in the
+  // one that matters.
+  it('says it moves to the trash outside the trash', async () => {
+    seedIn('inbox')
+    const { getByTestId } = await renderSelected(1)
+
+    const button = getByTestId('delete-message')
+    expect(button.getAttribute('title')).toContain('Move to trash')
+    expect(button.getAttribute('data-permanent')).toBeNull()
+  })
+
+  it('says it destroys inside the trash', async () => {
+    seedIn('trash')
+    const { getByTestId } = await renderSelected(1)
+
+    const button = getByTestId('delete-message')
+    expect(button.getAttribute('title')).toContain('permanently')
+    expect(button.getAttribute('data-permanent')).toBe('true')
+  })
+})

@@ -60,6 +60,13 @@ export function MessageView() {
   const themeChoice = useMailStore((s) => s.themeChoice)
   const theme = themeChoice === 'system' ? undefined : themeChoice
 
+  // Which folder the message is in decides what deleting means. The role comes
+  // from the backend, which reads it off the server's special-use attributes.
+  const folderRole = useMailStore(
+    (s) => s.folders.find((f) => f.id === message?.folderId)?.role,
+  )
+  const inTrash = folderRole === 'trash'
+
   useEffect(() => {
     // Consent is per message and never sticky: carrying it forward would
     // silently load trackers in whatever the user opens next.
@@ -167,11 +174,16 @@ export function MessageView() {
 
               <MoveMenu messageId={message.id} folderId={message.folderId} />
 
+              {/* The label has to say which of the two things it does. Delete
+                  moves to the trash everywhere except in the trash, where it
+                  destroys — and a button that said the same in both places
+                  would be lying in the one that matters. */}
               <button
                 type="button"
                 data-testid="delete-message"
-                aria-label="Delete"
-                title="Delete (Del)"
+                data-permanent={inTrash || undefined}
+                aria-label={inTrash ? 'Delete permanently' : 'Move to trash'}
+                title={inTrash ? 'Delete permanently (Del)' : 'Move to trash (Del)'}
                 onClick={() => {
                   // Move on first, so the reader is left looking at the next
                   // message rather than an empty pane.
