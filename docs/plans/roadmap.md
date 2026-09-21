@@ -70,8 +70,32 @@ başına teslim edilebilir.
 - ~~SPECIAL-USE ile klasör rolleri~~ — **bitti**
 - ~~STARTTLS ve kimlik doğrulama mekanizması seçimi~~ — **bitti** (aşağıya bakın)
 - Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
-- UTF8=ACCEPT: Türkçe klasör adları
+- ~~Silmek çöp kutusuna taşısın~~ — **bitti** (aşağıya bakın)
 - Mesajda bul, okundu işaretleme davranışı, geri al/yinele
+
+### UTF8=ACCEPT neden burada değil
+
+Planda "Türkçe klasör adları için doğrudan ilgili" yazıyordu. Ölçünce öyle
+çıkmadı: go-imap gelen kutu adlarını modified UTF-7'den zaten çözüyor ve giden
+komutlarda zaten kodluyor, dolayısıyla "Gönderilmiş Öğeler" IMAP4rev1 bir
+sunucuda bugün çalışıyor. Test yazıldı (Türkçe, Rusça, Japonca ve Yunanca
+adlar listeleniyor, seçiliyor ve içinden mesaj çekiliyor).
+
+UTF8=ACCEPT'in gerçekten fark yarattığı iki yer var: **APPEND** ile UTF-8
+gövde göndermek (M6) ve **sunucu tarafı SEARCH**'te ASCII olmayan ölçüt
+kullanmak (M8). İkisinden önce etkinleştirmek, hiçbir şeyin kullanmadığı bir
+yetenek pazarlığı olurdu — bu projede tekrar tekrar bulunan desen.
+
+### Silme artık yok etmiyor
+
+Delete, UID EXPUNGE demekti: mesaj sunucudan gidiyor, bulunacağı bir çöp
+kutusu olmadan. Artık çöp kutusuna taşıyor; çöp kutusunun kendisinde silmek
+yok ediyor, yoksa kutu hiç boşaltılamazdı.
+
+Çöp kutusu **role göre** bulunuyor, ada göre değil — SPECIAL-USE işinin ilk
+gerçek karşılığı.
+
+**Kalan:** çöp kutusundan kalıcı silmede onay yok.
 
 ### Şirket içi Exchange
 

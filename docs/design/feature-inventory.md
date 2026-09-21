@@ -56,7 +56,7 @@ içindeki `eIMAPCapabilityFlag` sabitlerinde sayılı; pazarlık
 | COMPRESS=DEFLATE (RFC 4978) | Bağlantı sıkıştırma | M8 | Yavaş bağlantıda gözle görülür |
 | LITERAL+ (RFC 2088), ENABLE (RFC 5161) | Protokol verimliliği | M8 | go-imap zaten kullanıyor |
 | LIST-EXTENDED (RFC 5258) | Tek komutta abonelik + öznitelik | M8 | |
-| UTF8=ACCEPT (RFC 6855) | UTF-8 klasör adları | M5 | Türkçe klasör adları için doğrudan ilgili |
+| UTF8=ACCEPT (RFC 6855) | UTF-8 klasör adları | M6 / M8 | **Klasör adları için gerekmiyor:** go-imap modified UTF-7'yi zaten çözüyor, Türkçe adlar bugün çalışıyor (testli). Gerçek karşılığı UTF-8 gövdeyle APPEND (M6) ve ASCII olmayan sunucu tarafı SEARCH (M8) |
 | Gmail X-GM-EXT-1 | `X-GM-LABELS`, `X-GM-THRID`, `X-GM-MSGID` | M8 | Gmail etiketlerini gerçek etiket olarak göstermek |
 | ID (RFC 2971), CLIENTID | İstemci kimliğini sunucuya bildirme | — | Gizlilik açısından da istenmez |
 | XSERVERINFO, XSENDER, LANGUAGE | Sunucuya özgü | — | Niş |
