@@ -2,7 +2,7 @@ import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/r
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL, sourceURL } from '../lib/api'
 import { useBodyView } from '../lib/bodyView'
-import { applyDelete, applyRead, applyStar } from '../lib/actions'
+import { applyRead, applyStar, requestDelete } from '../lib/actions'
 import { AttachmentList } from './AttachmentList'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MoveMenu } from './MoveMenu'
@@ -184,12 +184,7 @@ export function MessageView() {
                 data-permanent={inTrash || undefined}
                 aria-label={inTrash ? 'Delete permanently' : 'Move to trash'}
                 title={inTrash ? 'Delete permanently (Del)' : 'Move to trash (Del)'}
-                onClick={() => {
-                  // Move on first, so the reader is left looking at the next
-                  // message rather than an empty pane.
-                  useMailStore.getState().selectRelative(1)
-                  void applyDelete([message.id])
-                }}
+                onClick={() => requestDelete([message.id])}
                 className={`${BUTTON_GHOST} ${ICON_ONLY}`}
               >
                 <Trash size={ICON.size} weight={ICON.weight} aria-hidden />

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { applyDelete, applyRead, applyStar, selectedIds, selectedMessage } from './actions'
+import { applyRead, applyStar, requestDelete, selectedIds, selectedMessage } from './actions'
 import { useMailStore } from '../store/useMailStore'
 
 /**
@@ -79,15 +79,14 @@ export function useMessageShortcuts() {
           break
         }
 
-        // Delete moves the selection on first, so the reader is left looking
-        // at the next message rather than at an empty pane.
+        // In the trash this asks first; everywhere else it moves the message
+        // there without a question, because the message is still findable.
         case 'Delete':
         case '#': {
           const ids = selectedIds()
           if (ids.length === 0) break
           event.preventDefault()
-          store.selectRelative(1)
-          void applyDelete(ids)
+          requestDelete(ids)
           break
         }
       }

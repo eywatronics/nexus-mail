@@ -133,3 +133,19 @@ export const MENU_ITEM = [
   TEXT.secondary,
   'hover:bg-neutral-200/70 dark:hover:bg-neutral-800',
 ].join(' ')
+
+/**
+ * Destructive confirmation. The only button in the app that carries the danger
+ * colour, because it is the only one whose click cannot be taken back.
+ *
+ * White on `--color-danger` (oklch lightness 0.52) clears 4.5:1; the dark-mode
+ * value is lighter, so it takes near-black text instead. Two directions, one
+ * meaning — the same asymmetry the text tones have, for the same reason.
+ */
+export const BUTTON_DANGER = [
+  RADIUS,
+  'bg-[var(--color-danger)] px-4 py-2 text-sm font-medium text-white',
+  'transition-colors hover:brightness-110 active:translate-y-px',
+  'dark:bg-[var(--color-danger-dark)] dark:text-neutral-950',
+  'disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0',
+].join(' ')

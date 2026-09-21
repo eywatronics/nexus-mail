@@ -52,6 +52,17 @@ interface MailState {
   themeChoice: ThemeChoice
   setThemeChoice: (next: ThemeChoice) => void
 
+  /**
+   * Messages waiting on a "yes, destroy these" before they are destroyed.
+   *
+   * In the store rather than in a component because two things ask for it —
+   * the toolbar button and the Delete key — and a second dialog mounted by the
+   * keyboard path would be a second dialog to keep in step with the first.
+   */
+  pendingDelete: number[] | null
+  askToConfirmDelete: (ids: number[]) => void
+  cancelPendingDelete: () => void
+
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
   clearPendingChanges: (accountId: number) => void
@@ -106,12 +117,16 @@ const initialState = {
   searchPending: false,
   searching: false,
   pendingChanges: {} as Record<number, PendingChanges>,
+  pendingDelete: null as number[] | null,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
   themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
+
+  askToConfirmDelete: (ids) => set({ pendingDelete: ids }),
+  cancelPendingDelete: () => set({ pendingDelete: null }),
 
   setThemeChoice: (next) => {
     writePref(THEME_KEY, next)

@@ -7,6 +7,7 @@ import { Layout } from './components/Layout'
 import { MessageList } from './components/MessageList'
 import { MessageView } from './components/MessageView'
 import { ChangeFailureNotice } from './components/ChangeFailureNotice'
+import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
 import { ThemeToggle } from './components/ThemeToggle'
 import {
@@ -199,7 +200,15 @@ export default function App() {
           </div>
         </div>
       }
-      reader={<MessageView />}
+      reader={
+        <>
+          <MessageView />
+          {/* One dialog for the whole window: the toolbar button and the
+              Delete key both ask for it, and two instances would be two
+              things to keep in step. */}
+          <ConfirmDeleteDialog />
+        </>
+      }
     />
   )
 }

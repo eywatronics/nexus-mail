@@ -53,8 +53,37 @@ export async function applyStar(ids: number[], starred: boolean): Promise<void> 
 export async function applyDelete(ids: number[]): Promise<void> {
   if (ids.length === 0) return
 
+  // Move on before the rows go, so the reader is left looking at the next
+  // message rather than at an empty pane. Here rather than at each call site:
+  // the button and the keyboard both did it, and the two could drift.
+  useMailStore.getState().selectRelative(1)
   useMailStore.getState().removeLocalMessages(ids)
   await deleteMessages(ids).catch(() => {})
+}
+
+/**
+ * Deleting, with a stop before the kind that cannot be taken back.
+ *
+ * Outside the trash, deleting moves the message there and needs no question:
+ * the message is still somewhere the reader can find it. Inside the trash it
+ * is destroyed on the server, and that is the one place the question earns
+ * itself.
+ */
+export function requestDelete(ids: number[]): void {
+  if (ids.length === 0) return
+
+  if (ids.some(isInTrash)) {
+    useMailStore.getState().askToConfirmDelete(ids)
+    return
+  }
+  void applyDelete(ids)
+}
+
+function isInTrash(id: number): boolean {
+  const state = useMailStore.getState()
+  const message = state.visibleMessages().find((m) => m.id === id)
+  if (!message) return false
+  return state.folders.find((f) => f.id === message.folderId)?.role === 'trash'
 }
 
 /**
