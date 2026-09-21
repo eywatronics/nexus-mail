@@ -111,7 +111,17 @@ yok ediyor, yoksa kutu hiç boşaltılamazdı.
 Çöp kutusu **role göre** bulunuyor, ada göre değil — SPECIAL-USE işinin ilk
 gerçek karşılığı.
 
-**Kalan:** çöp kutusundan kalıcı silmede onay yok.
+Kalıcı silmede onay soruluyor — yalnızca çöp kutusunun içinde, çünkü her yerde
+sormak insanlara soruyu okumadan kapatmayı öğretir.
+
+**Çöp kutusunu boşaltma** ayrı bir işlem türü (`empty_folder`) olarak yapıldı.
+UID adlandırmıyor, ve adlandırmaması doğru olan şey: yerel satırlar klasörün
+yalnızca indirilmiş kısmı, dolayısıyla bizim listemizden kurulan bir boşaltma
+sekiz bin mesajlık bir kutuyu yüz mesaj silerek "boşaltılmış" gösterirdi.
+İstemcideki tek posta kutusu çapında EXPUNGE budur.
+
+Bilerek geri alınamaz: tam senkronlanmamış bir klasörün anlık görüntüsü orada
+olanın bir kesrini geri koyardı.
 
 ### Şirket içi Exchange
 
