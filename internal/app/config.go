@@ -28,6 +28,12 @@ type fileConfig struct {
 	// default here is on. A plain bool would make a config file that never
 	// mentioned notifications silently turn their content off.
 	NotificationPreview *bool `json:"notificationPreview,omitempty"`
+
+	// Seconds a destructive change waits before it goes out. Zero turns the
+	// undo window off, which is a thing somebody may genuinely want: it is the
+	// difference between a delete that reaches the phone in five seconds and
+	// one that reaches it now.
+	UndoWindowSeconds *int `json:"undoWindowSeconds,omitempty"`
 }
 
 // Config carries wiring the service cannot construct for itself.
@@ -59,6 +65,15 @@ type Config struct {
 	// same reason as LogDir: a test must be able to point it at a temporary
 	// directory rather than the user's real one.
 	AttachmentDir func() (string, error)
+
+	// UndoWindow is how long a destructive change is held before it is sent,
+	// so it can be taken back. Zero disables undo.
+	//
+	// Injected rather than a constant because tests need the queue to be
+	// drainable immediately, and because it is a preference worth having: the
+	// window is a trade between "I can take that back" and "my phone knows
+	// now".
+	UndoWindow time.Duration
 
 	// NotificationPreview puts the sender and subject in the new-mail
 	// notification, rather than only a count.
@@ -116,7 +131,23 @@ func LoadConfig(dir string) (Config, error) {
 		OAuthRedirectPort:   fc.OAuthRedirectPort,
 		Retention:           retention,
 		NotificationPreview: fc.NotificationPreview == nil || *fc.NotificationPreview,
+		UndoWindow:          fc.undoWindow(),
 	}, nil
+}
+
+// undoWindow resolves the optional setting against the default.
+//
+// A negative value is read as zero rather than refused. Unlike the retention
+// limits, getting this wrong loses nothing: the worst case is a change that
+// goes out immediately, which is what every other mail client does anyway.
+func (fc fileConfig) undoWindow() time.Duration {
+	if fc.UndoWindowSeconds == nil {
+		return defaultUndoWindow
+	}
+	if *fc.UndoWindowSeconds <= 0 {
+		return 0
+	}
+	return time.Duration(*fc.UndoWindowSeconds) * time.Second
 }
 
 // retention resolves the two optional limits against the defaults.

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { EVENTS, type ErrorClass, type SyncEventPayload } from '../lib/events'
 import { readPref, writePref } from '../lib/prefs'
 import { THEME_CHOICES, type ThemeChoice } from '../lib/theme'
-import type { Account, Folder, Message, PendingChanges } from '../lib/api'
+import type { Account, Folder, Message, PendingChanges, Undoable } from '../lib/api'
 
 export type SyncStatus =
   | { status: 'idle' }
@@ -63,6 +63,16 @@ interface MailState {
   askToConfirmDelete: (ids: number[]) => void
   cancelPendingDelete: () => void
 
+  /**
+   * The last destructive action, while it can still be taken back.
+   *
+   * Null once the window has closed, so the offer disappears rather than
+   * leaving a button that would fail — a button that sometimes silently does
+   * nothing is worse than no button.
+   */
+  undoOffer: Undoable | null
+  setUndoOffer: (offer: Undoable | null) => void
+
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
   clearPendingChanges: (accountId: number) => void
@@ -118,6 +128,7 @@ const initialState = {
   searching: false,
   pendingChanges: {} as Record<number, PendingChanges>,
   pendingDelete: null as number[] | null,
+  undoOffer: null as Undoable | null,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
   themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
 }
@@ -126,6 +137,7 @@ export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
 
   askToConfirmDelete: (ids) => set({ pendingDelete: ids }),
+  setUndoOffer: (offer) => set({ undoOffer: offer }),
   cancelPendingDelete: () => set({ pendingDelete: null }),
 
   setThemeChoice: (next) => {

@@ -203,3 +203,16 @@ export const repairCharsets = () => MailService.RepairCharsets() as Promise<Char
 /** Re-reads a message with a chosen encoding and replaces the stored body. */
 export const repairEncoding = (messageId: number, charsetName: string) =>
   MailService.RepairEncoding(messageId, charsetName)
+
+/** What pressing undo would take back, or a zero kind when there is nothing. */
+export interface Undoable {
+  kind: '' | 'move' | 'delete' | 'trash'
+  count: number
+  /** When the change goes out and stops being undoable. */
+  expiresUnixMs: number
+}
+
+export const undoable = () => MailService.Undoable() as Promise<Undoable>
+
+/** Reports whether anything was actually taken back. */
+export const undoLastAction = () => MailService.UndoLastAction() as Promise<boolean>

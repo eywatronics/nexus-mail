@@ -1,4 +1,4 @@
-import { deleteMessages, markRead, setStarred } from './api'
+import { deleteMessages, markRead, setStarred, undoLastAction, undoable } from './api'
 import { useMailStore } from '../store/useMailStore'
 
 /**
@@ -59,6 +59,57 @@ export async function applyDelete(ids: number[]): Promise<void> {
   useMailStore.getState().selectRelative(1)
   useMailStore.getState().removeLocalMessages(ids)
   await deleteMessages(ids).catch(() => {})
+  await refreshUndoOffer()
+}
+
+/**
+ * Reads the offer the backend is holding open and arranges for it to
+ * disappear when it expires.
+ *
+ * The expiry is the backend's, not a timer started here: the two would drift,
+ * and the one that matters is the one the queue obeys.
+ */
+let undoTimer: ReturnType<typeof setTimeout> | undefined
+
+export async function refreshUndoOffer(): Promise<void> {
+  clearTimeout(undoTimer)
+
+  const offer = await undoable().catch(() => null)
+  const store = useMailStore.getState()
+
+  if (!offer || offer.kind === '') {
+    store.setUndoOffer(null)
+    return
+  }
+  store.setUndoOffer(offer)
+
+  const remaining = offer.expiresUnixMs - Date.now()
+  undoTimer = setTimeout(
+    () => {
+      const current = useMailStore.getState()
+      if (current.undoOffer?.expiresUnixMs === offer.expiresUnixMs) {
+        current.setUndoOffer(null)
+      }
+    },
+    Math.max(remaining, 0),
+  )
+}
+
+/**
+ * Takes back the last destructive action.
+ *
+ * The offer is cleared either way. If the change had already gone out the
+ * backend says so, and leaving the button up would invite a second press that
+ * would fail the same way.
+ */
+export async function performUndo(): Promise<boolean> {
+  const store = useMailStore.getState()
+  if (store.undoOffer === null) return false
+
+  clearTimeout(undoTimer)
+  store.setUndoOffer(null)
+
+  return undoLastAction().catch(() => false)
 }
 
 /**

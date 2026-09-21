@@ -41,6 +41,11 @@ type MailService struct {
 	// announced. Guarded by watchMu, which is already the lock for everything
 	// the watch goroutines touch.
 	arrivals map[int64]int64
+
+	// undo is the last destructive action, held open for a few seconds. Also
+	// under watchMu: it is read from the window's goroutine and cleared from a
+	// timer's.
+	undo *undoable
 }
 
 func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engine, cfg Config) *MailService {

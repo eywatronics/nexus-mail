@@ -1,5 +1,12 @@
 import { useEffect } from 'react'
-import { applyRead, applyStar, requestDelete, selectedIds, selectedMessage } from './actions'
+import {
+  applyRead,
+  applyStar,
+  performUndo,
+  requestDelete,
+  selectedIds,
+  selectedMessage,
+} from './actions'
 import { useMailStore } from '../store/useMailStore'
 
 /**
@@ -35,6 +42,20 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function useMessageShortcuts() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Ctrl+Z is the one shortcut here that wants a modifier, so it is
+      // handled above the guard that drops them. Uppercase Z too: the event
+      // reports the shifted character, and somebody holding shift by accident
+      // still means undo.
+      //
+      // Not skipped while typing. An undo aimed at a message and an undo aimed
+      // at a search box are the same reflex, and the search box has nothing to
+      // undo that losing would matter.
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
+        event.preventDefault()
+        void performUndo()
+        return
+      }
+
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
       const store = useMailStore.getState()

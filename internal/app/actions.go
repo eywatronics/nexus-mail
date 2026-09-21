@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"nexusmail/internal/model"
 )
@@ -43,10 +44,21 @@ func (s *MailService) MoveMessages(messageIDs []int64, targetFolderID int64) err
 	if len(messageIDs) == 0 {
 		return nil
 	}
-	if err := s.store.ApplyMove(context.Background(), messageIDs, targetFolderID); err != nil {
+	ctx := context.Background()
+
+	snapshot, err := s.store.MessagesByIDs(ctx, messageIDs)
+	if err != nil {
 		return err
 	}
+
+	queued, err := s.store.ApplyMove(ctx, messageIDs, targetFolderID, s.queueReadyAt())
+	if err != nil {
+		return err
+	}
+	s.rememberUndo(UndoMove, queued, snapshot)
+
 	s.nudgeWatchers()
+	s.scheduleQueueNudge()
 	return nil
 }
 
@@ -81,19 +93,52 @@ func (s *MailService) DeleteMessages(messageIDs []int64) error {
 		return err
 	}
 
-	for trashID, ids := range toTrash {
-		if err := s.store.ApplyMove(ctx, ids, trashID); err != nil {
-			return err
-		}
-	}
-	if len(permanent) > 0 {
-		if err := s.store.ApplyDelete(ctx, permanent); err != nil {
-			return err
-		}
+	// Snapshotted before anything is removed, because after the move the rows
+	// are gone and there is nothing left to put back.
+	snapshot, err := s.store.MessagesByIDs(ctx, messageIDs)
+	if err != nil {
+		return err
 	}
 
+	notBefore := s.queueReadyAt()
+	var queued []int64
+
+	for trashID, ids := range toTrash {
+		ops, err := s.store.ApplyMove(ctx, ids, trashID, notBefore)
+		if err != nil {
+			return err
+		}
+		queued = append(queued, ops...)
+	}
+	if len(permanent) > 0 {
+		ops, err := s.store.ApplyDelete(ctx, permanent, notBefore)
+		if err != nil {
+			return err
+		}
+		queued = append(queued, ops...)
+	}
+
+	kind := UndoTrash
+	if len(toTrash) == 0 {
+		kind = UndoDelete
+	}
+	s.rememberUndo(kind, queued, snapshot)
+
+	// The queue is woken now and again once the window closes: now so a change
+	// that needs no window is not held up, and again because the watch loop
+	// skips what is not yet due and would otherwise not come back for minutes.
 	s.nudgeWatchers()
+	s.scheduleQueueNudge()
 	return nil
+}
+
+// queueReadyAt is when a destructive change becomes claimable. A zero time
+// means at once, which is what a zero window asks for.
+func (s *MailService) queueReadyAt() time.Time {
+	if s.undoWindow() <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(s.undoWindow())
 }
 
 // splitByDestination sorts a selection into "move to this trash folder" and

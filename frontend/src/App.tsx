@@ -9,6 +9,7 @@ import { MessageView } from './components/MessageView'
 import { ChangeFailureNotice } from './components/ChangeFailureNotice'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
+import { UndoNotice } from './components/UndoNotice'
 import { ThemeToggle } from './components/ThemeToggle'
 import {
   listAccounts,
@@ -207,6 +208,9 @@ export default function App() {
               Delete key both ask for it, and two instances would be two
               things to keep in step. */}
           <ConfirmDeleteDialog />
+          {/* Anchored to the window, so it does not push the list down at the
+              moment the reader is looking at where the message used to be. */}
+          <UndoNotice />
         </>
       }
     />

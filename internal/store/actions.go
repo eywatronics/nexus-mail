@@ -66,7 +66,8 @@ func (s *Store) ApplyFlagChange(ctx context.Context, messageIDs []int64, flags [
 			byFolder[t.folderID] = append(byFolder[t.folderID], t)
 		}
 
-		return queuePerFolder(ctx, tx, byFolder, kind, flags, 0)
+		_, err = queuePerFolder(ctx, tx, byFolder, kind, flags, 0, time.Time{})
+		return err
 	})
 }
 
@@ -77,12 +78,15 @@ func (s *Store) ApplyFlagChange(ctx context.Context, messageIDs []int64, flags [
 // would be wrong in a way the next sync could not fix — it would look like a
 // message that exists, with a UID naming something else. The destination's
 // next sync brings it back with the UID it really has.
-func (s *Store) ApplyMove(ctx context.Context, messageIDs []int64, targetFolderID int64) error {
+func (s *Store) ApplyMove(ctx context.Context, messageIDs []int64, targetFolderID int64,
+	notBefore time.Time) ([]int64, error) {
+
 	if len(messageIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	var queued []int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		targets, err := loadTargets(ctx, tx, messageIDs)
 		if err != nil {
 			return err
@@ -98,17 +102,22 @@ func (s *Store) ApplyMove(ctx context.Context, messageIDs []int64, targetFolderI
 		if err := deleteTargets(ctx, tx, byFolder); err != nil {
 			return err
 		}
-		return queuePerFolder(ctx, tx, byFolder, model.OpMove, nil, targetFolderID)
+		queued, err = queuePerFolder(ctx, tx, byFolder, model.OpMove, nil, targetFolderID, notBefore)
+		return err
 	})
+	return queued, err
 }
 
 // ApplyDelete removes messages locally and queues the deletion.
-func (s *Store) ApplyDelete(ctx context.Context, messageIDs []int64) error {
+func (s *Store) ApplyDelete(ctx context.Context, messageIDs []int64,
+	notBefore time.Time) ([]int64, error) {
+
 	if len(messageIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	var queued []int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		targets, err := loadTargets(ctx, tx, messageIDs)
 		if err != nil {
 			return err
@@ -121,8 +130,10 @@ func (s *Store) ApplyDelete(ctx context.Context, messageIDs []int64) error {
 		if err := deleteTargets(ctx, tx, byFolder); err != nil {
 			return err
 		}
-		return queuePerFolder(ctx, tx, byFolder, model.OpDelete, nil, 0)
+		queued, err = queuePerFolder(ctx, tx, byFolder, model.OpDelete, nil, 0, notBefore)
+		return err
 	})
+	return queued, err
 }
 
 // inTx runs fn inside a write transaction, rolling back on any error.
@@ -200,8 +211,10 @@ func deleteTargets(ctx context.Context, tx *sql.Tx, byFolder map[int64][]targetM
 // wrong one, and the worker would act on whatever those numbers happen to be
 // where it looked.
 func queuePerFolder(ctx context.Context, tx *sql.Tx, byFolder map[int64][]targetMessage,
-	kind model.OperationKind, flags []string, targetFolderID int64) error {
+	kind model.OperationKind, flags []string, targetFolderID int64,
+	notBefore time.Time) ([]int64, error) {
 
+	var created []int64
 	for folderID, targets := range byFolder {
 		if len(targets) == 0 {
 			continue
@@ -216,20 +229,36 @@ func queuePerFolder(ctx context.Context, tx *sql.Tx, byFolder map[int64][]target
 			UIDs: uids, Flags: flags, TargetFolderID: targetFolderID,
 		})
 		if err != nil {
-			return fmt.Errorf("store: encoding operation payload: %w", err)
+			return nil, fmt.Errorf("store: encoding operation payload: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx,
+		// notBefore is how an action becomes takeable-back. ClaimOperations
+		// already skips operations whose time has not arrived, so a few
+		// seconds here buys an undo window without touching the queue's state
+		// machine at all — and the machine that pushes destructive changes to
+		// a server is the last thing worth redesigning for a convenience.
+		var ready int64
+		if !notBefore.IsZero() {
+			ready = notBefore.UnixNano()
+		}
+
+		res, err := tx.ExecContext(ctx,
 			`INSERT INTO operations
 			   (account_id, folder_id, uid_validity, kind, payload, state,
 			    attempts, last_error, created_at, next_attempt_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, 0)`,
+			 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?)`,
 			targets[0].accountID, folderID, targets[0].uidValidity, string(kind),
-			string(payload), string(model.OpPending), nowNanos()); err != nil {
-			return fmt.Errorf("store: queueing %s for folder %d: %w", kind, folderID, err)
+			string(payload), string(model.OpPending), nowNanos(), ready)
+		if err != nil {
+			return nil, fmt.Errorf("store: queueing %s for folder %d: %w", kind, folderID, err)
 		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, id)
 	}
-	return nil
+	return created, nil
 }
 
 // changeFlags applies an add or remove and reports whether anything moved.

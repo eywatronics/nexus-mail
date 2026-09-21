@@ -204,7 +204,7 @@ func TestApplyMoveRemovesLocallyAndQueuesTheMove(t *testing.T) {
 	seedFolderMessages(t, s, acct, inbox, 1, 2)
 
 	ids := messageIDsOf(t, s, inbox)
-	if err := s.ApplyMove(ctx, []int64{ids[1]}, archive); err != nil {
+	if err := applyMoveNow(t, s, []int64{ids[1]}, archive); err != nil {
 		t.Fatalf("ApplyMove() error: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestApplyDeleteRemovesLocallyAndQueuesIt(t *testing.T) {
 	seedFolderMessages(t, s, acct, inbox, 1, 2)
 
 	ids := messageIDsOf(t, s, inbox)
-	if err := s.ApplyDelete(ctx, []int64{ids[1]}); err != nil {
+	if err := applyDeleteNow(t, s, []int64{ids[1]}); err != nil {
 		t.Fatalf("ApplyDelete() error: %v", err)
 	}
 
@@ -252,8 +252,8 @@ func TestActionsIgnoreMessagesThatAreNoLongerHere(t *testing.T) {
 
 	for _, err := range []error{
 		s.ApplyFlagChange(ctx, []int64{4242}, []string{model.FlagSeen}, true),
-		s.ApplyMove(ctx, []int64{4242}, inbox),
-		s.ApplyDelete(ctx, []int64{4242}),
+		applyMoveNow(t, s, []int64{4242}, inbox),
+		applyDeleteNow(t, s, []int64{4242}),
 	} {
 		if err != nil {
 			t.Errorf("acting on an unknown message returned %v", err)
@@ -273,10 +273,24 @@ func TestActionsOnAnEmptySelectionDoNothing(t *testing.T) {
 	if err := s.ApplyFlagChange(ctx, nil, []string{model.FlagSeen}, true); err != nil {
 		t.Errorf("ApplyFlagChange(nil) error: %v", err)
 	}
-	if err := s.ApplyDelete(ctx, nil); err != nil {
+	if err := applyDeleteNow(t, s, nil); err != nil {
 		t.Errorf("ApplyDelete(nil) error: %v", err)
 	}
 	if ops, _ := s.ClaimOperations(ctx, acct, 10); len(ops) != 0 {
 		t.Errorf("an empty selection queued %+v", ops)
 	}
+}
+
+// applyMoveNow and applyDeleteNow run an action with no undo window, which is
+// what these tests are about: what gets queued, not when it goes out.
+func applyMoveNow(t *testing.T, s *Store, ids []int64, target int64) error {
+	t.Helper()
+	_, err := s.ApplyMove(context.Background(), ids, target, time.Time{})
+	return err
+}
+
+func applyDeleteNow(t *testing.T, s *Store, ids []int64) error {
+	t.Helper()
+	_, err := s.ApplyDelete(context.Background(), ids, time.Time{})
+	return err
 }
