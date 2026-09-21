@@ -216,3 +216,6 @@ export const undoable = () => MailService.Undoable() as Promise<Undoable>
 
 /** Reports whether anything was actually taken back. */
 export const undoLastAction = () => MailService.UndoLastAction() as Promise<boolean>
+
+/** Destroys everything in the trash, on the server as well as here. */
+export const emptyTrash = (accountId: number) => MailService.EmptyTrash(accountId)

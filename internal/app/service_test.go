@@ -91,6 +91,8 @@ func (stubBackend) FetchRaw(context.Context, uint32) ([]byte, error) {
 	return []byte("Subject: hi\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>hi</p>"), nil
 }
 
+func (stubBackend) EmptyFolder(context.Context) error { return nil }
+
 func (stubBackend) Close() error { return nil }
 
 func newTestService(t *testing.T, be imapx.MailBackend) (*MailService, *recorder, *store.Store) {

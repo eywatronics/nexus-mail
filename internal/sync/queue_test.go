@@ -349,3 +349,59 @@ func TestNudgeForAnUnwatchedAccountIsHarmless(t *testing.T) {
 	eng.Nudge(acct.ID)
 	eng.Nudge(999)
 }
+
+// Emptying a folder is the one command that does not name what it acts on,
+// and that is what makes it right: the queued row carries no UIDs, so the
+// server empties the mailbox rather than the part this client downloaded.
+func TestDrainSendsAFolderEmpty(t *testing.T) {
+	ctx := context.Background()
+	be := newFakeBackend()
+
+	eng, s, acct, folder := syncedInbox(t, be, 1, 2, 3)
+
+	enqueue(t, s, model.Operation{
+		AccountID: acct.ID, FolderID: folder.ID, UIDValidity: folder.UIDValidity,
+		Kind: model.OpEmptyFolder,
+	})
+
+	if err := eng.DrainQueue(ctx, acct); err != nil {
+		t.Fatalf("DrainQueue() error: %v", err)
+	}
+
+	writes := be.recordedWrites()
+	if len(writes) != 1 {
+		t.Fatalf("the server received %d commands, want 1: %+v", len(writes), writes)
+	}
+	if writes[0].kind != "empty" {
+		t.Errorf("command = %+v, want a folder empty", writes[0])
+	}
+	if len(writes[0].uids) != 0 {
+		t.Errorf("the empty named %v; naming UIDs empties only what was synced", writes[0].uids)
+	}
+	if writes[0].path != folder.Path {
+		t.Errorf("emptied %q, want %q", writes[0].path, folder.Path)
+	}
+}
+
+// The same stamp every other operation carries. A folder the server recreated
+// between the click and the send is a different generation of the mailbox, and
+// emptying it would destroy something the user never looked at.
+func TestAFolderEmptyIsDroppedAgainstAnOldMailbox(t *testing.T) {
+	ctx := context.Background()
+	be := newFakeBackend()
+
+	eng, s, acct, folder := syncedInbox(t, be, 1, 2)
+
+	enqueue(t, s, model.Operation{
+		AccountID: acct.ID, FolderID: folder.ID, UIDValidity: folder.UIDValidity + 1,
+		Kind: model.OpEmptyFolder,
+	})
+
+	if err := eng.DrainQueue(ctx, acct); err != nil {
+		t.Fatalf("DrainQueue() error: %v", err)
+	}
+
+	if writes := be.recordedWrites(); len(writes) != 0 {
+		t.Errorf("the server received %+v for a stale mailbox", writes)
+	}
+}

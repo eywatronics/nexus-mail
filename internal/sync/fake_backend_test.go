@@ -33,6 +33,10 @@ type fakeBackend struct {
 	// about the original bytes rather than the parsed body.
 	raws map[uint32]string
 
+	// emptied counts mailbox-wide expunges, so a test can tell "emptied the
+	// folder" from "expunged the UIDs it happened to know about".
+	emptied int
+
 	// modseq tracks a CONDSTORE modification sequence per message, and
 	// highestModSeq what SELECT reports. A real server bumps these on every
 	// change; the fake bumps them wherever a test changes something.
@@ -334,6 +338,23 @@ func (f *fakeBackend) FetchRaw(_ context.Context, uid uint32) ([]byte, error) {
 		return nil, fmt.Errorf("no message with UID %d", uid)
 	}
 	return []byte("Subject: fake\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" + b.HTML), nil
+}
+
+// EmptyFolder throws away every message the fake holds, which is what the
+// real one does to the selected mailbox.
+func (f *fakeBackend) EmptyFolder(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.writes = append(f.writes, writeCall{kind: "empty", path: f.selected})
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+
+	f.emptied++
+	// Only the selected mailbox, the way the real command is scoped.
+	delete(f.messages, f.selected)
+	return nil
 }
 
 func (f *fakeBackend) Close() error {

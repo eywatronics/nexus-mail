@@ -1,6 +1,7 @@
 import { ChatsCircle, CircleNotch, MagnifyingGlass, X } from '@phosphor-icons/react'
 import { useEffect, useRef } from 'react'
 import { useMailStore } from '../store/useMailStore'
+import { EmptyTrashButton } from './EmptyTrashButton'
 import { isTypingTarget } from '../lib/keyboard'
 import { BUTTON_GHOST, ICON, ICON_ONLY, INPUT, SURFACE, TEXT } from '../lib/ui'
 
@@ -98,6 +99,10 @@ export function SearchBox() {
           </button>
         )}
       </div>
+
+      {/* Only drawn inside the trash, which is the only place it means
+          anything. */}
+      <EmptyTrashButton />
 
       {/* Disabled while searching rather than hidden: results span folders and
           are ranked by relevance, so there is nothing to group. A control that

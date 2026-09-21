@@ -314,6 +314,13 @@ type AttachmentPart struct {
 	Downloaded bool
 }
 
+// ActsOnUIDs reports whether a kind names the messages it applies to.
+//
+// Every kind but one does. The exception exists because "empty this folder"
+// cannot be expressed as a list without becoming a different, weaker
+// instruction — see OpEmptyFolder.
+func (k OperationKind) ActsOnUIDs() bool { return k != OpEmptyFolder }
+
 // OperationKind is what an outgoing operation asks the server to do.
 //
 // The set is deliberately small. Each one maps to a single IMAP command, so a
@@ -325,6 +332,15 @@ const (
 	OpRemoveFlags OperationKind = "remove_flags"
 	OpMove        OperationKind = "move"
 	OpDelete      OperationKind = "delete"
+	// OpEmptyFolder destroys everything in a mailbox, whether or not this
+	// client ever synced it.
+	//
+	// It names no UIDs, and that is the point. Emptying the trash by listing
+	// what we have would empty only the part we happened to have downloaded —
+	// a folder of eight thousand messages with a hundred synced would look
+	// emptied and would not be. The one honest way to say "everything" is to
+	// let the server decide what everything means.
+	OpEmptyFolder OperationKind = "empty_folder"
 )
 
 // OperationState tracks one queued change through its life.

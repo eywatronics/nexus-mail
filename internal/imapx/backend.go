@@ -105,6 +105,10 @@ type MailBackend interface {
 	// Expunge permanently removes messages from the selected mailbox.
 	Expunge(ctx context.Context, uids []uint32) error
 
+	// EmptyFolder destroys every message in the selected mailbox, including
+	// the ones this client never downloaded.
+	EmptyFolder(ctx context.Context) error
+
 	// Idle waits for the server to report that the selected mailbox changed,
 	// returning true when it did. It blocks until then or until ctx is done.
 	Idle(ctx context.Context) (bool, error)

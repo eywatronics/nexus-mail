@@ -392,6 +392,35 @@ func (cl *client) Expunge(_ context.Context, uids []uint32) error {
 	return nil
 }
 
+// EmptyFolder destroys everything in the selected mailbox.
+//
+// A mailbox-wide EXPUNGE, which is the one command in this client that is not
+// scoped to UIDs we chose. Everywhere else that would be wrong — it removes
+// whatever any client flagged deleted, and another client's half-finished
+// delete is not ours to complete. Here it is exactly the instruction: "empty
+// this" means empty it, including the messages this client never downloaded,
+// and a version built from our own UID list would silently empty only the
+// part we happened to have.
+//
+// The sequence set is 1:*, the whole mailbox, rather than a UID set. There is
+// nothing to enumerate and nothing to get wrong about what "everything" means.
+func (cl *client) EmptyFolder(_ context.Context) error {
+	set := imap.SeqSetNum()
+	set = append(set, imap.SeqRange{Start: 1, Stop: 0}) // 1:*
+
+	cmd := cl.c.Store(set, &imap.StoreFlags{
+		Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagDeleted}, Silent: true,
+	}, nil)
+	if _, err := cmd.Collect(); err != nil {
+		return fmt.Errorf("imapx: flagging the mailbox deleted failed: %w", err)
+	}
+
+	if err := cl.c.Expunge().Close(); err != nil {
+		return fmt.Errorf("imapx: EXPUNGE failed: %w", err)
+	}
+	return nil
+}
+
 // uidSet converts our UID list into go-imap's set type, refusing an empty one.
 //
 // An empty set is a command that names nothing: some servers answer with an

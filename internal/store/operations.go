@@ -31,7 +31,7 @@ type opPayload struct {
 // worse one — IMAP has no "act on this Message-ID" command, so every operation
 // would need a SEARCH first, on a header not every server indexes.
 func (s *Store) EnqueueOperation(ctx context.Context, op model.Operation) (int64, error) {
-	if len(op.UIDs) == 0 {
+	if op.Kind.ActsOnUIDs() && len(op.UIDs) == 0 {
 		return 0, errors.New("store: an operation must name at least one UID")
 	}
 	if op.Kind == "" {

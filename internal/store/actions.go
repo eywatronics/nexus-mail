@@ -136,6 +136,54 @@ func (s *Store) ApplyDelete(ctx context.Context, messageIDs []int64,
 	return queued, err
 }
 
+// ApplyEmptyFolder clears a folder locally and queues the server-side empty.
+//
+// Both halves or neither, the same rule every other action follows. The
+// difference is what the queued half says: not "destroy these UIDs" but
+// "destroy everything here", because the local rows are only the part of the
+// folder this client happened to download. A trash of eight thousand messages
+// with a hundred synced would otherwise look emptied and would not be.
+//
+// The UIDVALIDITY stamp is still taken. A folder the server recreated between
+// the click and the send is a different generation of the mailbox, and
+// emptying it would be acting on something the user never looked at.
+func (s *Store) ApplyEmptyFolder(ctx context.Context, folderID int64) (int64, error) {
+	var queued int64
+
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var accountID int64
+		var uidValidity uint32
+		if err := tx.QueryRowContext(ctx,
+			`SELECT account_id, uid_validity FROM folders WHERE id = ?`, folderID).
+			Scan(&accountID, &uidValidity); err != nil {
+			return fmt.Errorf("store: no folder %d to empty: %w", folderID, err)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM messages WHERE folder_id = ?`, folderID); err != nil {
+			return fmt.Errorf("store: clearing folder %d: %w", folderID, err)
+		}
+
+		payload, err := json.Marshal(opPayload{})
+		if err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO operations
+			   (account_id, folder_id, uid_validity, kind, payload, state,
+			    attempts, last_error, created_at, next_attempt_at)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, 0)`,
+			accountID, folderID, uidValidity, string(model.OpEmptyFolder),
+			string(payload), string(model.OpPending), nowNanos())
+		if err != nil {
+			return fmt.Errorf("store: queueing the empty of folder %d: %w", folderID, err)
+		}
+		queued, err = res.LastInsertId()
+		return err
+	})
+	return queued, err
+}
+
 // inTx runs fn inside a write transaction, rolling back on any error.
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.write.BeginTx(ctx, nil)

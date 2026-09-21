@@ -119,6 +119,8 @@ func (e *Engine) sendOperation(ctx context.Context, be imapx.MailBackend, op mod
 		return be.Move(ctx, op.UIDs, dest.Path)
 	case model.OpDelete:
 		return be.Expunge(ctx, op.UIDs)
+	case model.OpEmptyFolder:
+		return be.EmptyFolder(ctx)
 	default:
 		return fmt.Errorf("unknown operation kind %q", op.Kind)
 	}
