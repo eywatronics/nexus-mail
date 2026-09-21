@@ -144,6 +144,10 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 		mode = mailhtml.ModeProxy
 	}
 	view := viewFromQuery(r.URL.Query().Get("view"))
+	// The theme is not part of the cache key: it changes only the frame's
+	// style block, not the sanitised body, and keying on it would mean
+	// re-sanitising every message the first time somebody flips the switch.
+	theme := themeFromQuery(r.URL.Query().Get("theme"))
 
 	rendered, err := h.render(r.Context(), id, mode, view, requestOrigin(r))
 	if err != nil {
@@ -162,7 +166,7 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
-	if _, err := io.WriteString(w, wrapDocument(rendered.html)); err != nil {
+	if _, err := io.WriteString(w, wrapDocument(rendered.html, theme)); err != nil {
 		return
 	}
 }
@@ -495,6 +499,38 @@ func (s *MailService) locateMessage(ctx context.Context, messageID int64) (model
 	return m, folder, acct, nil
 }
 
+// bodyTheme is which palette the reading pane's frame should use.
+type bodyTheme string
+
+const (
+	// themeSystem follows the operating system, which is what the app does
+	// until the reader picks a side.
+	themeSystem bodyTheme = ""
+	themeLight  bodyTheme = "light"
+	themeDark   bodyTheme = "dark"
+)
+
+// themeFromQuery reads the theme the window asked for. Anything unrecognised
+// means the system setting, so a malformed URL produces the same frame the
+// app's own default does rather than a mismatched one.
+func themeFromQuery(value string) bodyTheme {
+	switch bodyTheme(value) {
+	case themeLight:
+		return themeLight
+	case themeDark:
+		return themeDark
+	default:
+		return themeSystem
+	}
+}
+
+// Palettes for the frame. The values are the app's own, so the largest surface
+// in the window does not render in a different white than the panes around it.
+const (
+	lightTokens = `--bg:#fff;--fg:#171717;--quote:#525252;--rule:#e5e5e5;--link:#0f7490`
+	darkTokens  = `--bg:#0a0a0a;--fg:#e5e5e5;--quote:#a3a3a3;--rule:#262626;--link:#4bb4cc`
+)
+
 // wrapDocument frames the sanitised body in a minimal document.
 //
 // The type stack and link colour match the surrounding application on purpose:
@@ -502,27 +538,39 @@ func (s *MailService) locateMessage(ctx context.Context, messageID int64) (model
 // renders in a different font with a different blue reads as a foreign page
 // embedded in the app rather than as part of it.
 //
-// The frame follows the OS setting rather than the app's theme control, since
-// a sandboxed document cannot see the class we set on the host page. In
-// practice the two agree, because the app defaults to the system setting too.
-func wrapDocument(bodyHTML string) string {
+// The theme is a parameter rather than a media query alone, because the app
+// has its own three-way control and the media query only knows what the
+// operating system thinks. A reader who chose dark on a light machine used to
+// get a dark window with a white reading pane in the middle of it — the one
+// place the mismatch is impossible to miss. The sandboxed document cannot see
+// the class on the host page, so the window has to say.
+//
+// color-scheme is set alongside the colours: without it the frame's scrollbar
+// and any form control the message carries stay light on a dark page.
+func wrapDocument(bodyHTML string, theme bodyTheme) string {
+	root := ":root{color-scheme:light dark;" + lightTokens + "}\n" +
+		"@media (prefers-color-scheme:dark){:root{" + darkTokens + "}}"
+	switch theme {
+	case themeLight:
+		root = ":root{color-scheme:light;" + lightTokens + "}"
+	case themeDark:
+		root = ":root{color-scheme:dark;" + darkTokens + "}"
+	}
+
 	const style = `
-html,body{margin:0;padding:20px;background:#fff;color:#171717;
+html,body{margin:0;padding:20px;background:var(--bg);color:var(--fg);
   font:14px/1.6 "Geist Variable",system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased}
 img{max-width:100%;height:auto}
 table{max-width:100%}
 pre{white-space:pre-wrap;word-wrap:break-word;
   font:13px/1.6 "Geist Mono Variable",ui-monospace,Menlo,monospace}
-blockquote{margin:0 0 0 8px;padding-left:12px;border-left:2px solid #e5e5e5;color:#525252}
-a{color:#0f7490;text-underline-offset:2px}
-@media (prefers-color-scheme:dark){
-  html,body{background:#0a0a0a;color:#e5e5e5}
-  blockquote{border-left-color:#262626;color:#a3a3a3}
-  a{color:#4bb4cc}
-}`
-	return `<!doctype html><html><head><meta charset="utf-8"><style>` + style +
-		`</style></head><body>` + bodyHTML + `</body></html>`
+blockquote{margin:0 0 0 8px;padding-left:12px;border-left:2px solid var(--rule);
+  color:var(--quote)}
+a{color:var(--link);text-underline-offset:2px}`
+
+	return `<!doctype html><html><head><meta charset="utf-8"><style>` +
+		root + style + `</style></head><body>` + bodyHTML + `</body></html>`
 }
 
 func htmlEscape(s string) string {

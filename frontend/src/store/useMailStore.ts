@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { EVENTS, type ErrorClass, type SyncEventPayload } from '../lib/events'
 import { readPref, writePref } from '../lib/prefs'
+import { THEME_CHOICES, type ThemeChoice } from '../lib/theme'
 import type { Account, Folder, Message, PendingChanges } from '../lib/api'
 
 export type SyncStatus =
@@ -40,6 +41,17 @@ interface MailState {
   threaded: boolean
   setThreaded: (next: boolean) => void
 
+  /**
+   * Which theme the reader picked: light, dark, or follow the machine.
+   *
+   * Here rather than inside the theme control because two places need it. The
+   * reading pane is a sandboxed frame that cannot see the class on the host
+   * page, so the theme travels to the backend in the body URL; a second copy
+   * of the answer would drift from this one.
+   */
+  themeChoice: ThemeChoice
+  setThemeChoice: (next: ThemeChoice) => void
+
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
   clearPendingChanges: (accountId: number) => void
@@ -78,6 +90,7 @@ interface MailState {
 
 const THREADED_KEY = 'nexus-mail-threaded'
 const THREADED_VALUES = ['on', 'off'] as const
+const THEME_KEY = 'nexus-mail-theme'
 
 const initialState = {
   accounts: [] as Account[],
@@ -94,10 +107,16 @@ const initialState = {
   searching: false,
   pendingChanges: {} as Record<number, PendingChanges>,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
+  themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
+
+  setThemeChoice: (next) => {
+    writePref(THEME_KEY, next)
+    set({ themeChoice: next })
+  },
 
   setThreaded: (next) => {
     writePref(THREADED_KEY, next ? 'on' : 'off')

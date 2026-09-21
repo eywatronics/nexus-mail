@@ -341,3 +341,71 @@ func TestTheTextViewReducesAMessageWithNoPlainPart(t *testing.T) {
 		t.Errorf("the text view lost the words:\n%s", body)
 	}
 }
+
+// A reader who chose dark on a light machine used to get a dark window with a
+// white reading pane in the middle of it — the one place the mismatch is
+// impossible to miss. The sandboxed frame cannot see the class on the host
+// page, so the window has to say which side it is on.
+func TestTheFrameFollowsTheAppsThemeNotTheMachines(t *testing.T) {
+	h, id := newBodyHandler(t, `<p>Merhaba</p>`)
+
+	dark := get(t, h, fmt.Sprintf("%s%d?theme=dark", bodyPath, id)).Body.String()
+	light := get(t, h, fmt.Sprintf("%s%d?theme=light", bodyPath, id)).Body.String()
+
+	if !strings.Contains(dark, "#0a0a0a") {
+		t.Errorf("the dark frame does not use the dark background:\n%s", dark)
+	}
+	if strings.Contains(dark, "prefers-color-scheme") {
+		t.Errorf("an explicit choice still defers to the machine:\n%s", dark)
+	}
+	if !strings.Contains(light, "#fff") || strings.Contains(light, "#0a0a0a") {
+		t.Errorf("the light frame is not light:\n%s", light)
+	}
+}
+
+// Without color-scheme the frame's scrollbar and any form control the message
+// carries stay light on a dark page.
+func TestTheDarkFrameDeclaresItsColorScheme(t *testing.T) {
+	h, id := newBodyHandler(t, `<p>Merhaba</p>`)
+
+	dark := get(t, h, fmt.Sprintf("%s%d?theme=dark", bodyPath, id)).Body.String()
+	if !strings.Contains(dark, "color-scheme:dark") {
+		t.Errorf("the dark frame does not declare color-scheme:\n%s", dark)
+	}
+}
+
+// With no theme named the frame follows the machine, which is what the app
+// itself does until the reader picks a side.
+func TestWithNoThemeTheFrameFollowsTheMachine(t *testing.T) {
+	h, id := newBodyHandler(t, `<p>Merhaba</p>`)
+
+	for _, path := range []string{
+		fmt.Sprintf("%s%d", bodyPath, id),
+		fmt.Sprintf("%s%d?theme=nonsense", bodyPath, id),
+	} {
+		body := get(t, h, path).Body.String()
+		if !strings.Contains(body, "prefers-color-scheme:dark") {
+			t.Errorf("%s does not follow the machine:\n%s", path, body)
+		}
+		if !strings.Contains(body, "color-scheme:light dark") {
+			t.Errorf("%s does not declare both schemes:\n%s", path, body)
+		}
+	}
+}
+
+// The theme changes the frame, not the message. Keying the render cache on it
+// would mean re-sanitising every message the first time somebody flips the
+// switch, for a difference of one style block.
+func TestSwitchingThemeDoesNotReRenderTheMessage(t *testing.T) {
+	h, id := newBodyHandler(t, `<p>Merhaba</p>`)
+
+	get(t, h, fmt.Sprintf("%s%d?theme=light", bodyPath, id))
+	get(t, h, fmt.Sprintf("%s%d?theme=dark", bodyPath, id))
+
+	h.mu.Lock()
+	cached := len(h.cache)
+	h.mu.Unlock()
+	if cached != 1 {
+		t.Errorf("cache holds %d entries after two themes of one message, want 1", cached)
+	}
+}

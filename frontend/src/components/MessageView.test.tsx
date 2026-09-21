@@ -440,3 +440,48 @@ describe('body view in the URL', () => {
     expect(url).toContain('view=text')
   })
 })
+
+describe('theme in the frame', () => {
+  // The frame is sandboxed and cannot see the class on this page, so the only
+  // way it learns the app is in dark mode is by being told in the URL.
+  it('names the theme in the body URL', () => {
+    expect(bodyURL(1, false, 0, 'rich', 'dark')).toContain('theme=dark')
+    expect(bodyURL(1, false, 0, 'rich', 'light')).toContain('theme=light')
+  })
+
+  // With no theme named the backend follows the machine, which is what the app
+  // itself does until the reader picks a side.
+  it('says nothing when there is nothing to say', () => {
+    expect(bodyURL(1, false, 0, 'rich')).toBe('/mail-body/1')
+  })
+
+  // While the reader follows their machine the frame's own media query
+  // reaches the same answer, so naming it would put a parameter on every body
+  // URL for no difference at all.
+  it('says nothing while the theme follows the machine', async () => {
+    useMailStore.setState({ themeChoice: 'system' })
+    const { container: systemContainer } = await renderSelected(1)
+
+    await waitFor(() => {
+      const iframe = systemContainer.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-body/1')
+    })
+  })
+
+  it('reloads the frame when an explicit theme changes', async () => {
+    useMailStore.setState({ themeChoice: 'light' })
+    const { container } = await renderSelected(1)
+
+    await waitFor(() => {
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-body/1?theme=light')
+    })
+
+    useMailStore.getState().setThemeChoice('dark')
+
+    await waitFor(() => {
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      expect(iframe.getAttribute('src')).toBe('/mail-body/1?theme=dark')
+    })
+  })
+})

@@ -160,6 +160,12 @@ export const bodyURL = (
   allowRemote: boolean,
   version = 0,
   view: 'rich' | 'simple' | 'text' = 'rich',
+  /**
+   * Which palette the frame should use. The frame is sandboxed and cannot see
+   * the class on this page, so the only way it learns the app is in dark mode
+   * is by being told here.
+   */
+  theme?: 'light' | 'dark',
 ) => {
   const params = new URLSearchParams()
   if (allowRemote) params.set('remote', '1')
@@ -167,6 +173,7 @@ export const bodyURL = (
   // The default is omitted rather than spelled out, so an ordinary body URL
   // stays the short one the tests and the logs already show.
   if (view !== 'rich') params.set('view', view)
+  if (theme) params.set('theme', theme)
 
   const query = params.toString()
   return `/mail-body/${messageId}${query ? `?${query}` : ''}`

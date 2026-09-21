@@ -1,48 +1,33 @@
 import { Desktop, Moon, Sun } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { useResolvedTheme, type ThemeChoice } from '../lib/theme'
+import { useMailStore } from '../store/useMailStore'
 import { ICON, RADIUS, TEXT } from '../lib/ui'
 
-type Theme = 'light' | 'dark' | 'system'
-
-const STORAGE_KEY = 'nexus-mail-theme'
-
-const OPTIONS: Array<[Theme, string, Icon]> = [
+const OPTIONS: Array<[ThemeChoice, string, Icon]> = [
   ['system', 'Match system', Desktop],
   ['light', 'Light', Sun],
   ['dark', 'Dark', Moon],
 ]
 
-function apply(theme: Theme) {
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  const dark = theme === 'dark' || (theme === 'system' && prefersDark)
-  document.documentElement.classList.toggle('dark', dark)
-}
-
 /**
  * A three-way segmented control rather than a cycling button: with a cycle the
  * user has to click and watch to discover what the next state is, and "system"
  * is invisible as a concept. Three labelled options show the whole choice.
+ *
+ * The choice itself lives in the store, because the reading pane needs it too
+ * — it is a sandboxed frame that cannot see the class set here, so the theme
+ * has to reach it through the body URL.
  */
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? 'system',
-  )
+  const theme = useMailStore((s) => s.themeChoice)
+  const setTheme = useMailStore((s) => s.setThemeChoice)
+  const resolved = useResolvedTheme()
 
   useEffect(() => {
-    apply(theme)
-    localStorage.setItem(STORAGE_KEY, theme)
-
-    if (theme !== 'system') return
-
-    // Follow the OS while set to system, so the app changes with it rather
-    // than only at startup, which matters for anyone whose machine switches at
-    // sunset.
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => apply('system')
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [theme])
+    document.documentElement.classList.toggle('dark', resolved === 'dark')
+  }, [resolved])
 
   return (
     <div

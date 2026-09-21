@@ -53,6 +53,13 @@ export function MessageView() {
   const [bodyVersion, setBodyVersion] = useState(0)
   const [bodyView, setBodyView] = useBodyView()
 
+  // Only an explicit choice travels. While the reader is following their
+  // machine the frame's own media query reaches the same answer, and naming it
+  // would put a parameter on every body URL for no difference at all. The
+  // mismatch worth fixing is the other one: dark chosen on a light machine.
+  const themeChoice = useMailStore((s) => s.themeChoice)
+  const theme = themeChoice === 'system' ? undefined : themeChoice
+
   useEffect(() => {
     // Consent is per message and never sticky: carrying it forward would
     // silently load trackers in whatever the user opens next.
@@ -76,8 +83,8 @@ export function MessageView() {
     if (settledId === null) return null
     return showSource
       ? sourceURL(settledId)
-      : bodyURL(settledId, allowRemote, bodyVersion, bodyView)
-  }, [settledId, allowRemote, showSource, bodyVersion, bodyView])
+      : bodyURL(settledId, allowRemote, bodyVersion, bodyView, theme)
+  }, [settledId, allowRemote, showSource, bodyVersion, bodyView, theme])
 
   // Reading a message marks it read. Tied to the settled id rather than the
   // selection, so holding j through a folder does not mark fifty messages read
