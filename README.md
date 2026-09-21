@@ -183,6 +183,22 @@ orada durmaya devam eder. **Yıldızlı mesajlar yaşına bakılmaksızın muaft
 Her ikisine de `0` yazmak pencereyi kapatır: **her şey tutulur.** Diski nasıl
 kullanacağınız sizin kararınız; yerel-önce bir uygulamada doğru varsayılan bu.
 
+### Geri alma penceresi
+
+Silme ve taşıma, sunucuya gitmeden önce **beş saniye** bekler. O aralıkta
+Ctrl+Z ya da penceredeki **Undo** işlemi tamamen geri alır — mesaj hiç
+taşınmamış olur. Süre dolduktan sonra teklif kaybolur; başarısız olacak bir
+düğme bırakmaktansa hiç bırakmamak daha iyi.
+
+```json
+{
+  "undoWindowSeconds": 5
+}
+```
+
+`0` yazmak pencereyi kapatır: değişiklikler anında gider ve geri alma
+sunulmaz.
+
 ### Bildirim önizlemesi
 
 Yeni mail bildirimi varsayılan olarak gönderenin adını ve konuyu gösterir.

@@ -71,7 +71,8 @@ başına teslim edilebilir.
 - ~~STARTTLS ve kimlik doğrulama mekanizması seçimi~~ — **bitti** (aşağıya bakın)
 - Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
 - ~~Silmek çöp kutusuna taşısın~~ — **bitti** (aşağıya bakın)
-- Mesajda bul, okundu işaretleme davranışı, geri al/yinele
+- ~~Geri al~~ — **bitti** (tek adım, yıkıcı işlemler için)
+- Mesajda bul, okundu işaretleme davranışı, yinele
 
 ### UTF8=ACCEPT neden burada değil
 
@@ -85,6 +86,21 @@ UTF8=ACCEPT'in gerçekten fark yarattığı iki yer var: **APPEND** ile UTF-8
 gövde göndermek (M6) ve **sunucu tarafı SEARCH**'te ASCII olmayan ölçüt
 kullanmak (M8). İkisinden önce etkinleştirmek, hiçbir şeyin kullanmadığı bir
 yetenek pazarlığı olurdu — bu projede tekrar tekrar bulunan desen.
+
+### Geri alma penceresi
+
+Kuyruğun `next_attempt_at` alanı zaten vardı ve `ClaimOperations` zamanı
+gelmemiş işlemleri zaten atlıyordu; beş saniye ileri koymak, durum makinesine
+hiç dokunmadan geri alma penceresi açtı.
+
+İptal **"hâlâ bekliyor"** yerine **"zamanı hâlâ gelecekte"** koşuluyla
+yapılıyor. İşçi bir işlemi ancak zamanı geçmişse okur; silme ancak zamanı
+gelecekteyse eşleşir. Zaman yalnızca ileri aktığı için iki pencere inşaat
+gereği ayrık — yarış yok.
+
+Pencere `undoWindowSeconds` ile ayarlanabilir; `0` kapatır.
+
+**Kalan:** yinele (redo) yok, ve geri alma tek adım.
 
 ### Silme artık yok etmiyor
 
