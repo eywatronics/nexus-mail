@@ -11,7 +11,8 @@ Go · Wails v3 · React · SQLite
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 
-[English](README.md) · Türkçe
+<a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-4a4a4a?style=for-the-badge"></a>
+<a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/Türkçe-0f7490?style=for-the-badge"></a>
 
 </div>
 
