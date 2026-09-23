@@ -1,0 +1,579 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"nexusmail/internal/imapx"
+	"nexusmail/internal/mailhtml"
+	"nexusmail/internal/model"
+)
+
+// Paths served under the app's own scheme.
+const (
+	bodyPath  = "/mail-body/"
+	assetPath = "/mail-asset/"
+)
+
+// contentSecurityPolicy is delivered as a real header rather than a meta tag.
+// A header is stronger: some directives are ignored in meta form, and it
+// cannot be displaced by markup the message controls.
+//
+// default-src 'none' means nothing loads unless a later directive allows it.
+// Images are limited to data:, cid: and this app's own origin — never the
+// network directly, so even a bug in the rewriting cannot become a request to
+// the sender.
+//
+// The origin is computed per request rather than hardcoded: Wails serves the
+// asset server on a different host on each platform, and 'self' does not help
+// because the sandbox gives the frame an opaque origin that matches nothing.
+func contentSecurityPolicy(origin string) string {
+	return "default-src 'none'; " +
+		"img-src data: cid: " + origin + "; " +
+		"style-src 'unsafe-inline'; " +
+		"font-src data:; " +
+		"form-action 'none'; " +
+		"base-uri 'none'"
+}
+
+// requestOrigin reconstructs the scheme and host this request arrived on.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+		scheme = forwarded
+	}
+	if r.URL != nil && r.URL.Scheme != "" {
+		scheme = r.URL.Scheme
+	}
+	return scheme + "://" + r.Host
+}
+
+// Limits on what the proxy will fetch on the user's behalf.
+const (
+	maxAssetBytes   = 8 << 20 // 8 MiB
+	assetFetchLimit = 15 * time.Second
+	renderCacheSize = 32
+)
+
+// BodyHandler serves message bodies and proxied images over the app's own
+// scheme.
+//
+// Bodies do not cross the Wails bridge as JSON. An eight-megabyte newsletter
+// serialised into an IPC message would block the UI thread for long enough to
+// be seen, and srcdoc cannot carry a real CSP header.
+type BodyHandler struct {
+	svc *MailService
+
+	mu    sync.Mutex
+	cache map[int64]*renderedBody
+	order []int64
+}
+
+// renderedBody is one sanitised message, plus the proxy tokens its HTML refers
+// to. Keeping the token map means a proxy request needs no re-sanitising.
+type renderedBody struct {
+	html   string
+	remote map[string]string
+	mode   mailhtml.Mode
+	view   bodyView
+}
+
+// bodyView is how much of the sender's presentation the reader asked for.
+type bodyView int
+
+const (
+	viewRich bodyView = iota
+	viewSimple
+	viewText
+)
+
+// viewFromQuery reads the view the window asked for. An unrecognised value
+// falls back to the rich render rather than erroring: the parameter comes from
+// a URL, and the answer to a malformed one is the default view, not a blank
+// reading pane.
+func viewFromQuery(value string) bodyView {
+	switch value {
+	case "simple":
+		return viewSimple
+	case "text":
+		return viewText
+	default:
+		return viewRich
+	}
+}
+
+func NewBodyHandler(svc *MailService) *BodyHandler {
+	return &BodyHandler{svc: svc, cache: map[int64]*renderedBody{}}
+}
+
+func (h *BodyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case strings.HasPrefix(r.URL.Path, bodyPath):
+		h.serveBody(w, r)
+	case strings.HasPrefix(r.URL.Path, assetPath):
+		h.serveAsset(w, r)
+	case strings.HasPrefix(r.URL.Path, sourcePath):
+		h.serveSource(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
+	id, err := messageIDFromPath(r.URL.Path, bodyPath)
+	if err != nil {
+		http.Error(w, "bad message id", http.StatusBadRequest)
+		return
+	}
+
+	mode := mailhtml.ModeBlock
+	if r.URL.Query().Get("remote") == "1" {
+		mode = mailhtml.ModeProxy
+	}
+	view := viewFromQuery(r.URL.Query().Get("view"))
+	// The theme is not part of the cache key: it changes only the frame's
+	// style block, not the sanitised body, and keying on it would mean
+	// re-sanitising every message the first time somebody flips the switch.
+	theme := themeFromQuery(r.URL.Query().Get("theme"))
+
+	rendered, err := h.render(r.Context(), id, mode, view, requestOrigin(r))
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// The user moved on before this finished. Holding the arrow keys
+			// changes the selection dozens of times a second, and finishing
+			// work nobody will see is how an idle client burns a core.
+			return
+		}
+		http.Error(w, "message unavailable", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(requestOrigin(r)))
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := io.WriteString(w, wrapDocument(rendered.html, theme)); err != nil {
+		return
+	}
+}
+
+// render produces the sanitised body for a message, fetching and caching it if
+// necessary. Cancellation is honoured before each expensive step.
+func (h *BodyHandler) render(ctx context.Context, id int64, mode mailhtml.Mode,
+	view bodyView, origin string) (*renderedBody, error) {
+
+	if cached := h.lookup(id, mode, view); cached != nil {
+		return cached, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	msg, folder, acct, err := h.svc.locateMessage(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	body, err := h.svc.engine.EnsureBody(ctx, acct, folder, msg)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if view == viewText {
+		text, err := plainTextOf(body)
+		if err != nil {
+			return nil, err
+		}
+		// Nothing to sanitise and nothing to proxy: the text is escaped and
+		// shown as text, so no markup of the sender's survives to be dangerous.
+		rendered := &renderedBody{
+			html: "<pre>" + htmlEscape(text) + "</pre>", mode: mode, view: view,
+		}
+		h.store(id, rendered)
+		return rendered, nil
+	}
+
+	raw := body.HTML
+	if raw == "" {
+		raw = "<pre>" + htmlEscape(body.Text) + "</pre>"
+	}
+
+	presentation := mailhtml.PresentationRich
+	if view == viewSimple {
+		presentation = mailhtml.PresentationSimple
+	}
+
+	res, err := mailhtml.Sanitize(raw, mailhtml.Options{
+		Mode:         mode,
+		Presentation: presentation,
+		ProxyURL: func(token string) string {
+			return fmt.Sprintf("%s%s%d/%s", origin, assetPath, id, token)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rendered := &renderedBody{html: res.HTML, remote: res.RemoteURLs, mode: mode, view: view}
+	h.store(id, rendered)
+	return rendered, nil
+}
+
+// plainTextOf answers "show me the text" for any message.
+//
+// The message's own text/plain part when it has one, because that is what the
+// sender wrote. Plenty of mail is HTML only, though, and on exactly that mail
+// the reader is most likely to want the decoration gone — so the HTML is
+// reduced rather than handed back as HTML, which would be answering a
+// different question.
+func plainTextOf(body imapx.Body) (string, error) {
+	if strings.TrimSpace(body.Text) != "" {
+		return body.Text, nil
+	}
+	return mailhtml.PlainText(body.HTML)
+}
+
+func (h *BodyHandler) lookup(id int64, mode mailhtml.Mode, view bodyView) *renderedBody {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// A cached block-mode render cannot answer a proxy-mode request: it has no
+	// token map and no image references at all. Nor can a render made for one
+	// view answer a request for another — that is the whole difference between
+	// them.
+	if got, ok := h.cache[id]; ok && got.mode == mode && got.view == view {
+		return got
+	}
+	return nil
+}
+
+// Invalidate drops a message's cached render.
+//
+// Called when the body underneath it changed — today only from an encoding
+// repair, which rewrites the stored body while the cache holds a sanitised
+// copy of the previous one. Without this the reading pane would keep serving
+// the mojibake the reader just fixed.
+func (h *BodyHandler) Invalidate(messageID int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	delete(h.cache, messageID)
+	for i, id := range h.order {
+		if id == messageID {
+			h.order = append(h.order[:i], h.order[i+1:]...)
+			break
+		}
+	}
+}
+
+func (h *BodyHandler) store(id int64, rendered *renderedBody) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if _, exists := h.cache[id]; !exists {
+		h.order = append(h.order, id)
+	}
+	h.cache[id] = rendered
+
+	for len(h.order) > renderCacheSize {
+		oldest := h.order[0]
+		h.order = h.order[1:]
+		delete(h.cache, oldest)
+	}
+}
+
+// lookupProxied finds a proxy-mode render whatever view produced it. The token
+// map is the same either way: the views differ in styling, not in which
+// remote resources the message refers to.
+func (h *BodyHandler) lookupProxied(id int64) *renderedBody {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if got, ok := h.cache[id]; ok && got.mode == mailhtml.ModeProxy {
+		return got
+	}
+	return nil
+}
+
+// serveAsset fetches one remote image on the reader's behalf.
+//
+// This is what makes "load remote content" safe to offer at all: the request
+// leaves from here, carrying no Referer, no cookies and no user agent that
+// identifies the reader, so the sender learns nothing beyond the fact that
+// somebody, somewhere, looked.
+func (h *BodyHandler) serveAsset(w http.ResponseWriter, r *http.Request) {
+	id, token, err := assetRefFromPath(r.URL.Path)
+	if err != nil {
+		http.Error(w, "bad asset reference", http.StatusBadRequest)
+		return
+	}
+
+	// The token must come from a render this session produced. An arbitrary
+	// URL supplied by the page would turn the proxy into an open relay.
+	rendered := h.lookupProxied(id)
+	if rendered == nil {
+		http.Error(w, "unknown asset", http.StatusNotFound)
+		return
+	}
+	original, ok := rendered.remote[token]
+	if !ok {
+		http.Error(w, "unknown asset", http.StatusNotFound)
+		return
+	}
+
+	data, contentType, err := fetchAsset(r.Context(), original)
+	if err != nil {
+		http.Error(w, "asset unavailable", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err := w.Write(data); err != nil {
+		return
+	}
+}
+
+// assetClient refuses redirects and private addresses.
+//
+// Following a redirect blindly would let a sender bounce the proxy at a
+// machine on the reader's own network, turning a mail image into a port scan.
+var assetClient = &http.Client{
+	Timeout: assetFetchLimit,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("app: the asset proxy does not follow redirects")
+	},
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+			Control: refusePrivateAddress,
+		}).DialContext,
+		DisableKeepAlives: true,
+	},
+}
+
+// buildAssetRequest constructs the outgoing request, carrying nothing that
+// identifies the reader.
+//
+// The absence of Referer matters most: it would tell the sender which message
+// was opened, which is precisely what a tracking pixel is after. The user
+// agent is a generic string rather than one naming this client and version.
+func buildAssetRequest(ctx context.Context, rawURL string) (*http.Request, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("app: refusing to proxy scheme %q", parsed.Scheme)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Accept", "image/*")
+	return req, nil
+}
+
+func fetchAsset(ctx context.Context, rawURL string) ([]byte, string, error) {
+
+	req, err := buildAssetRequest(ctx, rawURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	resp, err := assetClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("app: asset returned status %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		// The renderer asked for an image; serving anything else would let a
+		// sender smuggle content past the CSP.
+		return nil, "", fmt.Errorf("app: refusing to proxy content type %q", contentType)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAssetBytes))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, contentType, nil
+}
+
+// refusePrivateAddress blocks connections to loopback, link-local and private
+// ranges, so a remote image cannot be used to probe the reader's network.
+func refusePrivateAddress(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("app: refusing to connect to %q", address)
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return fmt.Errorf("app: refusing to proxy a request to the private address %s", ip)
+	}
+	return nil
+}
+
+func messageIDFromPath(path, prefix string) (int64, error) {
+	rest := strings.TrimPrefix(path, prefix)
+	rest = strings.Trim(rest, "/")
+	if rest == "" || strings.Contains(rest, "/") {
+		return 0, fmt.Errorf("app: malformed path %q", path)
+	}
+	return strconv.ParseInt(rest, 10, 64)
+}
+
+func assetRefFromPath(path string) (int64, string, error) {
+	rest := strings.Trim(strings.TrimPrefix(path, assetPath), "/")
+	idPart, token, found := strings.Cut(rest, "/")
+	if !found || token == "" || strings.Contains(token, "/") {
+		return 0, "", fmt.Errorf("app: malformed asset path %q", path)
+	}
+	id, err := strconv.ParseInt(idPart, 10, 64)
+	if err != nil {
+		return 0, "", err
+	}
+	return id, token, nil
+}
+
+// locateMessage resolves a message id to the message, its folder and its
+// account.
+func (s *MailService) locateMessage(ctx context.Context, messageID int64) (model.Message, model.Folder, model.Account, error) {
+	var folderID int64
+	row := s.store.Read().QueryRowContext(ctx,
+		`SELECT folder_id FROM messages WHERE id = ?`, messageID)
+	if err := row.Scan(&folderID); err != nil {
+		return model.Message{}, model.Folder{}, model.Account{},
+			fmt.Errorf("app: no message with id %d: %w", messageID, err)
+	}
+
+	folder, acct, err := s.locateFolder(ctx, folderID)
+	if err != nil {
+		return model.Message{}, model.Folder{}, model.Account{}, err
+	}
+
+	var m model.Message
+	var uid uint32
+	row = s.store.Read().QueryRowContext(ctx,
+		`SELECT uid FROM messages WHERE id = ?`, messageID)
+	if err := row.Scan(&uid); err != nil {
+		return model.Message{}, model.Folder{}, model.Account{}, err
+	}
+	m.ID = messageID
+	m.UID = uid
+	m.FolderID = folderID
+	m.AccountID = acct.ID
+
+	return m, folder, acct, nil
+}
+
+// bodyTheme is which palette the reading pane's frame should use.
+type bodyTheme string
+
+const (
+	// themeSystem follows the operating system, which is what the app does
+	// until the reader picks a side.
+	themeSystem bodyTheme = ""
+	themeLight  bodyTheme = "light"
+	themeDark   bodyTheme = "dark"
+)
+
+// themeFromQuery reads the theme the window asked for. Anything unrecognised
+// means the system setting, so a malformed URL produces the same frame the
+// app's own default does rather than a mismatched one.
+func themeFromQuery(value string) bodyTheme {
+	switch bodyTheme(value) {
+	case themeLight:
+		return themeLight
+	case themeDark:
+		return themeDark
+	default:
+		return themeSystem
+	}
+}
+
+// Palettes for the frame. The values are the app's own, so the largest surface
+// in the window does not render in a different white than the panes around it.
+const (
+	lightTokens = `--bg:#fff;--fg:#171717;--quote:#525252;--rule:#e5e5e5;--link:#0f7490`
+	darkTokens  = `--bg:#0a0a0a;--fg:#e5e5e5;--quote:#a3a3a3;--rule:#262626;--link:#4bb4cc`
+)
+
+// wrapDocument frames the sanitised body in a minimal document.
+//
+// The type stack and link colour match the surrounding application on purpose:
+// the reading pane is the largest surface in the window, and a frame that
+// renders in a different font with a different blue reads as a foreign page
+// embedded in the app rather than as part of it.
+//
+// The theme is a parameter rather than a media query alone, because the app
+// has its own three-way control and the media query only knows what the
+// operating system thinks. A reader who chose dark on a light machine used to
+// get a dark window with a white reading pane in the middle of it — the one
+// place the mismatch is impossible to miss. The sandboxed document cannot see
+// the class on the host page, so the window has to say.
+//
+// color-scheme is set alongside the colours: without it the frame's scrollbar
+// and any form control the message carries stay light on a dark page.
+func wrapDocument(bodyHTML string, theme bodyTheme) string {
+	root := ":root{color-scheme:light dark;" + lightTokens + "}\n" +
+		"@media (prefers-color-scheme:dark){:root{" + darkTokens + "}}"
+	switch theme {
+	case themeLight:
+		root = ":root{color-scheme:light;" + lightTokens + "}"
+	case themeDark:
+		root = ":root{color-scheme:dark;" + darkTokens + "}"
+	}
+
+	const style = `
+html,body{margin:0;padding:20px;background:var(--bg);color:var(--fg);
+  font:14px/1.6 "Geist Variable",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+img{max-width:100%;height:auto}
+table{max-width:100%}
+pre{white-space:pre-wrap;word-wrap:break-word;
+  font:13px/1.6 "Geist Mono Variable",ui-monospace,Menlo,monospace}
+blockquote{margin:0 0 0 8px;padding-left:12px;border-left:2px solid var(--rule);
+  color:var(--quote)}
+a{color:var(--link);text-underline-offset:2px}`
+
+	return `<!doctype html><html><head><meta charset="utf-8"><style>` +
+		root + style + `</style></head><body>` + bodyHTML + `</body></html>`
+}
+
+func htmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	return r.Replace(s)
+}

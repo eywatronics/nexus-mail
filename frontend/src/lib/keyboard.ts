@@ -1,0 +1,119 @@
+import { useEffect } from 'react'
+import {
+  applyRead,
+  applyStar,
+  performUndo,
+  requestDelete,
+  selectedIds,
+  selectedMessage,
+} from './actions'
+import { useMailStore } from '../store/useMailStore'
+
+/**
+ * True when a keystroke belongs to whatever the user is typing into.
+ *
+ * Single-key shortcuts and text entry share one keyboard. Without this check,
+ * typing the letter j into the search box also jumps the message list, which
+ * is the classic way single-key shortcuts get shipped broken.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
+/**
+ * Moving through mail without the mouse.
+ *
+ * j/k are the bindings every mail reader has used since mutt, and the arrow
+ * keys are what someone who has never seen those tries first. Both are here
+ * because supporting only one of them means half the users conclude the app
+ * has no keyboard support at all.
+ *
+ * A modifier means the keystroke belongs to the window or the platform:
+ * Ctrl+ArrowDown is not a request to read the next message.
+ *
+ * The handler reads the store through getState rather than through the hook's
+ * own subscription. Closing over state would re-register the listener on every
+ * keystroke that changes the selection, and — worse — a listener installed
+ * before the state it reads has settled would act on the stale value.
+ */
+export function useMessageShortcuts() {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // Ctrl+Z is the one shortcut here that wants a modifier, so it is
+      // handled above the guard that drops them. Uppercase Z too: the event
+      // reports the shifted character, and somebody holding shift by accident
+      // still means undo.
+      //
+      // Not skipped while typing. An undo aimed at a message and an undo aimed
+      // at a search box are the same reflex, and the search box has nothing to
+      // undo that losing would matter.
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
+        event.preventDefault()
+        void performUndo()
+        return
+      }
+
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+      const store = useMailStore.getState()
+
+      // Escape leaves the search from anywhere, including the list, so a
+      // person who tabbed out of the box is not stuck with results.
+      if (event.key === 'Escape' && store.searching) {
+        event.preventDefault()
+        store.clearSearch()
+        return
+      }
+
+      if (isTypingTarget(event.target)) return
+
+      switch (event.key) {
+        case 'j':
+        case 'ArrowDown':
+          event.preventDefault()
+          store.selectRelative(1)
+          break
+        case 'k':
+        case 'ArrowUp':
+          event.preventDefault()
+          store.selectRelative(-1)
+          break
+
+        // The action keys toggle rather than set, so the same key both does
+        // and undoes the thing — which is what a reader pressing it twice
+        // expects, and what makes it safe to press without looking.
+        case 'r': {
+          const current = selectedMessage()
+          if (!current) break
+          event.preventDefault()
+          void applyRead(selectedIds(), !current.isRead)
+          break
+        }
+        case 's': {
+          const current = selectedMessage()
+          if (!current) break
+          event.preventDefault()
+          void applyStar(selectedIds(), !current.isStarred)
+          break
+        }
+
+        // In the trash this asks first; everywhere else it moves the message
+        // there without a question, because the message is still findable.
+        case 'Delete':
+        case '#': {
+          const ids = selectedIds()
+          if (ids.length === 0) break
+          event.preventDefault()
+          requestDelete(ids)
+          break
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+}

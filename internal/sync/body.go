@@ -1,0 +1,93 @@
+package sync
+
+import (
+	"context"
+	"fmt"
+
+	"nexusmail/internal/imapx"
+	"nexusmail/internal/model"
+)
+
+// EnsureBody returns a message body, fetching it from the server only when it
+// is not already cached.
+//
+// Once cached, the message reads with no network at all — which is the
+// local-first promise in one function. A test proves it by blanking the fake
+// server's bodies before the second call.
+func (e *Engine) EnsureBody(ctx context.Context, acct model.Account, folder model.Folder, msg model.Message) (imapx.Body, error) {
+	html, text, err := e.store.GetMessageBody(ctx, msg.ID)
+	if err != nil {
+		return imapx.Body{}, fmt.Errorf("sync: reading cached body: %w", err)
+	}
+	if html != "" || text != "" {
+		return imapx.Body{HTML: html, Text: text}, nil
+	}
+
+	be, err := e.dial(ctx, acct.ID)
+	if err != nil {
+		return imapx.Body{}, fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
+	}
+	// The body lives in a mailbox, and IMAP fetches are scoped to the selected
+	// one. Selecting here rather than assuming the caller did keeps EnsureBody
+	// usable from anywhere.
+	if _, err := be.Select(ctx, folder.Path); err != nil {
+		return imapx.Body{}, fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
+	}
+
+	body, err := be.FetchBody(ctx, msg.UID)
+	if err != nil {
+		return imapx.Body{}, fmt.Errorf("sync: fetching body for UID %d: %w", msg.UID, err)
+	}
+	if err := e.store.SetMessageBody(ctx, msg.ID, body.HTML, body.Text); err != nil {
+		return imapx.Body{}, fmt.Errorf("sync: caching body: %w", err)
+	}
+	return body, nil
+}
+
+// FetchRawMessage returns the message exactly as it sits on the server.
+//
+// Deliberately not cached. The parsed body is cached because it is read on
+// every render; the raw form is read when somebody asks to see the source,
+// save an .eml or repair a mangled encoding — rare enough that storing a
+// second full copy of every message would cost more disk than it ever saves.
+func (e *Engine) FetchRawMessage(ctx context.Context, acct model.Account, folder model.Folder,
+	msg model.Message) ([]byte, error) {
+
+	be, err := e.dial(ctx, acct.ID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
+	}
+	if _, err := be.Select(ctx, folder.Path); err != nil {
+		return nil, fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
+	}
+
+	raw, err := be.FetchRaw(ctx, msg.UID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: fetching the raw message for UID %d: %w", msg.UID, err)
+	}
+	return raw, nil
+}
+
+// FetchAttachment returns the decoded bytes of one part of a message.
+//
+// Not cached in the database the way bodies are. An attachment is a file, and
+// files belong on the filesystem — putting a twenty-megabyte PDF in a SQLite
+// row would bloat every backup and every read of the table it sits in. The
+// caller writes it to disk and records the path.
+func (e *Engine) FetchAttachment(ctx context.Context, acct model.Account, folder model.Folder,
+	msg model.Message, part model.AttachmentPart) ([]byte, error) {
+
+	be, err := e.dial(ctx, acct.ID)
+	if err != nil {
+		return nil, fmt.Errorf("sync: connecting account %d: %w", acct.ID, err)
+	}
+	if _, err := be.Select(ctx, folder.Path); err != nil {
+		return nil, fmt.Errorf("sync: selecting %q: %w", folder.Path, err)
+	}
+
+	data, err := be.FetchPart(ctx, msg.UID, part.PartID, part.Encoding)
+	if err != nil {
+		return nil, fmt.Errorf("sync: fetching part %s of UID %d: %w", part.PartID, msg.UID, err)
+	}
+	return data, nil
+}

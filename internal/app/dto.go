@@ -1,0 +1,120 @@
+package app
+
+import "nexusmail/internal/model"
+
+// AccountDTO is what the UI sees.
+//
+// SecretRef is deliberately absent: the frontend has no business knowing where
+// credentials live, and a field that never crosses the bridge cannot leak
+// through a console log or a devtools inspection.
+type AccountDTO struct {
+	ID          int64  `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	Provider    string `json:"provider"`
+	AuthKind    string `json:"authKind"`
+}
+
+type FolderDTO struct {
+	ID          int64  `json:"id"`
+	AccountID   int64  `json:"accountId"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	TotalCount  int    `json:"totalCount"`
+	UnreadCount int    `json:"unreadCount"`
+	IsInbox     bool   `json:"isInbox"`
+	// Role is what the mailbox is for: "inbox", "sent", "drafts", "archive",
+	// "junk", "trash", or empty for an ordinary folder. Decided here rather
+	// than in the window, because the server's special-use attributes are the
+	// authority and the window never sees them.
+	Role string `json:"role"`
+}
+
+type MessageDTO struct {
+	ID       int64  `json:"id"`
+	FolderID int64  `json:"folderId"`
+	UID      uint32 `json:"uid"`
+	ThreadID string `json:"threadId"`
+	// ThreadCount is how many messages this conversation has in this folder.
+	// Zero outside the threaded list, where it was never asked for.
+	ThreadCount int    `json:"threadCount"`
+	Subject     string `json:"subject"`
+	FromName    string `json:"fromName"`
+	FromAddr    string `json:"fromAddr"`
+	Snippet     string `json:"snippet"`
+	// InternalDateUnix is seconds since the epoch. An explicit integer avoids
+	// the timezone ambiguity that string dates cause across the JS boundary,
+	// and it is the server's delivery time rather than the forgeable Date:
+	// header.
+	InternalDateUnix int64 `json:"internalDateUnix"`
+	IsRead           bool  `json:"isRead"`
+	IsStarred        bool  `json:"isStarred"`
+	HasAttachments   bool  `json:"hasAttachments"`
+	BodyFetched      bool  `json:"bodyFetched"`
+}
+
+func accountToDTO(a model.Account) AccountDTO {
+	return AccountDTO{
+		ID:          a.ID,
+		Email:       a.Email,
+		DisplayName: a.DisplayName,
+		Provider:    string(a.Provider),
+		AuthKind:    string(a.AuthKind),
+	}
+}
+
+func folderToDTO(f model.Folder) FolderDTO {
+	return FolderDTO{
+		ID:          f.ID,
+		AccountID:   f.AccountID,
+		Name:        f.Name,
+		Path:        f.Path,
+		TotalCount:  f.TotalCount,
+		UnreadCount: f.UnreadCount,
+		Role:        string(f.Role()),
+		IsInbox:     f.IsInbox(),
+	}
+}
+
+func messageToDTO(m model.Message) MessageDTO {
+	return MessageDTO{
+		ID:               m.ID,
+		FolderID:         m.FolderID,
+		UID:              m.UID,
+		ThreadID:         m.ThreadID,
+		ThreadCount:      m.ThreadCount,
+		Subject:          m.Subject,
+		FromName:         m.From.Name,
+		FromAddr:         m.From.Addr,
+		Snippet:          m.Snippet,
+		InternalDateUnix: m.InternalDate.Unix(),
+		IsRead:           m.HasFlag(model.FlagSeen),
+		IsStarred:        m.HasFlag(model.FlagFlagged),
+		HasAttachments:   m.HasAttachments,
+		BodyFetched:      m.BodyFetched,
+	}
+}
+
+// PendingChangesDTO tells the window how much of the user's intent has not
+// reached the server, and how much never will.
+type PendingChangesDTO struct {
+	// Pending is still on its way.
+	Pending int `json:"pending"`
+	// Dropped could not be applied because the server recreated the mailbox
+	// the change was queued against.
+	Dropped int `json:"dropped"`
+	// Failed hit something retrying cannot fix.
+	Failed int `json:"failed"`
+}
+
+// AttachmentDTO is one file carried by a message, as the window sees it.
+type AttachmentDTO struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	MIMEType string `json:"mimeType"`
+	// Size is what the server reports, which is the encoded size — a little
+	// larger than the file that comes out.
+	Size       int64  `json:"size"`
+	Downloaded bool   `json:"downloaded"`
+	LocalPath  string `json:"localPath,omitempty"`
+}

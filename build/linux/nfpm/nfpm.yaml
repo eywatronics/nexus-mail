@@ -1,0 +1,55 @@
+# Packaging metadata for the Linux .deb, .rpm and Arch packages.
+#
+# The template this started from named everything after the Windows binary, so
+# the package installed /usr/local/bin/nexus-mail.exe on Linux and advertised
+# somebody else's company and licence. All of that is corrected here; the one
+# thing worth knowing is that the name below has no extension on purpose.
+
+name: "nexus-mail"
+arch: ${GOARCH}
+platform: "linux"
+version: "0.5.0"
+section: "mail"
+priority: "optional"
+maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
+description: |
+  Local-first, privacy-focused mail client.
+  Mail is synced to a local database and rendered from it, so reading works
+  with the network off. Remote content is blocked until asked for, and then
+  fetched through the application rather than from the reader's address.
+vendor: "Nexus Mail"
+homepage: "https://github.com/eywatronics/nexus-mail"
+license: "GPL-3.0-or-later"
+release: "1"
+
+contents:
+  # /usr/bin rather than /usr/local/bin: a distribution package owns the former
+  # and the latter is for things installed outside the package manager, which
+  # is exactly what this is not.
+  - src: "./bin/nexus-mail"
+    dst: "/usr/bin/nexus-mail"
+  - src: "./build/appicon.png"
+    dst: "/usr/share/icons/hicolor/128x128/apps/nexus-mail.png"
+  - src: "./build/linux/nexus-mail.desktop"
+    dst: "/usr/share/applications/nexus-mail.desktop"
+
+# The GTK4 + WebKitGTK 6.0 stack, which is what Wails v3 builds against unless
+# the legacy -tags gtk3 is passed. These names have to match what the release
+# workflow installs to build with, or the package will declare dependencies on
+# libraries it was not linked against.
+depends:
+  - libgtk-4-1
+  - libwebkitgtk-6.0-4
+
+overrides:
+  rpm:
+    depends:
+      - gtk4
+      - webkitgtk6.0
+  archlinux:
+    depends:
+      - gtk4
+      - webkitgtk-6.0
+
+scripts:
+  postinstall: "./build/linux/nfpm/scripts/postinstall.sh"

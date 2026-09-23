@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A nexus-mail application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/nexus-mail.exe %u
+Terminal=false
+Type=Application
+Icon=nexus-mail.exe
+Categories=Utility;
+StartupWMClass=nexus-mail.exe
+
+ 

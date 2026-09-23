@@ -1,0 +1,207 @@
+name: Release
+
+# Every merge to main publishes installers, and a version tag publishes a
+# permanent release of the same thing.
+#
+# Two triggers because they answer two different questions. "What does main
+# look like right now" wants a build on every merge and wants the old one to go
+# away; "which build is version 0.5.0" wants something that never changes and
+# never disappears. One trigger doing both would either bury real releases
+# under every merge, or leave main unbuilt between them.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # A run that can be started by hand is what makes a broken release fixable
+  # without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "22"
+  WAILS_VERSION: v3.0.0-beta.9
+
+jobs:
+  # The version lives in build/config.yml, one place, so the installer's own
+  # version and the release it appears under cannot disagree.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      prerelease: ${{ steps.read.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        shell: bash
+        run: |
+          version=$(grep -E '^\s+version:' build/config.yml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          if [ -z "$version" ]; then
+            echo "no version found in build/config.yml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # A tag is the release it names, and it is permanent.
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            # A merge replaces the rolling build. One moving tag rather than a
+            # tag per merge: a hundred tags nobody chose is not a history, it
+            # is noise in front of the four releases that mean something.
+            echo "tag=main" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: version
+    strategy:
+      # One platform failing must not cancel the others: a broken Linux
+      # packaging step should still leave the Windows installer to download.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos-arm64
+          # macOS 13 is the last Intel runner, and an Intel Mac cannot run an
+          # arm64 build. Two jobs rather than a universal binary because the
+          # universal task needs both toolchains on one machine.
+          - os: macos-13
+            name: macos-amd64
+          - os: ubuntu-latest
+            name: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The release build links against the real toolkit, so unlike the CI
+      # purity job it needs cgo and the development headers. The two are not in
+      # conflict: CI proves the dependency tree is pure Go, this proves the
+      # thing people install actually runs.
+      - name: Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev rpm
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Generate bindings and build frontend
+        shell: bash
+        run: |
+          wails3 generate bindings
+          cd frontend && npm ci && npm run build
+
+      - name: Package for Windows
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          wails3 task windows:package
+          # The portable binary ships too. An installer is what most people
+          # want and a single file is what the rest want, and the second is
+          # already built on the way to the first.
+          cp bin/nexus-mail.exe "bin/nexus-mail-windows-amd64.exe"
+
+      - name: Package for macOS
+        if: startsWith(matrix.name, 'macos')
+        shell: bash
+        run: |
+          wails3 task darwin:package
+          # Unsigned, so Gatekeeper will refuse it until the user allows it by
+          # hand. Saying so in the file name is better than letting somebody
+          # find out after downloading.
+          cd bin
+          zip -r "nexus-mail-${{ matrix.name }}-unsigned.zip" "Nexus Mail.app" || \
+            zip -r "nexus-mail-${{ matrix.name }}-unsigned.zip" *.app
+
+      - name: Package for Linux
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          wails3 task linux:create:appimage
+          wails3 task linux:create:rpm
+          wails3 task linux:create:deb
+
+      # Listed before uploading so a run that produced nothing says so here,
+      # rather than as an empty release nobody notices until they try to
+      # download it.
+      - name: Show what was built
+        shell: bash
+        run: ls -la bin/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            bin/*.exe
+            bin/*.zip
+            bin/*.AppImage
+            bin/*.rpm
+            bin/*.deb
+            bin/*-installer.exe
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Show what will be published
+        run: ls -la artifacts/
+
+      # The rolling tag has to be moved before the release is written, or the
+      # release points at whatever main was the last time somebody tagged it.
+      - name: Move the rolling tag
+        if: needs.version.outputs.tag == 'main'
+        run: |
+          git tag -f main
+          git push -f origin main --tags
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: >-
+            ${{ needs.version.outputs.tag == 'main'
+                && format('Latest from main ({0})', needs.version.outputs.version)
+                || format('Nexus Mail {0}', needs.version.outputs.version) }}
+          prerelease: ${{ needs.version.outputs.prerelease }}
+          # A rolling build is replaced, not appended to: leaving yesterday's
+          # installers next to today's under one heading is how somebody
+          # installs the wrong one.
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          body: |
+            Built from `${{ github.sha }}`.
+
+            | Platform | File |
+            |---|---|
+            | Windows | `*-installer.exe` to install, `nexus-mail-windows-amd64.exe` to run as it is |
+            | macOS | `nexus-mail-macos-arm64-unsigned.zip` (Apple silicon), `nexus-mail-macos-amd64-unsigned.zip` (Intel) |
+            | Linux | `*.AppImage` runs anywhere, `*.rpm` for Fedora and RHEL, `*.deb` for Debian and Ubuntu |
+
+            **The macOS and Windows builds are unsigned.** macOS will refuse to
+            open the app until you allow it in System Settings → Privacy &
+            Security, and Windows SmartScreen will warn about an unknown
+            publisher. Code signing is planned; until then this is what an
+            unsigned build honestly looks like.
+
+            Linux packages need GTK 4 and WebKitGTK 6.0, which the `.rpm` and
+            `.deb` declare as dependencies. The AppImage does not bundle them.

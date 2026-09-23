@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.5.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "0.5.0",
+			"CompanyName": "Nexus Mail",
+			"FileDescription": "Local-first, privacy-focused mail client",
+			"LegalCopyright": "© 2026 Nexus Mail contributors",
+			"ProductName": "Nexus Mail",
+			"Comments": "Mail stays on your machine. Trackers are blocked by default."
+		}
+	}
+}
