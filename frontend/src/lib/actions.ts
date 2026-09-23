@@ -59,7 +59,10 @@ export async function applyDelete(ids: number[]): Promise<void> {
   useMailStore.getState().selectRelative(1)
   useMailStore.getState().removeLocalMessages(ids)
   await deleteMessages(ids).catch(() => {})
-  await refreshUndoOffer()
+  // The offer is a nicety on top of an operation that has already happened.
+  // Letting a failure here escape would turn "I could not ask whether this is
+  // undoable" into an unhandled rejection out of a delete that worked.
+  await refreshUndoOffer().catch(() => {})
 }
 
 /**

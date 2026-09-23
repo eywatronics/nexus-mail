@@ -10,6 +10,8 @@ vi.mock('../lib/api', () => ({
   markRead: vi.fn(),
   setStarred: vi.fn(),
   moveMessages: vi.fn(),
+  undoable: vi.fn().mockResolvedValue({ kind: '', count: 0, expiresUnixMs: 0 }),
+  undoLastAction: vi.fn().mockResolvedValue(false),
 }))
 
 beforeEach(() => {
