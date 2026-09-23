@@ -7,6 +7,7 @@
 Go · Wails v3 · React · SQLite
 
 [![CI](https://github.com/eywatronics/nexus-mail/actions/workflows/ci.yml/badge.svg)](https://github.com/eywatronics/nexus-mail/actions/workflows/ci.yml)
+[![Release](https://github.com/eywatronics/nexus-mail/actions/workflows/release.yml/badge.svg)](https://github.com/eywatronics/nexus-mail/actions/workflows/release.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 
@@ -48,20 +49,68 @@ değil.
 token'ları veritabanına ya da yapılandırma dosyasına asla yazılmaz; Windows
 Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
 
+## İndir
+
+Her `main` birleşmesi üç platform için kurulum dosyası üretir. En son yapı:
+**[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
+
+| Platform | Dosya |
+|---|---|
+| Windows | `*-installer.exe` kurulum, `nexus-mail-windows-amd64.exe` taşınabilir |
+| macOS | `nexus-mail-macos-arm64-unsigned.zip` (Apple silicon), `...-amd64-...` (Intel) |
+| Linux | `*.AppImage` her dağıtımda, `*.rpm` Fedora/RHEL, `*.deb` Debian/Ubuntu |
+
+**macOS ve Windows yapıları imzasız.** macOS, Sistem Ayarları → Gizlilik ve
+Güvenlik'ten izin verene kadar açmayı reddeder; Windows SmartScreen bilinmeyen
+yayıncı uyarısı gösterir. Kod imzalama M14'te; o zamana kadar imzasız bir
+yapının dürüst hâli bu.
+
+Linux paketleri GTK 4 ve WebKitGTK 6.0 gerektiriyor; `.rpm` ve `.deb` bunu
+bağımlılık olarak bildiriyor, AppImage paketlemiyor.
+
 ## Durum
 
-Geliştirme aşamasında. **M1–M3 bitti:** hesap bağlama, canlı senkron ve
-çevrimdışı dayanıklı durum yazma çalışıyor. Uygulama artık salt okunur değil —
-okundu, yıldız, taşı ve sil işlemleri anında görünüyor, kuyruğa alınıyor ve
-bağlantı geldiğinde sunucuya gidiyor.
+Geliştirme aşamasında, ama artık günlük kullanılabilir bir okuma istemcisi.
 
-**M5 büyük ölçüde bitti:** ekleri indirme, konuşma gruplama, kaynağı görüntüleme
-ve `.eml` kaydetme, kodlama onarımı, gövde görüntüleme kipleri, SPECIAL-USE
-klasör rolleri. **M4 kısmen bitti:** pencere kapanınca uygulama tepside kalıyor
-ve senkron sürüyor, yeni mail bildirimi gönderiyor.
+### Bugün ne yapıyor
 
-Henüz **gönderme yok** (M6). Yazdırma, sandbox'lı okuma paneli yüzünden ayrı bir
-pencere gerektiriyor ve M6'ya ertelendi.
+**Hesaplar.** Parola veya uygulama parolasıyla herhangi bir IMAP sunucusu;
+Google ve Microsoft için OAuth 2.0 (XOAUTH2); şirket içi Exchange için
+143/STARTTLS. Bağlantı güvenliği hesap başına seçilir ve şifresiz seçenek
+yoktur. Sunucunun sunduğu kimlik doğrulama mekanizması pazarlıkla seçilir
+(PLAIN → SASL LOGIN → LOGIN), ve hiçbiri tutmazsa hata mesajı sunucunun ne
+sunduğunu adlandırır.
+
+**Senkron.** İlk senkron, IMAP IDLE ile canlı güncelleme, CONDSTORE destekleyen
+sunucularda delta senkron, ve veritabanının sınırsız büyümesini durduran bir
+saklama penceresi (klasör başına 365 gün / 25.000 mesaj; yıldızlılar muaf,
+silme yalnızca yerelde).
+
+**Okuma.** Üç sütunlu sanallaştırılmış liste, konuşma gruplama, FTS5 araması
+(Türkçe'nin noktasız ı'sı dahil), klavye navigasyonu, ekleri listeleme ve
+indirme, kaynağı görüntüleme, `.eml` kaydetme, yanlış beyan edilmiş kodlamayı
+onarma, ve üç gövde görüntüleme kipi (özgün HTML / sade HTML / düz metin).
+
+**Yazma.** Okundu, yıldız, taşı ve sil anında görünür, kuyruğa alınır ve
+bağlantı geldiğinde sunucuya gider. Silmek çöp kutusuna taşır; çöp kutusunun
+içinde sorar ve yok eder. Çöp kutusunu boşaltma, senkronlanmamış mesajları da
+kapsayan ayrı bir sunucu işlemidir. Son yıkıcı işlem beş saniye boyunca geri
+alınabilir (Ctrl+Z).
+
+**Arka plan.** Pencere kapanınca uygulama tepside kalır ve senkron sürer; yeni
+mail geldiğinde işletim sistemi bildirimi gönderir, içeriği isteğe bağlı
+(kilit ekranı için).
+
+**Ayarlar.** Tema, gövde kipi, okundu işaretleme davranışı, konuşma gruplama,
+bildirim önizlemesi, geri alma penceresi, saklama limitleri ve OAuth client
+ID'leri uygulama içinden.
+
+### Henüz yok
+
+**Gönderme** (M6) — okuma istemcisidir, yanıt yazılamaz. **NTLM/GSSAPI** (M10)
+— temel kimlik doğrulamayı kapatmış kurumsal sunucular bağlanamaz.
+**Yazdırma**, sandbox'lı okuma paneli yüzünden ayrı bir pencere gerektiriyor ve
+M6'ya ertelendi. **Kod imzalama** (M14).
 
 | Kilometre taşı | Kapsam | Durum |
 |---|---|---|
@@ -130,7 +179,8 @@ Ayrıntılar: [docs/design/p0-architecture.md](docs/design/p0-architecture.md)
 ## Kaynaktan derleme
 
 **Gereksinimler:** Go 1.26+, Node 20+, Wails v3 CLI.
-Linux'ta ayrıca `libgtk-3-dev` ve `libwebkit2gtk-4.1-dev`.
+Linux'ta ayrıca `libgtk-4-dev` ve `libwebkitgtk-6.0-dev` — Wails v3'ün
+`-tags gtk3` olmadan bağlandığı yığın bu.
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.9
@@ -152,6 +202,33 @@ cd frontend && npm test
 ```
 
 Yarış dedektörü (`-race`) cgo gerektirir ve CI'da çalışır.
+
+### Kurulum paketi
+
+```bash
+wails3 task package
+```
+
+Bulunduğunuz platform için paket üretir: Windows'ta NSIS kurulum dosyası,
+macOS'ta `.app`, Linux'ta AppImage / `.deb` / `.rpm`. Çıktılar `bin/` altında.
+
+Çapraz derleme yok: her platform kendi üzerinde derleniyor. Wails'in WebView
+bağlaması her sistemin kendi araç zincirini gerektiriyor ve Docker ile
+zorlamak, üretilen şeyin çalıştığını kimsenin denemediği bir yapı üretirdi.
+Release iş akışı da bu yüzden üç ayrı runner kullanıyor.
+
+### Sürüm çıkarma
+
+`main`'e her birleşme, üç platform için yapı üretip **`main` etiketli** yuvarlak
+bir ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
+`info.version` değerini yükseltin ve aynı numarayla etiket atın:
+
+```bash
+git tag v0.6.0 && git push origin v0.6.0
+```
+
+Sürüm numarası tek yerde durur: kurulum dosyasının kendi sürümü ile göründüğü
+release'in adı birbirinden ayrılamasın diye.
 
 ## Verinin nerede durduğu
 
