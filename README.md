@@ -147,7 +147,7 @@ reading pane, and is deferred to M6. **Code signing** (M14).
 | **M1** | Account setup (3 paths), folder and header sync, isolated reading, search, keyboard navigation | Done |
 | **M2** | Live sync over IMAP IDLE, delta sync, retention window | Done |
 | **M3** | Offline-durable state writes (read, star, move, delete) | Done |
-| **M4** | System tray, notifications, running in the background | Partly done |
+| **M4** | System tray, notifications, running in the background, start at login, unread badge | Done |
 | **M5** | Attachments, conversation grouping, source/save, encoding repair, body modes, find in message, undo/redo | Done |
 | **M6** | Sending: SMTP, multiple identities, signatures, drafts, outbox, composer | Planned |
 | **M7** | Contacts: local address book, vCard, CardDAV, LDAP | Planned |

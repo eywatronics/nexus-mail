@@ -98,6 +98,7 @@ Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:
   | Katman | Sorumluluk | Arayüz |
   |---|---|---|
   | `internal/imapx` | IMAP | `MailBackend` |
+  | `internal/smtpx` | SMTP gönderme (M6) | `MailSender` |
   | `internal/carddavx` | CardDAV, LDAP (M7) | `ContactsBackend` |
   | `internal/caldavx` | CalDAV, ICS (M9b) | `CalendarBackend` |
   | `internal/graphx` | Microsoft Graph (M10) | yukarıdakilerin ikinci uygulaması |

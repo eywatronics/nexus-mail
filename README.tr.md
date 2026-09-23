@@ -149,7 +149,7 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
-| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
+| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma, açılışta başlat, okunmamış rozeti | Bitti |
 | **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri, mesajda bul, geri al/yinele | Bitti |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
 | **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |

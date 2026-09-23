@@ -16,7 +16,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M1** | Salt okunur istemci: hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
-| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Kısmen bitti |
+| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Bitti |
 | **M5** | Okuma deneyimini tamamla | Bitti |
 | **M6** | Gönderme | Yeni |
 | **M7** | Kişiler | Yeni |
@@ -46,9 +46,21 @@ sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
 - Görev çubuğu / dock rozetinde okunmamış sayısı
 - Açılışta başlat (ayarlar ekranından)
 
-**Kalan:**
+**M4 bitti.** Son madde (`mailto:`) M6'ya taşındı — gerekçe aşağıda.
 
-- Varsayılan posta istemcisi olarak ayarla (`mailto:`)
+### `mailto:` neden M6'da
+
+Varsayılan posta istemcisi olarak kaydolmak M4'ün son maddesiydi. Bugün
+yapılsaydı **zararlı** olurdu: gönderme M6'da, yani bir `mailto:` bağlantısına
+tıklayan kişi Nexus Mail'i açar ve hiçbir şey olmaz. Outlook'u varsayılan
+bırakmaktan kötü bir sonuç.
+
+Bir de işin Windows tarafı sanıldığı gibi değil: Windows 10'dan beri bir
+uygulama kendini programatik olarak varsayılan **yapamıyor**. Yapılabilecek
+olan, uygulamayı aday olarak kaydedip Ayarlar sayfasını açmak. Yani madde
+"bir kayıt defteri yazımı" değil, "aday olarak görün + kullanıcıyı doğru
+sayfaya götür + gelen `mailto:` URL'sini compose penceresine bağla" — ve
+sonuncusu M6 olmadan yok.
 
 ### Açılışta başlat, işletim sisteminin ayarıdır
 
@@ -276,6 +288,8 @@ zinciri listede gruplanıyor.
 Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 
 - SMTP (`emersion/go-smtp`): STARTTLS, 8BITMIME, SIZE, SMTPUTF8, XOAUTH2
+- **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
+  olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
 - **Hesap başına çoklu kimlik** — şema değişikliği; bugün `accounts.display_name` tek kimlik varsayıyor
 - İmzalar (kimlik başına metin/HTML/dosya)
 - Compose penceresi: yanıtla / tümünü / listeye / ilet / yönlendir / yeni olarak düzenle
