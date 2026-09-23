@@ -1,4 +1,4 @@
-import { Plus } from '@phosphor-icons/react'
+import { GearSix, Plus } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import { useCallback, useEffect, useState } from 'react'
 import { AddAccount } from './components/AddAccount'
@@ -10,7 +10,7 @@ import { ChangeFailureNotice } from './components/ChangeFailureNotice'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
 import { UndoNotice } from './components/UndoNotice'
-import { ThemeToggle } from './components/ThemeToggle'
+import { Settings } from './components/Settings'
 import {
   listAccounts,
   listFolders,
@@ -21,8 +21,9 @@ import {
 } from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
 import { useMessageShortcuts } from './lib/keyboard'
+import { useApplyTheme } from './lib/theme'
 import { useMailStore } from './store/useMailStore'
-import { BUTTON_GHOST, ICON, SURFACE, TEXT } from './lib/ui'
+import { BUTTON_GHOST, ICON, ICON_ONLY, SURFACE, TEXT } from './lib/ui'
 
 const PAGE_SIZE = 100
 const SEARCH_LIMIT = 200
@@ -36,6 +37,7 @@ const SEARCH_DEBOUNCE_MS = 180
 
 export default function App() {
   const [adding, setAdding] = useState(false)
+  const [showingSettings, setShowingSettings] = useState(false)
   const [ready, setReady] = useState(false)
 
   const accounts = useMailStore((s) => s.accounts)
@@ -54,6 +56,10 @@ export default function App() {
   const setSearchResults = useMailStore((s) => s.setSearchResults)
 
   useMessageShortcuts()
+  // Applied from the shell rather than from the theme control, which can be
+  // off screen: a document-wide effect owned by a component that unmounts is
+  // a style that disappears when that component does.
+  useApplyTheme()
 
   // Search is scoped to the account the user is looking at. Merging every
   // account's results into one list would put work mail in front of someone
@@ -170,6 +176,13 @@ export default function App() {
     )
   }
 
+  // A full window rather than a dialog. Settings are read and compared, not
+  // glanced at, and a panel floating over the mail would cover the thing half
+  // of them describe.
+  if (showingSettings) {
+    return <Settings onClose={() => setShowingSettings(false)} />
+  }
+
   return (
     <Layout
       sidebar={
@@ -185,7 +198,20 @@ export default function App() {
               <Plus size={ICON.size} weight={ICON.weight} aria-hidden />
               Account
             </button>
-            <ThemeToggle />
+            {/* The theme control used to sit here. It moved into settings once
+                there was a settings screen to move it to: one place per
+                setting, and the header is the wrong place for a control the
+                reader touches twice a year. */}
+            <button
+              type="button"
+              data-testid="open-settings"
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => setShowingSettings(true)}
+              className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+            >
+              <GearSix size={ICON.size} weight={ICON.weight} aria-hidden />
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto">
             <FolderList />

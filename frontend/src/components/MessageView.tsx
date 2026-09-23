@@ -2,6 +2,7 @@ import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/r
 import { useEffect, useMemo, useState } from 'react'
 import { bodyURL, sourceURL } from '../lib/api'
 import { useBodyView } from '../lib/bodyView'
+import { MARK_READ_DELAY_MS, useMarkReadWhen } from '../lib/markRead'
 import { applyRead, applyStar, requestDelete } from '../lib/actions'
 import { AttachmentList } from './AttachmentList'
 import { MessageActionsMenu } from './MessageActionsMenu'
@@ -52,6 +53,7 @@ export function MessageView() {
   const [showSource, setShowSource] = useState(false)
   const [bodyVersion, setBodyVersion] = useState(0)
   const [bodyView, setBodyView] = useBodyView()
+  const [markReadWhen] = useMarkReadWhen()
 
   // Only an explicit choice travels. While the reader is following their
   // machine the frame's own media query reaches the same answer, and naming it
@@ -93,17 +95,31 @@ export function MessageView() {
       : bodyURL(settledId, allowRemote, bodyVersion, bodyView, theme)
   }, [settledId, allowRemote, showSource, bodyVersion, bodyView, theme])
 
-  // Reading a message marks it read. Tied to the settled id rather than the
-  // selection, so holding j through a folder does not mark fifty messages read
-  // on the way past — only the one the reader actually stopped on.
+  // Reading a message marks it read, if the reader wants that. Tied to the
+  // settled id rather than the selection, so holding j through a folder does
+  // not mark fifty messages read on the way past — only the one the reader
+  // actually stopped on.
+  //
+  // The delay is on top of that: somebody who triages by arrow key wants
+  // passing over a message to leave it bold, and a hundred and twenty
+  // milliseconds is not long enough to count as having read anything.
   useEffect(() => {
-    if (settledId === null) return
+    if (settledId === null || markReadWhen === 'never') return
 
-    const current = useMailStore.getState().visibleMessages().find((m) => m.id === settledId)
-    if (!current || current.isRead) return
+    const markIfStillUnread = () => {
+      const current = useMailStore.getState().visibleMessages().find((m) => m.id === settledId)
+      if (!current || current.isRead) return
+      void applyRead([settledId], true)
+    }
 
-    void applyRead([settledId], true)
-  }, [settledId])
+    if (markReadWhen === 'open') {
+      markIfStillUnread()
+      return
+    }
+
+    const timer = setTimeout(markIfStillUnread, MARK_READ_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [settledId, markReadWhen])
 
   if (selectedMessageId === null) {
     return (

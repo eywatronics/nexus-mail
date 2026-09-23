@@ -85,7 +85,7 @@ func (s *MailService) announceNewMail(acct model.Account) {
 		Email:     acct.Email,
 		Count:     len(unread),
 	}
-	if s.cfg.NotificationPreview {
+	if s.notificationPreview() {
 		newest := unread[len(unread)-1]
 		event.From = senderLabel(newest)
 		event.Subject = newest.Subject

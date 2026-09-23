@@ -14,7 +14,7 @@ func newMailFixture(t *testing.T) (*MailService, *recorder, model.Account, int64
 	t.Helper()
 
 	svc, rec, db := newTestService(t, stubBackend{})
-	svc.cfg.NotificationPreview = true
+	svc.liveNotificationPreview = true
 
 	dto, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
@@ -150,7 +150,7 @@ func TestSeveralArrivalsInOnePassAreOneEvent(t *testing.T) {
 // the desk gets to read who wrote and about what.
 func TestPreviewsCanBeTurnedOff(t *testing.T) {
 	svc, rec, acct, inbox := newMailFixture(t)
-	svc.cfg.NotificationPreview = false
+	svc.liveNotificationPreview = false
 	svc.announceNewMail(acct)
 
 	deliverLocally(t, svc, acct, inbox, 91, "Zeynep", "Gizli konu", false)

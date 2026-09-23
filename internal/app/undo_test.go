@@ -14,7 +14,10 @@ func undoFixture(t *testing.T) (*MailService, int64, int64, int64) {
 	t.Helper()
 
 	svc, _, db := newTestService(t, stubBackend{})
-	svc.cfg.UndoWindow = defaultUndoWindow
+	// The live field, not cfg: cfg is the value the service was built from and
+	// the settings screen can move these out from under it, so the running
+	// code reads the live copy and so must a test that wants to change one.
+	svc.liveUndoWindow = defaultUndoWindow
 	ctx := context.Background()
 
 	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
@@ -202,7 +205,7 @@ func TestUndoIsRefusedOnceTheChangeIsOnItsWay(t *testing.T) {
 // be a button that always fails.
 func TestNoWindowMeansNoUndo(t *testing.T) {
 	svc, id, _, _ := undoFixture(t)
-	svc.cfg.UndoWindow = 0
+	svc.liveUndoWindow = 0
 
 	if err := svc.DeleteMessages([]int64{id}); err != nil {
 		t.Fatalf("DeleteMessages() error: %v", err)

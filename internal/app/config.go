@@ -40,6 +40,10 @@ type fileConfig struct {
 type Config struct {
 	Emit Emitter
 
+	// DataDir is where config.json lives, so the settings screen can write
+	// back to the file it was read from. Empty in tests that never save.
+	DataDir string
+
 	// OAuth client IDs come from config.json. They are identifiers rather than
 	// secrets: a desktop app is a public OAuth client and cannot keep a secret
 	// on the user's machine. The refresh token is the sensitive part, and that
@@ -110,7 +114,12 @@ func LoadConfig(dir string) (Config, error) {
 		if writeErr := os.WriteFile(path, blank, 0o600); writeErr != nil {
 			return Config{}, fmt.Errorf("app: creating %s: %w", configFileName, writeErr)
 		}
-		return Config{Retention: model.DefaultRetention}, nil
+		return Config{
+			DataDir:             dir,
+			Retention:           model.DefaultRetention,
+			NotificationPreview: true,
+			UndoWindow:          defaultUndoWindow,
+		}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("app: reading %s: %w", configFileName, err)
@@ -126,6 +135,7 @@ func LoadConfig(dir string) (Config, error) {
 	}
 
 	return Config{
+		DataDir:             dir,
 		GoogleClientID:      fc.GoogleClientID,
 		MicrosoftClientID:   fc.MicrosoftClientID,
 		OAuthRedirectPort:   fc.OAuthRedirectPort,

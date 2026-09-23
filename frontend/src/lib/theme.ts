@@ -54,3 +54,22 @@ export function useResolvedTheme(): Theme {
   if (choice === 'system') return dark ? 'dark' : 'light'
   return choice
 }
+
+/**
+ * Puts the theme on the document, and returns it.
+ *
+ * Called once, by the shell. It used to live inside the theme control, which
+ * worked only for as long as that control was on screen — the moment the
+ * control moved into a settings screen the app would have rendered unstyled
+ * everywhere else. Applying a document-wide effect from a component that can
+ * unmount was the bug waiting to happen; the shell cannot unmount.
+ */
+export function useApplyTheme(): Theme {
+  const theme = useResolvedTheme()
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+  }, [theme])
+
+  return theme
+}

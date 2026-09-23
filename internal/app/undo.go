@@ -21,10 +21,25 @@ import (
 // reliable, and impossible while offline.
 const defaultUndoWindow = 5 * time.Second
 
-// undoWindow is the configured window. Zero means a change goes out at once
-// and nothing is offered to take back, which is what every mail client did
-// before this one.
-func (s *MailService) undoWindow() time.Duration { return s.cfg.UndoWindow }
+// undoWindow is the window in force. Zero means a change goes out at once and
+// nothing is offered to take back, which is what every mail client did before
+// this one.
+//
+// Read from the live setting rather than from cfg, because the settings screen
+// can change it while watch goroutines are running.
+func (s *MailService) undoWindow() time.Duration {
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
+	return s.liveUndoWindow
+}
+
+// notificationPreview reports whether a new-mail notification may carry the
+// sender and subject.
+func (s *MailService) notificationPreview() bool {
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
+	return s.liveNotificationPreview
+}
 
 // UndoableKind says what the last action was, so the window can name it.
 type UndoableKind string

@@ -46,13 +46,30 @@ type MailService struct {
 	// under watchMu: it is read from the window's goroutine and cleared from a
 	// timer's.
 	undo *undoable
+
+	// The settings a person can change while the app is running, kept apart
+	// from cfg because cfg is read everywhere without a lock and these are
+	// written from the window while the watch goroutines read them.
+	//
+	// A read-write lock rather than the watch mutex: the notification preview
+	// is read on every arrival and the undo window on every destructive
+	// action, while a write happens when somebody opens the settings screen.
+	settingsMu              sync.RWMutex
+	liveRetention           model.RetentionPolicy
+	liveNotificationPreview bool
+	liveUndoWindow          time.Duration
 }
 
 func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engine, cfg Config) *MailService {
 	if cfg.Emit == nil {
 		cfg.Emit = func(string, any) {}
 	}
-	return &MailService{store: s, secrets: secrets, engine: eng, cfg: cfg}
+	return &MailService{
+		store: s, secrets: secrets, engine: eng, cfg: cfg,
+		liveRetention:           cfg.Retention,
+		liveNotificationPreview: cfg.NotificationPreview,
+		liveUndoWindow:          cfg.UndoWindow,
+	}
 }
 
 func (s *MailService) ListAccounts() ([]AccountDTO, error) {

@@ -219,3 +219,19 @@ export const undoLastAction = () => MailService.UndoLastAction() as Promise<bool
 
 /** Destroys everything in the trash, on the server as well as here. */
 export const emptyTrash = (accountId: number) => MailService.EmptyTrash(accountId)
+
+/** Everything config.json holds, as the settings screen sees it. */
+export interface AppSettings {
+  googleClientId: string
+  microsoftClientId: string
+  oauthRedirectPort: number
+  retentionDays: number
+  retentionMaxMessages: number
+  notificationPreview: boolean
+  undoWindowSeconds: number
+}
+
+export const settings = () => MailService.Settings() as Promise<AppSettings>
+
+/** Writes config.json and applies what can be applied without a restart. */
+export const updateSettings = (next: AppSettings) => MailService.UpdateSettings(next)
