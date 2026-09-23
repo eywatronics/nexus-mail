@@ -84,6 +84,31 @@ linters:
             - pkg: "net/http"
               desc: "sanitising must not fetch anything; the caller proxies remote content"
 
+        # The AI layer (M13) talks to the store and the keyring, nothing else.
+        # Written before the package exists so the first commit that creates it
+        # is already governed: a rule added afterwards is a rule the code that
+        # needed it was written without.
+        ai-layer:
+          files: ["**/internal/ai/**"]
+          deny:
+            - pkg: "nexusmail/internal/app"
+              desc: "ai is below app; the window reaches it through app services"
+            - pkg: "nexusmail/internal/sync"
+              desc: "ai reads what sync already stored; it does not drive syncing"
+            - pkg: "nexusmail/internal/imapx"
+              desc: "ai never speaks IMAP; mail reaches it through the store"
+
+        # Only the provider package may reach the network, so "which code can
+        # send a message body to a model" has a one-directory answer. Chunking,
+        # retrieval and the indexer work on what is already on disk and go
+        # through the LLMProvider and EmbeddingProvider interfaces.
+        # !$test exempts tests: proving no request is made needs a probe server.
+        ai-network:
+          files: ["**/internal/ai/rag/**", "**/internal/ai/worker/**", "!$test"]
+          deny:
+            - pkg: "net/http"
+              desc: "only internal/ai/provider may reach a model; everything else works on stored text"
+
         # Time-dependent logic is tested with testing/synctest (stable in Go
         # 1.25). Injected-clock libraries deform production code for the
         # tests' benefit; see design doc section 10.1.

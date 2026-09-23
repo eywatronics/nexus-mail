@@ -101,6 +101,12 @@ Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:
   | `internal/carddavx` | CardDAV, LDAP (M7) | `ContactsBackend` |
   | `internal/caldavx` | CalDAV, ICS (M9b) | `CalendarBackend` |
   | `internal/graphx` | Microsoft Graph (M10) | yukarıdakilerin ikinci uygulaması |
+  | `internal/ai` | Yerel ve bulut model sağlayıcıları (M13) | `LLMProvider`, `EmbeddingProvider` |
+
+- **`internal/ai` içinde yalnızca `provider` alt paketi ağa çıkabilir.** Bu da
+  `depguard` ile zorlanır. Gerekçesi mimari değil gizlilik: "hangi kod bir mail
+  gövdesini modele gönderebilir" sorusunun tek dizinlik bir cevabı olması
+  gerekiyor. Parçalama, geri getirme ve indeksleyici diskte olanla çalışır.
 
 - **Her yeni protokol kendi sahte sunucusuyla gelir.** IMAP için
   `imapmemserver` kullanılıyor; SMTP için `go-smtp`'nin sunucu tarafı, diğerleri

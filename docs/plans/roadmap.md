@@ -25,8 +25,9 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M10** | Microsoft Graph / Exchange | Yeni |
 | **M11** | Göç (içe/dışa aktarma) | Yeni |
 | **M12** | Yerelleştirme ve erişilebilirlik | Yeni |
-| **M13** | Sohbet | Yeni |
+| **M13** | Yerel-önce RAG ve posta zekâsı | Yeni |
 | **M14** | Ürünleşme | Yeni |
+| **M15** | Sohbet | Yeni |
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
 sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
@@ -470,7 +471,51 @@ uygulama yalnızca klavyeyle kullanılabiliyor; axe denetimi temiz.
 
 ---
 
-## M13 — Sohbet
+## M13 — Yerel-önce RAG ve posta zekâsı
+
+Uzun zincirleri özetleyen, yazışmalardan doğal dille bilgi çıkaran, yanıt
+taslağı üreten bir katman. İki kip: makinede çalışan yerel model (Ollama) ya
+da kullanıcının kendi anahtarıyla bulut sağlayıcı (BYOK).
+
+Ayrıntılı plan: [m13-intelligence-rag.md](m13-intelligence-rag.md).
+
+- Sağlayıcı katmanı (`internal/ai`), anahtarlar OS anahtarlığında
+- Zincir özeti, akan yanıt
+- `mail_chunks` + saf Go vektör arama, FTS5 ile hibrit (RRF)
+- Gelen kutusu soru-cevap, kaynak mesaj kartlarıyla
+- Taslak asistanı (M6'ya bağlı tek parça)
+
+**Varsayılan kapalı**, ve yerel kipte tek bayt makineden çıkmaz.
+
+### Bu, bir kuralın bilinçli istisnası
+
+Aşağıdaki "bilerek kapsam dışı" tablosunda **işletim sistemi arama
+entegrasyonu** "postayı OS indeksine verir" diye reddedilmişti. Bulut kipi
+daha ileri gider: gövdenin tamamı üçüncü tarafa iner.
+
+Fark rızanın olup olmaması değil, **görünür ve dönülebilir olması**: veriyi
+veren kullanıcının kendisi, kendi anahtarıyla, hangi mesaj için olduğunu
+görerek. OS entegrasyonunda veriyi veren uygulamaydı ve kullanıcı bunu
+göremiyordu.
+
+Bunu tabloya yazmadan geçmek, projenin kendi gerekçeleriyle çelişmek olurdu.
+
+### Sohbet nereye gitti
+
+M13 daha önce Sohbet'ti. Kapsamı değişmeden M15'e taşındı; zaten "bağımsız,
+istenirse ertelenebilir" notuyla duruyordu.
+
+---
+
+## M14 — Ürünleşme
+
+- Otomatik güncelleme
+- Kod imzalama (Windows, macOS)
+- Kurulum paketleri, dağıtım
+
+---
+
+## M15 — Sohbet
 
 Bağımsız; istenirse ertelenebilir.
 
@@ -481,14 +526,6 @@ Bağımsız; istenirse ertelenebilir.
 - Kişi listesi, gruplar, durum, bildirimler
 
 IRC kapsam dışı: eski yük, şifreleme yok.
-
----
-
-## M14 — Ürünleşme
-
-- Otomatik güncelleme
-- Kod imzalama (Windows, macOS)
-- Kurulum paketleri, dağıtım
 
 ---
 
