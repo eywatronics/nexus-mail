@@ -69,10 +69,13 @@ başına teslim edilebilir.
 - ~~Gövde kipi: özgün HTML / sade HTML / düz metin~~ — **bitti**
 - ~~SPECIAL-USE ile klasör rolleri~~ — **bitti**
 - ~~STARTTLS ve kimlik doğrulama mekanizması seçimi~~ — **bitti** (aşağıya bakın)
-- Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
+- ~~Mesaj gövdesinde karanlık mod~~ — **bitti**; tema çerçeveye URL'de söyleniyor,
+  çünkü sandbox'lı belge ana sayfadaki sınıfı göremiyor
 - ~~Silmek çöp kutusuna taşısın~~ — **bitti** (aşağıya bakın)
 - ~~Geri al~~ — **bitti** (tek adım, yıkıcı işlemler için)
-- Mesajda bul, okundu işaretleme davranışı, yinele
+- ~~Okundu işaretleme davranışı~~ — **bitti** (açınca / birkaç saniye sonra / hiç)
+- ~~Mesajda bul~~ — **bitti** (aşağıya bakın)
+- Yinele (redo)
 
 ### UTF8=ACCEPT neden burada değil
 
@@ -138,6 +141,39 @@ adlandırılması, ve PLAIN → SASL LOGIN → LOGIN komutu sırası.
 kurumda tek yol budur ve `internal/auth`'ta karşılığı yok. Hata mesajı
 sunucunun sunduğu mekanizmaları adlandırdığı için bu duruma düşüldüğü
 anlaşılıyor; uygulaması M10'da Graph işiyle birlikte.
+
+### Mesajda bul, tarayıcının değil bizim
+
+Ctrl+F tarayıcının kendi aramasını açmıyor, açamaz da: okuma paneli
+`allow-scripts` ve `allow-same-origin` taşımayan bir iframe, yani içine
+girecek betik yok ve dışarıdan tutamak da yok. Tarayıcının aramasını olduğu
+gibi bırakmak, okunan mesajda hiçbir zaman eşleşme bulmayan bir Ctrl+F demek
+olurdu — yazdırmayla aynı duvar.
+
+Bu yüzden arama markup'a geliyor: sorgu gövde URL'sinde gidiyor,
+`mailhtml.Highlight` eşleşmeleri belge sunulmadan önce `<mark>` ile sarıyor,
+ve geçerli eşleşmeye `#nx-find-current` parçasıyla kaydırılıyor. Parça, betiği
+olmayan bir belgeyi kaydırmanın tek yolu.
+
+Üç sonucu var, üçü de bilerek:
+
+- **"Hepsini vurgula" anahtarı yok.** Her eşleşme her zaman işaretli, çünkü
+  işaretlemek aramanın kendisi.
+- **Eşleşme öğe sınırını aşmıyor.** Ortasından `<b>` geçen bir kelime
+  bulunmuyor. Tarayıcının kendi araması bunu yapıyor; ona ulaşmanın bedeli
+  çerçeveye betik vermek, ki bu işin var oluş sebebini iptal eder.
+- **Sayım olaydan geliyor, ikinci bir çağrıdan değil.** Sayı, belgeyi kuran
+  aynı geçişte düşüyor; ayrıca sormak mesajı iki kez render etmek ve ikisinin
+  ayrışma ihtimalini kabul etmek olurdu.
+
+Vurgu sarı değil, uygulamanın kendi accent'i: bu bir seçim ve accent tam da
+bunun için var. Sarı, pencereyi kaplayan tek panelde ikinci bir accent olurdu.
+
+Büyük/küçük harf ayrımı yok. Türkçe'de basit kat sıralamanın sınırı görünüyor:
+`I` ve `İ` ikisi de `i`'ye katlanıyor, `ı` ise kendisine — yani "istanbul"
+araması "İstanbul"u da buluyor, "ışık" yalnızca "ışık" ile bulunuyor. Doğrusu
+için okuma panelinin sahip olmadığı bir yerel ayar gerekiyor; davranış testle
+sabitlendi.
 
 ### Yazdırma neden burada değil
 

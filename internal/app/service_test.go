@@ -21,6 +21,7 @@ type recorder struct {
 	names   []string
 	events  []SyncEvent
 	newMail []NewMailEvent
+	finds   []FindEvent
 }
 
 func (r *recorder) emit(name string, data any) {
@@ -32,7 +33,20 @@ func (r *recorder) emit(name string, data any) {
 		r.events = append(r.events, ev)
 	case NewMailEvent:
 		r.newMail = append(r.newMail, ev)
+	case FindEvent:
+		r.finds = append(r.finds, ev)
 	}
+}
+
+// lastFind returns the most recent find result, or false when the handler has
+// not reported one.
+func (r *recorder) lastFind() (FindEvent, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.finds) == 0 {
+		return FindEvent{}, false
+	}
+	return r.finds[len(r.finds)-1], true
 }
 
 // arrivals returns the new-mail announcements, copied under the lock: the

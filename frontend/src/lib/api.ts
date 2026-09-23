@@ -155,6 +155,22 @@ export const addOAuthAccount = (email: string, displayName: string, provider: st
  * frame is keyed on its URL, so after an encoding repair rewrites the body the
  * frame would otherwise sit on the identical URL and never re-request it.
  */
+/**
+ * What the find bar is looking for, and which match it is on.
+ *
+ * The search travels in the URL because the frame has no scripts to run one.
+ * The backend wraps the matches before serving the document and puts an id on
+ * the current one, which the fragment then scrolls to — the only way to move a
+ * scriptless document.
+ */
+export interface FindRequest {
+  query: string
+  index: number
+}
+
+/** The id the backend puts on the current match. Mirrors internal/mailhtml. */
+const CURRENT_MATCH_ID = 'nx-find-current'
+
 export const bodyURL = (
   messageId: number,
   allowRemote: boolean,
@@ -166,6 +182,7 @@ export const bodyURL = (
    * is by being told here.
    */
   theme?: 'light' | 'dark',
+  find?: FindRequest,
 ) => {
   const params = new URLSearchParams()
   if (allowRemote) params.set('remote', '1')
@@ -175,8 +192,18 @@ export const bodyURL = (
   if (view !== 'rich') params.set('view', view)
   if (theme) params.set('theme', theme)
 
+  const searching = find !== undefined && find.query.trim() !== ''
+  if (searching) {
+    params.set('find', find.query)
+    params.set('findIndex', String(find.index))
+  }
+
   const query = params.toString()
-  return `/mail-body/${messageId}${query ? `?${query}` : ''}`
+  // The fragment is only added while searching. On a document with no matches
+  // it would resolve to nothing, which is harmless — but it would also be one
+  // more thing in the URL of every message nobody is searching.
+  const fragment = searching ? `#${CURRENT_MATCH_ID}` : ''
+  return `/mail-body/${messageId}${query ? `?${query}` : ''}${fragment}`
 }
 
 /**

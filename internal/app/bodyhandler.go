@@ -161,14 +161,46 @@ func (h *BodyHandler) serveBody(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body := h.highlighted(id, rendered.html, r.URL.Query())
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(requestOrigin(r)))
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
-	if _, err := io.WriteString(w, wrapDocument(rendered.html, theme)); err != nil {
+	if _, err := io.WriteString(w, wrapDocument(body, theme)); err != nil {
 		return
 	}
+}
+
+// highlighted applies the find query, if there is one, and tells the window
+// what it found.
+//
+// The highlighting deliberately runs on the cached render rather than being
+// folded into it: keying the cache on the query would re-sanitise the whole
+// message on every keystroke, and the sanitising is the expensive half.
+func (h *BodyHandler) highlighted(id int64, bodyHTML string, query url.Values) string {
+	needle := query.Get("find")
+	if strings.TrimSpace(needle) == "" {
+		return bodyHTML
+	}
+	// A malformed index reads as the first match. It arrives from a URL, and
+	// the answer to a bad one is the first result rather than a blank pane.
+	index, _ := strconv.Atoi(query.Get("findIndex"))
+
+	res, err := mailhtml.Highlight(bodyHTML, needle, index)
+	if err != nil {
+		// The input is this package's own output, so a failure here is a bug in
+		// us rather than something the message did. Serving the message without
+		// its highlights is the better of the two failures: the reader loses the
+		// find, not the mail.
+		return bodyHTML
+	}
+
+	h.svc.cfg.Emit(EventFindResults, FindEvent{
+		MessageID: id, Query: needle, Count: res.Count, Current: res.Current,
+	})
+	return res.HTML
 }
 
 // render produces the sanitised body for a message, fetching and caching it if
@@ -526,9 +558,19 @@ func themeFromQuery(value string) bodyTheme {
 
 // Palettes for the frame. The values are the app's own, so the largest surface
 // in the window does not render in a different white than the panes around it.
+//
+// The find colours are the accent rather than the usual yellow. The app has one
+// accent and this is a selection, which is what the accent is for; a second
+// hue here would be a second accent, visible in the one pane that fills the
+// window. --hit is the accent at low opacity so the text underneath keeps its
+// own colour and stays readable; --hit-now is the solid accent for the one
+// match being looked at, with the frame's background as its text so the
+// contrast holds in either theme.
 const (
-	lightTokens = `--bg:#fff;--fg:#171717;--quote:#525252;--rule:#e5e5e5;--link:#0f7490`
-	darkTokens  = `--bg:#0a0a0a;--fg:#e5e5e5;--quote:#a3a3a3;--rule:#262626;--link:#4bb4cc`
+	lightTokens = `--bg:#fff;--fg:#171717;--quote:#525252;--rule:#e5e5e5;--link:#0f7490;` +
+		`--hit:#b9e3ed;--hit-now:#0f7490;--hit-now-fg:#fff`
+	darkTokens = `--bg:#0a0a0a;--fg:#e5e5e5;--quote:#a3a3a3;--rule:#262626;--link:#4bb4cc;` +
+		`--hit:#14505f;--hit-now:#4bb4cc;--hit-now-fg:#0a0a0a`
 )
 
 // wrapDocument frames the sanitised body in a minimal document.
@@ -567,7 +609,10 @@ pre{white-space:pre-wrap;word-wrap:break-word;
   font:13px/1.6 "Geist Mono Variable",ui-monospace,Menlo,monospace}
 blockquote{margin:0 0 0 8px;padding-left:12px;border-left:2px solid var(--rule);
   color:var(--quote)}
-a{color:var(--link);text-underline-offset:2px}`
+a{color:var(--link);text-underline-offset:2px}
+mark.nx-find{background:var(--hit);color:inherit;border-radius:2px}
+mark#nx-find-current{background:var(--hit-now);color:var(--hit-now-fg);
+  scroll-margin:96px}`
 
 	return `<!doctype html><html><head><meta charset="utf-8"><style>` +
 		root + style + `</style></head><body>` + bodyHTML + `</body></html>`

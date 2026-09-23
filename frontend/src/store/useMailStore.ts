@@ -73,6 +73,18 @@ interface MailState {
   undoOffer: Undoable | null
   setUndoOffer: (offer: Undoable | null) => void
 
+  /**
+   * Whether the reading pane's find bar is showing.
+   *
+   * Only the flag is here. Ctrl+F comes from the global key handler and Escape
+   * has to close the bar from anywhere, including the message list, so the two
+   * ends of it are in different components; what is being searched for stays
+   * with the pane that is searching.
+   */
+  findOpen: boolean
+  openFind: () => void
+  closeFind: () => void
+
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
   clearPendingChanges: (accountId: number) => void
@@ -129,12 +141,16 @@ const initialState = {
   pendingChanges: {} as Record<number, PendingChanges>,
   pendingDelete: null as number[] | null,
   undoOffer: null as Undoable | null,
+  findOpen: false,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
   themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
+
+  openFind: () => set({ findOpen: true }),
+  closeFind: () => set({ findOpen: false }),
 
   askToConfirmDelete: (ids) => set({ pendingDelete: ids }),
   setUndoOffer: (offer) => set({ undoOffer: offer }),

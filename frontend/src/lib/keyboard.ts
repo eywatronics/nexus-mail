@@ -56,9 +56,35 @@ export function useMessageShortcuts() {
         return
       }
 
+      // Ctrl+F is the second shortcut that wants a modifier. It opens the
+      // reading pane's find bar, which is not the browser's find: the pane is
+      // a sandboxed frame the browser's own find cannot see into, so leaving
+      // this to the default would give the reader a find that never matched
+      // anything in the message they were looking at.
+      //
+      // Only with a message open. Otherwise it would put a search box on
+      // screen with nothing behind it to search.
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'f' || event.key === 'F')) {
+        if (useMailStore.getState().selectedMessageId === null) return
+        event.preventDefault()
+        useMailStore.getState().openFind()
+        return
+      }
+
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
       const store = useMailStore.getState()
+
+      // Escape closes the find bar from anywhere, including the list, for the
+      // same reason the search box below does: somebody who tabbed away from
+      // the box should not have to tab back to shut it. It goes first because
+      // the find bar is the nearer of the two — it is over the message the
+      // reader is looking at.
+      if (event.key === 'Escape' && store.findOpen) {
+        event.preventDefault()
+        store.closeFind()
+        return
+      }
 
       // Escape leaves the search from anywhere, including the list, so a
       // person who tabbed out of the box is not stuck with results.
