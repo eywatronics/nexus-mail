@@ -25,8 +25,16 @@ func (b bodyBackend) FetchBody(context.Context, uint32) (imapx.Body, error) {
 
 func newBodyHandler(t *testing.T, messageHTML string) (*BodyHandler, int64) {
 	t.Helper()
+	h, id, _ := newBodyHandlerWithEvents(t, messageHTML)
+	return h, id
+}
 
-	svc, _, _ := newTestService(t, bodyBackend{html: messageHTML})
+// newBodyHandlerWithEvents is the same fixture, keeping the event recorder for
+// the tests that care what the handler told the window.
+func newBodyHandlerWithEvents(t *testing.T, messageHTML string) (*BodyHandler, int64, *recorder) {
+	t.Helper()
+
+	svc, rec, _ := newTestService(t, bodyBackend{html: messageHTML})
 
 	acct, err := svc.AddPasswordAccount("u@example.com", "U", "h", 993, "tls", "", 0, "pw")
 	if err != nil {
@@ -54,7 +62,7 @@ func newBodyHandler(t *testing.T, messageHTML string) (*BodyHandler, int64) {
 		t.Fatal("no message was synced")
 	}
 
-	return NewBodyHandler(svc), msgs[0].ID
+	return NewBodyHandler(svc), msgs[0].ID, rec
 }
 
 func get(t *testing.T, h *BodyHandler, path string) *httptest.ResponseRecorder {

@@ -47,6 +47,10 @@ type MailService struct {
 	// timer's.
 	undo *undoable
 
+	// redo is what the last undo took back, for as long as the same window.
+	// Under watchMu for the same reason undo is.
+	redo *redoable
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.

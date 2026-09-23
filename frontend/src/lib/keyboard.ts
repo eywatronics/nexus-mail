@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import {
   applyRead,
   applyStar,
+  performRedo,
   performUndo,
   requestDelete,
   selectedIds,
@@ -42,23 +43,64 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function useMessageShortcuts() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // Ctrl+Z is the one shortcut here that wants a modifier, so it is
-      // handled above the guard that drops them. Uppercase Z too: the event
-      // reports the shifted character, and somebody holding shift by accident
-      // still means undo.
+      // Handled above the guard that drops modified keystrokes, like the redo
+      // above it. Uppercase Z is matched as well as lowercase because the
+      // event reports the shifted character — but only once the redo has had
+      // its look, since Ctrl+Shift+Z is the other direction rather than an
+      // undo with the shift key held by accident.
       //
       // Not skipped while typing. An undo aimed at a message and an undo aimed
       // at a search box are the same reflex, and the search box has nothing to
       // undo that losing would matter.
+      // Ctrl+Shift+Z and Ctrl+Y both mean redo. Two bindings because the
+      // platforms disagree and people carry the habit of whichever they
+      // learned first; supporting one of them means half the users conclude
+      // there is no redo. Checked before undo, or the shifted Z would be read
+      // as an undo with the shift key held by accident.
+      if (
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'z' || event.key === 'Z')) ||
+        ((event.ctrlKey || event.metaKey) && (event.key === 'y' || event.key === 'Y'))
+      ) {
+        event.preventDefault()
+        void performRedo()
+        return
+      }
+
       if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
         event.preventDefault()
         void performUndo()
         return
       }
 
+      // Ctrl+F is the second shortcut that wants a modifier. It opens the
+      // reading pane's find bar, which is not the browser's find: the pane is
+      // a sandboxed frame the browser's own find cannot see into, so leaving
+      // this to the default would give the reader a find that never matched
+      // anything in the message they were looking at.
+      //
+      // Only with a message open. Otherwise it would put a search box on
+      // screen with nothing behind it to search.
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'f' || event.key === 'F')) {
+        if (useMailStore.getState().selectedMessageId === null) return
+        event.preventDefault()
+        useMailStore.getState().openFind()
+        return
+      }
+
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
       const store = useMailStore.getState()
+
+      // Escape closes the find bar from anywhere, including the list, for the
+      // same reason the search box below does: somebody who tabbed away from
+      // the box should not have to tab back to shut it. It goes first because
+      // the find bar is the nearer of the two — it is over the message the
+      // reader is looking at.
+      if (event.key === 'Escape' && store.findOpen) {
+        event.preventDefault()
+        store.closeFind()
+        return
+      }
 
       // Escape leaves the search from anywhere, including the list, so a
       // person who tabbed out of the box is not stuck with results.

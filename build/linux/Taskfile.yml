@@ -150,18 +150,37 @@ tasks:
       - task: generate:dotdesktop
       - task: generate:aur
 
+  # nfpm.yaml takes the version from $VERSION so that build/config.yml stays
+  # the only place it is written. nfpm accepts an empty one and builds an
+  # unversioned package rather than complaining, so the check is here: a
+  # package that fails to build is a nuisance, one that builds without a
+  # version is a release nobody can tell apart from the last.
+  check:version:
+    internal: true
+    preconditions:
+      - sh: '[ -n "$VERSION" ]'
+        msg: |
+          VERSION is not set.
+
+          The package version comes from build/config.yml; the release workflow
+          reads it there and exports it. For a local package, pass the same
+          number: VERSION=0.5.0 wails3 task linux:create:deb
+
   generate:deb:
     summary: Creates a deb package
+    deps: [check:version]
     cmds:
       - wails3 tool package -name "{{.APP_NAME}}" -format deb -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 
   generate:rpm:
     summary: Creates a rpm package
+    deps: [check:version]
     cmds:
       - wails3 tool package -name "{{.APP_NAME}}" -format rpm -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 
   generate:aur:
     summary: Creates a arch linux packager package
+    deps: [check:version]
     cmds:
       - wails3 tool package -name "{{.APP_NAME}}" -format archlinux -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
 

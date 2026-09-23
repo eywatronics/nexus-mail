@@ -64,17 +64,32 @@ export function Choice<T extends string>({
   options,
   onChange,
   name,
+  /**
+   * Greys the whole group and stops it answering.
+   *
+   * For a setting the app cannot reach rather than one the reader has not
+   * turned on: drawing it as "Off" would be claiming a state nobody
+   * established. The caller says why in the hint.
+   */
+  disabled = false,
 }: {
   value: T
   options: ReadonlyArray<{ value: T; label: string }>
   onChange: (next: T) => void
   name: string
+  disabled?: boolean
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={name}
-      className={`flex items-center gap-0.5 border p-0.5 ${RADIUS} ${SURFACE.divider}`}
+      aria-disabled={disabled || undefined}
+      className={[
+        'flex items-center gap-0.5 border p-0.5',
+        RADIUS,
+        SURFACE.divider,
+        disabled ? 'opacity-50' : '',
+      ].join(' ')}
     >
       {options.map((option) => {
         const active = option.value === value
@@ -84,6 +99,7 @@ export function Choice<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             data-testid={`${name}-${option.value}`}
             onClick={() => onChange(option.value)}
             className={[
@@ -92,6 +108,7 @@ export function Choice<T extends string>({
               active
                 ? `bg-neutral-200 ${TEXT.primary} dark:bg-neutral-800`
                 : `${TEXT.secondary} hover:bg-neutral-100 dark:hover:bg-neutral-900`,
+              disabled ? 'cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent' : '',
             ].join(' ')}
           >
             {option.label}
@@ -113,15 +130,18 @@ export function Toggle({
   value,
   onChange,
   name,
+  disabled = false,
 }: {
   value: boolean
   onChange: (next: boolean) => void
   name: string
+  disabled?: boolean
 }) {
   return (
     <Choice
       name={name}
       value={value ? 'on' : 'off'}
+      disabled={disabled}
       options={[
         { value: 'on', label: 'On' },
         { value: 'off', label: 'Off' },

@@ -155,6 +155,22 @@ export const addOAuthAccount = (email: string, displayName: string, provider: st
  * frame is keyed on its URL, so after an encoding repair rewrites the body the
  * frame would otherwise sit on the identical URL and never re-request it.
  */
+/**
+ * What the find bar is looking for, and which match it is on.
+ *
+ * The search travels in the URL because the frame has no scripts to run one.
+ * The backend wraps the matches before serving the document and puts an id on
+ * the current one, which the fragment then scrolls to — the only way to move a
+ * scriptless document.
+ */
+export interface FindRequest {
+  query: string
+  index: number
+}
+
+/** The id the backend puts on the current match. Mirrors internal/mailhtml. */
+const CURRENT_MATCH_ID = 'nx-find-current'
+
 export const bodyURL = (
   messageId: number,
   allowRemote: boolean,
@@ -166,6 +182,7 @@ export const bodyURL = (
    * is by being told here.
    */
   theme?: 'light' | 'dark',
+  find?: FindRequest,
 ) => {
   const params = new URLSearchParams()
   if (allowRemote) params.set('remote', '1')
@@ -175,8 +192,18 @@ export const bodyURL = (
   if (view !== 'rich') params.set('view', view)
   if (theme) params.set('theme', theme)
 
+  const searching = find !== undefined && find.query.trim() !== ''
+  if (searching) {
+    params.set('find', find.query)
+    params.set('findIndex', String(find.index))
+  }
+
   const query = params.toString()
-  return `/mail-body/${messageId}${query ? `?${query}` : ''}`
+  // The fragment is only added while searching. On a document with no matches
+  // it would resolve to nothing, which is harmless — but it would also be one
+  // more thing in the URL of every message nobody is searching.
+  const fragment = searching ? `#${CURRENT_MATCH_ID}` : ''
+  return `/mail-body/${messageId}${query ? `?${query}` : ''}${fragment}`
 }
 
 /**
@@ -217,6 +244,18 @@ export const undoable = () => MailService.Undoable() as Promise<Undoable>
 /** Reports whether anything was actually taken back. */
 export const undoLastAction = () => MailService.UndoLastAction() as Promise<boolean>
 
+/**
+ * What redo would do again, in the same shape and on the same clock.
+ *
+ * Redo has no deadline of its own — undo's is the moment the queue takes the
+ * change — but it expires on the same window anyway: both are a moment of
+ * hesitation, and a redo still live much later would be a keystroke that
+ * silently deletes mail the reader had decided to keep.
+ */
+export const redoable = () => MailService.Redoable() as Promise<Undoable>
+
+export const redoLastAction = () => MailService.RedoLastAction() as Promise<boolean>
+
 /** Destroys everything in the trash, on the server as well as here. */
 export const emptyTrash = (accountId: number) => MailService.EmptyTrash(accountId)
 
@@ -229,6 +268,16 @@ export interface AppSettings {
   retentionMaxMessages: number
   notificationPreview: boolean
   undoWindowSeconds: number
+  /**
+   * Whether the app starts with the machine.
+   *
+   * Not in config.json like the rest: it lives in the operating system, and
+   * the operating system is its source of truth. Somebody can turn it off in
+   * Task Manager or System Settings and the app has to agree with them.
+   */
+  startAtLogin: boolean
+  /** False when the setting could not be read, which is not the same as off. */
+  startAtLoginAvailable: boolean
 }
 
 export const settings = () => MailService.Settings() as Promise<AppSettings>

@@ -19,6 +19,15 @@ on:
 permissions:
   contents: write
 
+# Two merges close together would otherwise race: both would move the rolling
+# tag and both would rewrite the same release, and which set of installers
+# survives would come down to which job finished last. Queued rather than
+# cancelled, because cancelling a run that is midway through publishing leaves
+# a release with half its files.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   GO_VERSION: "1.26"
   NODE_VERSION: "22"
@@ -53,7 +62,12 @@ jobs:
             # A merge replaces the rolling build. One moving tag rather than a
             # tag per merge: a hundred tags nobody chose is not a history, it
             # is noise in front of the four releases that mean something.
-            echo "tag=main" >> "$GITHUB_OUTPUT"
+            #
+            # The tag is "nightly" and not "main" because a tag may not share
+            # a name with a branch. git resolves `git push origin main` against
+            # both refs/heads and refs/tags and refuses: "src refspec main
+            # matches more than one". That failed every merge.
+            echo "tag=nightly" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -99,10 +113,15 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
+      # -ts -i, the same flags build/Taskfile.yml uses. Without them the
+      # bindings come out as JavaScript, and because tsconfig sets
+      # noImplicitAny to false the build still passes — with every call across
+      # the bridge typed as `any`. The release would compile whether or not the
+      # window and the Go service still agreed about a signature.
       - name: Generate bindings and build frontend
         shell: bash
         run: |
-          wails3 generate bindings
+          wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build
 
       - name: Package for Windows
@@ -127,9 +146,15 @@ jobs:
           zip -r "nexus-mail-${{ matrix.name }}-unsigned.zip" "Nexus Mail.app" || \
             zip -r "nexus-mail-${{ matrix.name }}-unsigned.zip" *.app
 
+      # VERSION is read by nfpm.yaml. The version belongs in build/config.yml
+      # and nowhere else; a second copy in the packaging config would keep the
+      # old number after a bump, and a .deb claiming 0.5.0 inside a release
+      # called 0.6.0 is the exact confusion the single source exists to avoid.
       - name: Package for Linux
         if: matrix.name == 'linux'
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           wails3 task linux:create:appimage
           wails3 task linux:create:rpm
@@ -146,16 +171,26 @@ jobs:
         with:
           name: ${{ matrix.name }}
           if-no-files-found: error
+          # The portable exe is named rather than globbed. `bin/*.exe` also
+          # matches bin/nexus-mail.exe, which is the same file the copy above
+          # produced — and a release offering one binary twice under two names
+          # invites the question of which is which.
           path: |
-            bin/*.exe
+            bin/nexus-mail-windows-amd64.exe
+            bin/*-installer.exe
             bin/*.zip
             bin/*.AppImage
             bin/*.rpm
             bin/*.deb
-            bin/*-installer.exe
 
   publish:
     needs: [version, build]
+    # Runs even when a platform failed, which is what fail-fast: false was for.
+    # Without this the job is skipped on any failure, so a broken Linux
+    # packaging step took the Windows installer down with it — the opposite of
+    # what the matrix was configured to do. What did build still ships, and the
+    # release body says some of it is missing.
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,17 +204,22 @@ jobs:
 
       # The rolling tag has to be moved before the release is written, or the
       # release points at whatever main was the last time somebody tagged it.
+      #
+      # The refspec is fully qualified. `git push origin nightly` would search
+      # both refs/heads and refs/tags, and the day somebody makes a branch by
+      # that name the push starts failing for a reason nobody will connect to
+      # this line.
       - name: Move the rolling tag
-        if: needs.version.outputs.tag == 'main'
+        if: needs.version.outputs.tag == 'nightly'
         run: |
-          git tag -f main
-          git push -f origin main --tags
+          git tag -f nightly
+          git push -f origin refs/tags/nightly
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: >-
-            ${{ needs.version.outputs.tag == 'main'
+            ${{ needs.version.outputs.tag == 'nightly'
                 && format('Latest from main ({0})', needs.version.outputs.version)
                 || format('Nexus Mail {0}', needs.version.outputs.version) }}
           prerelease: ${{ needs.version.outputs.prerelease }}
@@ -190,7 +230,9 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             Built from `${{ github.sha }}`.
-
+            ${{ needs.build.result != 'success' && '
+            > **Some platforms did not build.** What is below is what succeeded; the workflow run says which failed.
+            ' || '' }}
             | Platform | File |
             |---|---|
             | Windows | `*-installer.exe` to install, `nexus-mail-windows-amd64.exe` to run as it is |

@@ -11,7 +11,8 @@ Go · Wails v3 · React · SQLite
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 
-English · [Türkçe](README.tr.md)
+<a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-0f7490?style=for-the-badge"></a>
+<a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/Türkçe-4a4a4a?style=for-the-badge"></a>
 
 </div>
 
@@ -74,7 +75,7 @@ Manager, macOS Keychain or the Linux Secret Service.
 
 ## Download
 
-Every merge to `main` produces installers for three platforms. Latest build:
+Every merge to `main` produces installers for three operating systems. Latest build:
 **[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
 
 | Platform | File |
@@ -112,24 +113,27 @@ exempt, removal local only.
 **Reading.** A three-column virtualised list, conversation grouping, full-text
 search (including the Turkish dotless ı, which no folding rule handles for
 you), keyboard navigation, attachment listing and download, view source, save
-as `.eml`, repair of a mis-declared character encoding, and three body display
-modes: original HTML, simple HTML, plain text.
+as `.eml`, repair of a mis-declared character encoding, three body display
+modes (original HTML, simple HTML, plain text), and find within a message —
+done in the backend, because the reading pane is a sandbox no script can reach
+into.
 
 **Writing state.** Read, star, move and delete appear immediately, are queued,
 and reach the server when the connection allows. Deleting moves to the trash;
 inside the trash it asks first and then destroys. Emptying the trash is a
 separate server-side operation that covers messages this client never
 downloaded. The last destructive action can be taken back for five seconds
-(Ctrl+Z).
+(Ctrl+Z), and put back again in the same window (Ctrl+Shift+Z or Ctrl+Y).
 
 **Background.** Closing the window leaves the application in the tray with sync
-still running. New mail raises an operating system notification, with the
-content optional — because Windows shows notifications on the lock screen
-unless told otherwise.
+still running, and it can start with the machine. New mail raises an operating
+system notification, with the content optional — because Windows shows
+notifications on the lock screen unless told otherwise. The unread count is on
+the taskbar or dock icon as well as in the tray tooltip.
 
 **Settings.** Theme, body display mode, mark-as-read behaviour, conversation
-grouping, notification preview, undo window, retention limits and OAuth client
-IDs, all from inside the application.
+grouping, start at login, notification preview, undo window, retention limits
+and OAuth client IDs, all from inside the application.
 
 ### Not yet
 
@@ -144,7 +148,7 @@ reading pane, and is deferred to M6. **Code signing** (M14).
 | **M2** | Live sync over IMAP IDLE, delta sync, retention window | Done |
 | **M3** | Offline-durable state writes (read, star, move, delete) | Done |
 | **M4** | System tray, notifications, running in the background | Partly done |
-| **M5** | Attachments, conversation grouping, source/save, encoding repair, body modes | Largely done |
+| **M5** | Attachments, conversation grouping, source/save, encoding repair, body modes, find in message, undo/redo | Done |
 | **M6** | Sending: SMTP, multiple identities, signatures, drafts, outbox, composer | Planned |
 | **M7** | Contacts: local address book, vCard, CardDAV, LDAP | Planned |
 | **M8** | Tags, archive, unified inbox, body search, filter engine, junk | Planned |
@@ -152,7 +156,7 @@ reading pane, and is deferred to M6. **Code signing** (M14).
 | **M10** | Microsoft Graph: M365 calendar and contacts | Planned |
 | **M11** | Import from Thunderbird, Outlook and Apple Mail | Planned |
 | **M12** | Localisation, accessibility, customisable shortcuts | Planned |
-| **M13** | Chat: Matrix and XMPP, end-to-end encrypted | Planned |
+| **M13** | Local-first RAG: thread summaries, ask-your-inbox, draft assistance — local model or your own API key, off by default | Planned |
 | **M14** | Automatic updates, code signing, installation packages | Planned |
 
 How the roadmap was arrived at, why each feature is in scope, and what was
@@ -242,12 +246,20 @@ a `.app` on macOS, AppImage / `.deb` / `.rpm` on Linux. Output lands in `bin/`.
 There is no cross-compilation: each platform builds on itself. The Wails
 WebView binding needs each system's own toolchain, and forcing it through
 Docker would produce a build nobody has ever run. That is also why the release
-workflow uses three separate runners.
+workflow uses four separate runners — Intel and Apple silicon Macs are two of
+them, because an Intel Mac cannot run an arm64 build.
+
+A local Linux package also needs the version, which lives in `build/config.yml`
+rather than in the packaging config:
+
+```bash
+VERSION=0.5.0 wails3 task linux:create:deb
+```
 
 ### Cutting a release
 
-Every merge to `main` builds all three platforms and replaces a rolling
-prerelease tagged **`main`**. For a permanent release, raise `info.version` in
+Every merge to `main` builds all four targets and replaces a rolling prerelease
+tagged **`nightly`**. For a permanent release, raise `info.version` in
 `build/config.yml` and push a tag with the same number:
 
 ```bash

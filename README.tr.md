@@ -11,7 +11,8 @@ Go · Wails v3 · React · SQLite
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 
-[English](README.md) · Türkçe
+<a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-4a4a4a?style=for-the-badge"></a>
+<a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/Türkçe-0f7490?style=for-the-badge"></a>
 
 </div>
 
@@ -76,7 +77,7 @@ Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
 
 ## İndir
 
-`main`'e her birleşme üç platform için kurulum dosyası üretir. En son yapı:
+`main`'e her birleşme üç işletim sistemi için kurulum dosyası üretir. En son yapı:
 **[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
 
 | Platform | Dosya |
@@ -115,21 +116,26 @@ silme yalnızca yerelde.
 arama (Türkçe'nin noktasız ı'sı dahil — hiçbir harf katlama kuralı onu sizin
 için halletmiyor), klavye navigasyonu, ekleri listeleme ve indirme, kaynağı
 görüntüleme, `.eml` olarak kaydetme, yanlış beyan edilmiş karakter kodlamasını
-onarma ve üç gövde görüntüleme kipi: özgün HTML, sade HTML, düz metin.
+onarma, üç gövde görüntüleme kipi (özgün HTML, sade HTML, düz metin) ve mesaj
+içinde arama — arka uçta yapılıyor, çünkü okuma paneli hiçbir betiğin içine
+giremediği bir sandbox.
 
 **Durum yazma.** Okundu, yıldız, taşı ve sil anında görünür, kuyruğa alınır ve
 bağlantı izin verdiğinde sunucuya ulaşır. Silmek çöp kutusuna taşır; çöp
 kutusunun içinde önce sorar, sonra yok eder. Çöp kutusunu boşaltmak, bu
 istemcinin hiç indirmediği mesajları da kapsayan ayrı bir sunucu işlemidir. Son
-yıkıcı işlem beş saniye boyunca geri alınabilir (Ctrl+Z).
+yıkıcı işlem beş saniye boyunca geri alınabilir (Ctrl+Z) ve aynı pencerede
+yeniden yapılabilir (Ctrl+Shift+Z veya Ctrl+Y).
 
-**Arka plan.** Pencereyi kapatmak uygulamayı tepside bırakır ve senkron sürer.
-Yeni mail geldiğinde işletim sistemi bildirimi gösterilir, içeriği isteğe bağlı
-— çünkü Windows aksi söylenmedikçe bildirimleri kilit ekranında da gösterir.
+**Arka plan.** Pencereyi kapatmak uygulamayı tepside bırakır ve senkron sürer;
+uygulama makineyle birlikte başlayabilir. Yeni mail geldiğinde işletim sistemi
+bildirimi gösterilir, içeriği isteğe bağlı — çünkü Windows aksi söylenmedikçe
+bildirimleri kilit ekranında da gösterir. Okunmamış sayısı tepsi ipucunun yanı
+sıra görev çubuğu / dock rozetinde de görünür.
 
 **Ayarlar.** Tema, gövde görüntüleme kipi, okundu işaretleme davranışı, konuşma
-gruplama, bildirim önizlemesi, geri alma penceresi, saklama limitleri ve OAuth
-client ID'leri — hepsi uygulamanın içinden.
+gruplama, açılışta başlat, bildirim önizlemesi, geri alma penceresi, saklama
+limitleri ve OAuth client ID'leri — hepsi uygulamanın içinden.
 
 ### Henüz yok
 
@@ -144,7 +150,7 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
 | **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
-| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri | Büyük ölçüde bitti |
+| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri, mesajda bul, geri al/yinele | Bitti |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
 | **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
 | **M8** | Etiket, arşiv, birleşik gelen kutusu, gövde araması, kural motoru, junk | Planlandı |
@@ -152,7 +158,7 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M10** | Microsoft Graph: M365 takvim ve kişileri | Planlandı |
 | **M11** | Thunderbird / Outlook / Apple Mail'den içe aktarma | Planlandı |
 | **M12** | Yerelleştirme, erişilebilirlik, özelleştirilebilir kısayollar | Planlandı |
-| **M13** | Sohbet: Matrix ve XMPP, uçtan uca şifreli | Planlandı |
+| **M13** | Yerel-önce RAG: zincir özeti, gelen kutusuna soru sorma, taslak asistanı — yerel model ya da kendi API anahtarınız, varsayılan kapalı | Planlandı |
 | **M14** | Otomatik güncelleme, kod imzalama, kurulum paketleri | Planlandı |
 
 Yol haritasının nasıl çıkarıldığı, hangi özelliğin neden kapsamda olduğu ve
@@ -242,12 +248,20 @@ macOS'ta `.app`, Linux'ta AppImage / `.deb` / `.rpm`. Çıktılar `bin/` altınd
 Çapraz derleme yok: her platform kendi üzerinde derleniyor. Wails'in WebView
 bağlaması her sistemin kendi araç zincirini gerektiriyor ve Docker ile
 zorlamak, kimsenin çalıştırmadığı bir yapı üretirdi. Release iş akışı da bu
-yüzden üç ayrı runner kullanıyor.
+yüzden **dört** ayrı runner kullanıyor — Intel ve Apple silicon Mac'ler bunların
+ikisi, çünkü Intel bir Mac arm64 yapıyı çalıştıramaz.
+
+Yerel bir Linux paketi sürüm numarasını da istiyor; numara paketleme dosyasında
+değil `build/config.yml` içinde duruyor:
+
+```bash
+VERSION=0.5.0 wails3 task linux:create:deb
+```
 
 ### Sürüm çıkarma
 
-`main`'e her birleşme üç platformu da derler ve **`main` etiketli** yuvarlak bir
-ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
+`main`'e her birleşme dört hedefi de derler ve **`nightly` etiketli** yuvarlak
+bir ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
 `info.version` değerini yükseltin ve aynı numarayla etiket atın:
 
 ```bash

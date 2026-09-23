@@ -98,6 +98,11 @@ type Config struct {
 	// the service becomes part of the window's API, and the window has no
 	// business reaching into a cache.
 	InvalidateBody func(messageID int64)
+
+	// Autostart reads and changes whether the app starts with the machine.
+	// Zero when the host cannot offer it, which the settings screen shows as an
+	// unavailable switch rather than as an off one.
+	Autostart AutostartControl
 }
 
 // LoadConfig reads config.json from the data directory, creating an empty one

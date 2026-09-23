@@ -798,8 +798,13 @@ tanım var.
 - **M10 — Microsoft Graph / Exchange.** M365 takvim ve kişileri.
 - **M11 — Göç.** Thunderbird/Outlook/Apple Mail içe aktarma, profil dışa aktarma.
 - **M12 — Yerelleştirme ve erişilebilirlik.** i18n altyapısı, Türkçe/İngilizce.
-- **M13 — Sohbet.** Matrix ve XMPP, uçtan uca şifreli.
+- **M13 — Yerel-önce RAG ve posta zekâsı.** Zincir özeti, gelen kutusuna soru
+  sorma, taslak asistanı. Yerel model (Ollama) ya da kullanıcının kendi
+  anahtarı; varsayılan kapalı. Yeni katman `internal/ai`, ağa yalnızca
+  `provider` alt paketi çıkabilir ve bu `depguard` ile zorlanır.
 - **M14 — Ürünleşme.** Otomatik güncelleme, kod imzalama, paketleme.
+
+Sohbet (Matrix, XMPP) bir ara M13'tü; kapsamdan çıkarıldı.
 
 ---
 

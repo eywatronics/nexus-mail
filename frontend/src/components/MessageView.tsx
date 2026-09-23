@@ -1,10 +1,13 @@
 import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/react'
-import { useEffect, useMemo, useState } from 'react'
-import { bodyURL, sourceURL } from '../lib/api'
+import { Events } from '@wailsio/runtime'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { bodyURL, sourceURL, type FindRequest } from '../lib/api'
+import { FIND_RESULTS_EVENT, type FindResultsPayload } from '../lib/events'
 import { useBodyView } from '../lib/bodyView'
 import { MARK_READ_DELAY_MS, useMarkReadWhen } from '../lib/markRead'
 import { applyRead, applyStar, requestDelete } from '../lib/actions'
 import { AttachmentList } from './AttachmentList'
+import { FindBar } from './FindBar'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MoveMenu } from './MoveMenu'
 import { useMailStore } from '../store/useMailStore'
@@ -27,6 +30,16 @@ const SANDBOX = 'allow-popups allow-popups-to-escape-sandbox'
  * otherwise be fetched and sanitised for nobody to read.
  */
 const SELECTION_DEBOUNCE_MS = 120
+
+/**
+ * Typing in the find bar is debounced harder than the selection is.
+ *
+ * Every applied query reloads the framed document, so a word typed at speed
+ * would otherwise start and abandon a render per letter. Two hundred
+ * milliseconds is about the gap between keystrokes and about the longest wait
+ * that still feels like the highlight is following you.
+ */
+const FIND_DEBOUNCE_MS = 200
 
 /**
  * Full date for the reading pane. The list abbreviates because it has one
@@ -55,6 +68,16 @@ export function MessageView() {
   const [bodyView, setBodyView] = useBodyView()
   const [markReadWhen] = useMarkReadWhen()
 
+  const findOpen = useMailStore((s) => s.findOpen)
+  const closeFind = useMailStore((s) => s.closeFind)
+  const [findQuery, setFindQuery] = useState('')
+  // What is actually in the body URL, which lags the box by the debounce.
+  const [appliedQuery, setAppliedQuery] = useState('')
+  const [findIndex, setFindIndex] = useState(0)
+  // Null until the served document has reported back, so the bar can show that
+  // it is still working rather than claiming there are no matches yet.
+  const [findCount, setFindCount] = useState<number | null>(null)
+
   // Only an explicit choice travels. While the reader is following their
   // machine the frame's own media query reaches the same answer, and naming it
   // would put a parameter on every body URL for no difference at all. The
@@ -78,6 +101,12 @@ export function MessageView() {
     // they read afterwards.
     setShowSource(false)
     setBodyVersion(0)
+    // The query survives the move to another message but its results do not:
+    // looking for the same word through a run of messages is a real way to
+    // work, and a count belonging to the previous one would be a lie until the
+    // new document answered.
+    setFindIndex(0)
+    setFindCount(null)
 
     if (selectedMessageId === null) {
       setSettledId(null)
@@ -88,12 +117,65 @@ export function MessageView() {
     return () => clearTimeout(timer)
   }, [selectedMessageId])
 
+  // The typed query only reaches the URL after the pause. Closing the bar
+  // drops it at once, though: there is no reason to make somebody who pressed
+  // Escape watch one more highlighted render arrive.
+  useEffect(() => {
+    if (!findOpen) {
+      setAppliedQuery('')
+      return
+    }
+    const timer = setTimeout(() => setAppliedQuery(findQuery), FIND_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [findQuery, findOpen])
+
+  // A new query starts again from the first match rather than keeping a
+  // position that belonged to a different set of results.
+  useEffect(() => {
+    setFindIndex(0)
+    setFindCount(null)
+  }, [appliedQuery])
+
+  const find: FindRequest | undefined = useMemo(
+    () => (findOpen && appliedQuery.trim() !== '' ? { query: appliedQuery, index: findIndex } : undefined),
+    [findOpen, appliedQuery, findIndex],
+  )
+
   const src = useMemo(() => {
     if (settledId === null) return null
     return showSource
       ? sourceURL(settledId)
-      : bodyURL(settledId, allowRemote, bodyVersion, bodyView, theme)
-  }, [settledId, allowRemote, showSource, bodyVersion, bodyView, theme])
+      : bodyURL(settledId, allowRemote, bodyVersion, bodyView, theme, find)
+  }, [settledId, allowRemote, showSource, bodyVersion, bodyView, theme, find])
+
+  // The count comes back from the render rather than from a second call, so
+  // the number in the bar is the number of marks in the document by
+  // construction. Results for another message, or for a query already
+  // superseded, are dropped: they would otherwise land while a slower render
+  // was still on its way.
+  useEffect(() => {
+    if (!findOpen) return
+
+    return Events.On(FIND_RESULTS_EVENT, (event: { data: FindResultsPayload }) => {
+      const result = event.data
+      if (result.messageId !== settledId || result.query !== appliedQuery) return
+      setFindCount(result.count)
+      setFindIndex(result.current)
+    })
+  }, [findOpen, settledId, appliedQuery])
+
+  const stepFind = useCallback(
+    (delta: number) => {
+      setFindIndex((was) => {
+        if (findCount === null || findCount === 0) return was
+        // Wrapped here as well as in the backend. The backend is what decides
+        // which match the document scrolls to; doing it here too means the
+        // number in the bar changes with the click rather than a render later.
+        return ((was + delta) % findCount + findCount) % findCount
+      })
+    },
+    [findCount],
+  )
 
   // Reading a message marks it read, if the reader wants that. Tied to the
   // settled id rather than the selection, so holding j through a folder does
@@ -261,9 +343,27 @@ export function MessageView() {
         </div>
       )}
 
+      {findOpen && !showSource && (
+        <FindBar
+          query={findQuery}
+          onQueryChange={setFindQuery}
+          count={appliedQuery === findQuery ? findCount : null}
+          index={findIndex}
+          onStep={stepFind}
+          onClose={() => {
+            setFindQuery('')
+            closeFind()
+          }}
+        />
+      )}
+
       <iframe
         // Keying on the URL forces a fresh document when consent changes,
-        // rather than leaving the previous render in place.
+        // rather than leaving the previous render in place. The find works the
+        // same way: a new query or a step to the next match is a new URL, so
+        // the document reloads with the matches wrapped and the fragment
+        // scrolls to the current one — which is the only way to move a
+        // document that has no scripts.
         key={src}
         title={showSource ? 'Message source' : 'Message body'}
         sandbox={SANDBOX}

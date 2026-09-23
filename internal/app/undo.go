@@ -69,7 +69,23 @@ type undoable struct {
 	// exactly what was there, which is only correct because the operation
 	// never reached the server — see Store.CancelOperations.
 	snapshot []model.Message
-	expires  time.Time
+	// target is the folder a move was headed for, so the same move can be made
+	// again. Zero for a delete, which works its destination out from the folder
+	// roles each time and must keep doing so: the account may have grown a
+	// trash folder since.
+	target  int64
+	expires time.Time
+}
+
+// redoable is the action an undo took back, ready to be done again.
+type redoable struct {
+	kind UndoableKind
+	// messageIDs are the rows as they are now, read back after the restore
+	// rather than carried across it. A restored message is usually not the row
+	// it was — see Store.RestoreMessages.
+	messageIDs []int64
+	target     int64
+	expires    time.Time
 }
 
 // rememberUndo holds an action open for the undo window.
@@ -78,15 +94,21 @@ type undoable struct {
 // the older entries, and an "undo" that silently did nothing because the
 // change it referred to had already gone out is worse than no undo: the reader
 // believes the message came back.
-func (s *MailService) rememberUndo(kind UndoableKind, ops []int64, snapshot []model.Message) {
+func (s *MailService) rememberUndo(kind UndoableKind, ops []int64, target int64,
+	snapshot []model.Message) {
+
 	if len(ops) == 0 || s.undoWindow() <= 0 {
 		return
 	}
 	s.watchMu.Lock()
 	s.undo = &undoable{
-		kind: kind, operationIDs: ops, snapshot: snapshot,
+		kind: kind, operationIDs: ops, target: target, snapshot: snapshot,
 		expires: time.Now().Add(s.undoWindow()),
 	}
+	// A new action ends the last one's redo. Keeping it would mean a redo that
+	// referred to something two steps back, which is a history — and a history
+	// is the thing this deliberately is not.
+	s.redo = nil
 	s.watchMu.Unlock()
 }
 
@@ -137,9 +159,77 @@ func (s *MailService) UndoLastAction() (bool, error) {
 		return false, nil
 	}
 
-	if err := s.store.RestoreMessages(ctx, held.snapshot); err != nil {
+	restored, err := s.store.RestoreMessages(ctx, held.snapshot)
+	if err != nil {
 		return false, err
 	}
+
+	s.watchMu.Lock()
+	s.redo = &redoable{
+		kind: held.kind, messageIDs: restored, target: held.target,
+		expires: time.Now().Add(s.undoWindow()),
+	}
+	s.watchMu.Unlock()
+
+	s.cfg.Emit(EventSyncFinished, SyncEvent{})
+	return true, nil
+}
+
+// Redoable reports what pressing redo would do again.
+func (s *MailService) Redoable() UndoableDTO {
+	s.watchMu.Lock()
+	held := s.redo
+	s.watchMu.Unlock()
+
+	if held == nil || time.Now().After(held.expires) {
+		return UndoableDTO{}
+	}
+	return UndoableDTO{
+		Kind:          held.kind,
+		Count:         len(held.messageIDs),
+		ExpiresUnixMs: held.expires.UnixMilli(),
+	}
+}
+
+// RedoLastAction does again what the last undo took back.
+//
+// It runs the ordinary action rather than replaying anything: a redone delete
+// goes through DeleteMessages and is therefore undoable in its turn, gets its
+// own queue entry, and works out for itself whether the account has a trash
+// folder now. Replaying the cancelled operation would have skipped all three.
+//
+// The offer expires on the same window an undo does, and that is a decision
+// rather than a mechanism. Undo has a deadline because the queue takes the
+// change at the end of it; redo has none of its own. But an undo and a redo
+// are both a moment of hesitation, and a redo still live ten minutes later
+// would be a keystroke that silently deletes mail the reader had long since
+// decided to keep.
+func (s *MailService) RedoLastAction() (bool, error) {
+	s.watchMu.Lock()
+	held := s.redo
+	s.redo = nil
+	s.watchMu.Unlock()
+
+	if held == nil || time.Now().After(held.expires) {
+		return false, nil
+	}
+
+	var err error
+	switch held.kind {
+	case UndoMove:
+		err = s.MoveMessages(held.messageIDs, held.target)
+	case UndoTrash, UndoDelete:
+		err = s.DeleteMessages(held.messageIDs)
+	default:
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	// The same event the undo fires, for the same reason: the window took the
+	// rows out of its list when the reader deleted them, but the undo put them
+	// back, and nothing else would tell it they have gone again.
 	s.cfg.Emit(EventSyncFinished, SyncEvent{})
 	return true, nil
 }

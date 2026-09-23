@@ -6,6 +6,8 @@ import type { Undoable } from '../lib/api'
 
 const undoLastAction = vi.fn()
 const undoable = vi.fn()
+const redoLastAction = vi.fn()
+const redoable = vi.fn()
 
 vi.mock('../lib/api', () => ({
   deleteMessages: vi.fn(),
@@ -13,6 +15,8 @@ vi.mock('../lib/api', () => ({
   setStarred: vi.fn(),
   undoLastAction: () => undoLastAction(),
   undoable: () => undoable(),
+  redoLastAction: () => redoLastAction(),
+  redoable: () => redoable(),
 }))
 
 const offer = (over: Partial<Undoable> = {}): Undoable => ({
@@ -28,6 +32,10 @@ beforeEach(() => {
   undoLastAction.mockResolvedValue(true)
   undoable.mockReset()
   undoable.mockResolvedValue({ kind: '', count: 0, expiresUnixMs: 0 })
+  redoLastAction.mockReset()
+  redoLastAction.mockResolvedValue(true)
+  redoable.mockReset()
+  redoable.mockResolvedValue({ kind: '', count: 0, expiresUnixMs: 0 })
 })
 
 describe('the undo offer', () => {
@@ -91,5 +99,75 @@ describe('the undo offer', () => {
     const { container } = render(<UndoNotice />)
 
     expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('the way back from an undo', () => {
+  // "Undone" on its own is no better than a bare "Undo": it says something
+  // changed without saying what, in the moment the reader is least sure.
+  it('says what the undo did', () => {
+    useMailStore.setState({ redoOffer: offer() })
+    const { getByTestId } = render(<UndoNotice />)
+
+    expect(getByTestId('undo-notice').textContent).toContain('Taken back out of the trash')
+    expect(getByTestId('redo-action').textContent).toContain('Redo')
+  })
+
+  it('describes an undone move differently from an undone delete', () => {
+    useMailStore.setState({ redoOffer: offer({ kind: 'move' }) })
+    const { getByTestId, rerender } = render(<UndoNotice />)
+    expect(getByTestId('undo-notice').textContent).toContain('Move undone')
+
+    useMailStore.setState({ redoOffer: offer({ kind: 'delete' }) })
+    rerender(<UndoNotice />)
+    expect(getByTestId('undo-notice').textContent).toContain('Deletion undone')
+  })
+
+  it('does the action again when pressed', async () => {
+    useMailStore.setState({ redoOffer: offer() })
+    const { getByTestId } = render(<UndoNotice />)
+
+    fireEvent.click(getByTestId('redo-action'))
+
+    await waitFor(() => expect(redoLastAction).toHaveBeenCalled())
+  })
+
+  // Taking the undo is what creates the redo, so the two are never live
+  // together — but if a race made them overlap, the more recent action is the
+  // one the reader is thinking about.
+  it('shows the undo rather than the redo if both are somehow live', () => {
+    useMailStore.setState({ undoOffer: offer(), redoOffer: offer({ kind: 'move' }) })
+    const { getByTestId, queryByTestId } = render(<UndoNotice />)
+
+    expect(getByTestId('undo-notice').textContent).toContain('Moved to trash')
+    expect(queryByTestId('redo-action')).toBeNull()
+  })
+
+  // Pressing undo has to leave the way back on screen rather than an empty
+  // corner: the reader who undid by reflex and thought better of it is the
+  // same reader this exists for, one step further along.
+  it('appears after an undo is taken', async () => {
+    redoable.mockResolvedValue(offer({ kind: 'move' }))
+    useMailStore.setState({ undoOffer: offer() })
+    const { getByTestId } = render(<UndoNotice />)
+
+    fireEvent.click(getByTestId('undo-action'))
+
+    await waitFor(() => expect(getByTestId('redo-action')).toBeTruthy())
+  })
+
+  // An undo the backend refused took nothing back, so there is nothing to put
+  // back either. Offering a redo would be offering to repeat an action that
+  // was never reversed.
+  it('does not appear when the undo came back empty-handed', async () => {
+    undoLastAction.mockResolvedValue(false)
+    redoable.mockResolvedValue(offer({ kind: 'move' }))
+    useMailStore.setState({ undoOffer: offer() })
+    const { getByTestId, queryByTestId } = render(<UndoNotice />)
+
+    fireEvent.click(getByTestId('undo-action'))
+
+    await waitFor(() => expect(undoLastAction).toHaveBeenCalled())
+    expect(queryByTestId('redo-action')).toBeNull()
   })
 })

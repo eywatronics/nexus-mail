@@ -17,7 +17,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Kısmen bitti |
-| **M5** | Okuma deneyimini tamamla | Sürüyor |
+| **M5** | Okuma deneyimini tamamla | Bitti |
 | **M6** | Gönderme | Yeni |
 | **M7** | Kişiler | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
@@ -25,7 +25,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M10** | Microsoft Graph / Exchange | Yeni |
 | **M11** | Göç (içe/dışa aktarma) | Yeni |
 | **M12** | Yerelleştirme ve erişilebilirlik | Yeni |
-| **M13** | Sohbet | Yeni |
+| **M13** | Yerel-önce RAG ve posta zekâsı | Yeni |
 | **M14** | Ürünleşme | Yeni |
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
@@ -43,17 +43,58 @@ sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
 - Okunmamış sayısı tepsi ipucunda
 - Yeni mail geldiğinde işletim sistemi bildirimi, önizleme ayarlı
   (`notificationPreview`, varsayılan açık)
+- Görev çubuğu / dock rozetinde okunmamış sayısı
+- Açılışta başlat (ayarlar ekranından)
 
 **Kalan:**
 
-- Varsayılan posta istemcisi olarak ayarla (`mail/components/shell`)
-- Görev çubuğu ilerlemesi, Jump List, macOS dock rozeti
-- Açılışta başlat
+- Varsayılan posta istemcisi olarak ayarla (`mailto:`)
 
-**Doğrulanmayan:** toast'ın gerçekten teslim edildiği. Bildirim servisi çalışan
-bir Wails uygulaması gerektirdiği için tek başına denenemiyor; gerçek bir
-hesaba mail gelerek doğrulanmalı. Pencere kapatmanın süreci öldürmediği ise
-çalışan sürece `WM_CLOSE` gönderilerek doğrulandı.
+### Açılışta başlat, işletim sisteminin ayarıdır
+
+Diğerlerinden farklı olarak `config.json`'a **yazılmıyor**. Kayıt defteri
+değeri, launch agent ya da desktop dosyası — nerede duruyorsa gerçek orası. Bir
+kopyasını dosyaya yazmak, kullanıcı Görev Yöneticisi'nden kapattığı anda
+dosyanın gerçekle çelişmesi ve bir sonraki açılışta dosyanın kazanması
+demekti.
+
+İki sonucu var: ayar **okunarak** gösteriliyor, ve kaydederken yalnızca
+değiştiyse yazılıyor — aksi halde kullanıcının dışarıdan yaptığı değişiklik,
+ilgisiz bir ayarı kaydettiğinde sessizce geri alınırdı.
+
+Okunamadığında anahtar **kapalı değil, kullanılamaz** gösteriliyor. "Kapalı" ile
+"bilmiyoruz" farklı cevaplar, ve ilkini göstermek ayar ekranının yalan
+söylemesi olurdu.
+
+### Rozet ipucunun yerine değil, yanına
+
+`tray.go` şunu yazıyordu: *"Windows'ta tepsi ikonunun dock gibi bir rozeti
+yok — bu yüzden sayının dürüst yeri metin."* Tepsi için hâlâ doğru, ama **görev
+çubuğu düğmesinin** rozeti var; Wails bunu macOS dock'uyla aynı API üzerinden
+sunuyor. İkisi tek fonksiyondan besleniyor, yoksa aynı ekranda iki farklı sayı
+görünebilirdi.
+
+99'da duruyor: on altı piksellik bir dairede üç hane okunmuyor, ve dört yüz
+okunmamışta "kaç tane" sorusunun cevabı zaten "şu an okuyacağından fazla".
+Sıfırda rozet çizilmiyor — sıfır, fark edilecek bir şey olmadığını söyleyen bir
+işaret olurdu.
+
+### Görev çubuğu ilerlemesi ve Jump List neden yapılmadı
+
+Envanterde "görev çubuğu ilerlemesi, Jump List, dock rozeti" tek satırdı.
+Üçüncüsü yapıldı, ilk ikisi **bilerek yapılmadı**.
+
+İlerleme çubuğu uzun bir işlem ister. Buradaki tek aday ilk senkron, ve onun
+ilerlemesi zaten pencerede görünüyor; çubuk, pencere kapalıyken görülmeyen bir
+işlemin göstergesi olurdu. Jump List ise henüz olmayan eylemleri listeler —
+"yeni mesaj" M6'da gelecek. İkisi de Thunderbird'de olduğu için değil, burada
+karşılığı olduğu için yapılmalı; bugün yok.
+
+**Doğrulanmayan:** toast'ın gerçekten teslim edildiği, rozetin gerçekten
+çizildiği ve açılışta başlatmanın gerçekten çalıştığı. Üçü de çalışan bir Wails
+uygulaması gerektiriyor; mantık testli, işletim sistemi tarafı değil. Pencere
+kapatmanın süreci öldürmediği ise çalışan sürece `WM_CLOSE` gönderilerek
+doğrulandı.
 
 ---
 
@@ -69,10 +110,15 @@ başına teslim edilebilir.
 - ~~Gövde kipi: özgün HTML / sade HTML / düz metin~~ — **bitti**
 - ~~SPECIAL-USE ile klasör rolleri~~ — **bitti**
 - ~~STARTTLS ve kimlik doğrulama mekanizması seçimi~~ — **bitti** (aşağıya bakın)
-- Mesaj gövdesinde karanlık mod (`bodyhandler.go` zaten `prefers-color-scheme` yazıyor)
+- ~~Mesaj gövdesinde karanlık mod~~ — **bitti**; tema çerçeveye URL'de söyleniyor,
+  çünkü sandbox'lı belge ana sayfadaki sınıfı göremiyor
 - ~~Silmek çöp kutusuna taşısın~~ — **bitti** (aşağıya bakın)
 - ~~Geri al~~ — **bitti** (tek adım, yıkıcı işlemler için)
-- Mesajda bul, okundu işaretleme davranışı, yinele
+- ~~Okundu işaretleme davranışı~~ — **bitti** (açınca / birkaç saniye sonra / hiç)
+- ~~Mesajda bul~~ — **bitti** (aşağıya bakın)
+- ~~Yinele (redo)~~ — **bitti** (aşağıya bakın)
+
+**M5 bitti.**
 
 ### UTF8=ACCEPT neden burada değil
 
@@ -100,7 +146,36 @@ gereği ayrık — yarış yok.
 
 Pencere `undoWindowSeconds` ile ayarlanabilir; `0` kapatır.
 
-**Kalan:** yinele (redo) yok, ve geri alma tek adım.
+Geri alma tek adım, ve öyle kalıyor: eskiye uzanan bir yığın, sunucunun aradaki
+girdilere yetişmiş olmasıyla baş etmek zorunda kalırdı.
+
+### Yinele
+
+Yinele, iptal edilen işlemi tekrar oynatmıyor; eylemi baştan yapıyor. Yinelenen
+bir silme `DeleteMessages`'tan geçiyor, dolayısıyla kendi sırası geldiğinde
+geri alınabiliyor, kendi kuyruk kaydını alıyor, ve hesabın artık bir çöp
+kutusu olup olmadığını yeniden kendisi buluyor. İşlemi oynatmak üçünü de
+atlardı.
+
+**Bir tuzak vardı:** geri alma mesajı eski satırına koymuyor. `id` sıradan bir
+`INTEGER PRIMARY KEY`, yani SQLite `max(rowid)+1` veriyor ve tablodaki en yeni
+satır olmayan bir mesaj başka bir numarayla geri geliyor. Eski numarayı taşımak
+kaybetmekten kötü olurdu: numara geçersiz olmuyor, **boşa çıkıyor** ve sonraki
+gelen mesaja verilebiliyor. Bu yüzden `RestoreMessages` artık geri koyduğu
+satırların kimliklerini döndürüyor. (Tek mesajlı bir testte kimlik korunuyormuş
+gibi görünüyor — rowid yeniden kullanılıyor — o yüzden test ikinci bir mesajla
+kuruluyor.)
+
+Yinele, geri almayla **aynı pencerede** sönüyor. Bu bir mekanizma değil karar:
+geri almanın süresi kuyruğun değişikliği aldığı an, yinelemenin kendine ait bir
+süresi yok. Ama ikisi de bir tereddüt anı, ve on dakika sonra hâlâ canlı bir
+yinele, okuyucunun çoktan tutmaya karar verdiği postayı sessizce silen bir tuş
+olurdu.
+
+Şerit geri alma alınınca kaybolmuyor, tersine dönüyor: refleksle geri alıp
+sonra fikir değiştiren okuyucu, bu şeridin var olduğu okuyucunun bir adım
+sonrası. Ctrl+Shift+Z ve Ctrl+Y ikisi de yinele, çünkü platformlar anlaşamıyor
+ve insanlar ilk öğrendikleri alışkanlığı taşıyor.
 
 ### Silme artık yok etmiyor
 
@@ -138,6 +213,39 @@ adlandırılması, ve PLAIN → SASL LOGIN → LOGIN komutu sırası.
 kurumda tek yol budur ve `internal/auth`'ta karşılığı yok. Hata mesajı
 sunucunun sunduğu mekanizmaları adlandırdığı için bu duruma düşüldüğü
 anlaşılıyor; uygulaması M10'da Graph işiyle birlikte.
+
+### Mesajda bul, tarayıcının değil bizim
+
+Ctrl+F tarayıcının kendi aramasını açmıyor, açamaz da: okuma paneli
+`allow-scripts` ve `allow-same-origin` taşımayan bir iframe, yani içine
+girecek betik yok ve dışarıdan tutamak da yok. Tarayıcının aramasını olduğu
+gibi bırakmak, okunan mesajda hiçbir zaman eşleşme bulmayan bir Ctrl+F demek
+olurdu — yazdırmayla aynı duvar.
+
+Bu yüzden arama markup'a geliyor: sorgu gövde URL'sinde gidiyor,
+`mailhtml.Highlight` eşleşmeleri belge sunulmadan önce `<mark>` ile sarıyor,
+ve geçerli eşleşmeye `#nx-find-current` parçasıyla kaydırılıyor. Parça, betiği
+olmayan bir belgeyi kaydırmanın tek yolu.
+
+Üç sonucu var, üçü de bilerek:
+
+- **"Hepsini vurgula" anahtarı yok.** Her eşleşme her zaman işaretli, çünkü
+  işaretlemek aramanın kendisi.
+- **Eşleşme öğe sınırını aşmıyor.** Ortasından `<b>` geçen bir kelime
+  bulunmuyor. Tarayıcının kendi araması bunu yapıyor; ona ulaşmanın bedeli
+  çerçeveye betik vermek, ki bu işin var oluş sebebini iptal eder.
+- **Sayım olaydan geliyor, ikinci bir çağrıdan değil.** Sayı, belgeyi kuran
+  aynı geçişte düşüyor; ayrıca sormak mesajı iki kez render etmek ve ikisinin
+  ayrışma ihtimalini kabul etmek olurdu.
+
+Vurgu sarı değil, uygulamanın kendi accent'i: bu bir seçim ve accent tam da
+bunun için var. Sarı, pencereyi kaplayan tek panelde ikinci bir accent olurdu.
+
+Büyük/küçük harf ayrımı yok. Türkçe'de basit kat sıralamanın sınırı görünüyor:
+`I` ve `İ` ikisi de `i`'ye katlanıyor, `ı` ise kendisine — yani "istanbul"
+araması "İstanbul"u da buluyor, "ışık" yalnızca "ışık" ile bulunuyor. Doğrusu
+için okuma panelinin sahip olmadığı bir yerel ayar gerekiyor; davranış testle
+sabitlendi.
 
 ### Yazdırma neden burada değil
 
@@ -362,17 +470,39 @@ uygulama yalnızca klavyeyle kullanılabiliyor; axe denetimi temiz.
 
 ---
 
-## M13 — Sohbet
+## M13 — Yerel-önce RAG ve posta zekâsı
 
-Bağımsız; istenirse ertelenebilir.
+Uzun zincirleri özetleyen, yazışmalardan doğal dille bilgi çıkaran, yanıt
+taslağı üreten bir katman. İki kip: makinede çalışan yerel model (Ollama) ya
+da kullanıcının kendi anahtarıyla bulut sağlayıcı (BYOK).
 
-- Matrix (uçtan uca şifreli) — gizlilik konumlandırmasıyla en uyumlu protokol
-- XMPP (SCRAM-SHA-256) + OTR
-- Cihaz/oturum doğrulama — şifreleme varsa doğrulama zorunlu
-- Yerel konuşma günlüğü
-- Kişi listesi, gruplar, durum, bildirimler
+Ayrıntılı plan: [m13-intelligence-rag.md](m13-intelligence-rag.md).
 
-IRC kapsam dışı: eski yük, şifreleme yok.
+- Sağlayıcı katmanı (`internal/ai`), anahtarlar OS anahtarlığında
+- Zincir özeti, akan yanıt
+- `mail_chunks` + saf Go vektör arama, FTS5 ile hibrit (RRF)
+- Gelen kutusu soru-cevap, kaynak mesaj kartlarıyla
+- Taslak asistanı (M6'ya bağlı tek parça)
+
+**Varsayılan kapalı**, ve yerel kipte tek bayt makineden çıkmaz.
+
+### Bu, bir kuralın bilinçli istisnası
+
+Aşağıdaki "bilerek kapsam dışı" tablosunda **işletim sistemi arama
+entegrasyonu** "postayı OS indeksine verir" diye reddedilmişti. Bulut kipi
+daha ileri gider: gövdenin tamamı üçüncü tarafa iner.
+
+Fark rızanın olup olmaması değil, **görünür ve dönülebilir olması**: veriyi
+veren kullanıcının kendisi, kendi anahtarıyla, hangi mesaj için olduğunu
+görerek. OS entegrasyonunda veriyi veren uygulamaydı ve kullanıcı bunu
+göremiyordu.
+
+Bunu tabloya yazmadan geçmek, projenin kendi gerekçeleriyle çelişmek olurdu.
+
+### Sohbet nereye gitti
+
+M13 daha önce Sohbet'ti (Matrix + XMPP). Kapsamdan çıkarıldı; aşağıdaki
+"bilerek kapsam dışı" tablosuna geçti.
 
 ---
 
@@ -451,7 +581,7 @@ Gerekçeleriyle birlikte [envanterde](../design/feature-inventory.md) yazılı.
 | POP3 | Sunucu tarafı durum yok; yerel-önce modelimizle çelişiyor |
 | NNTP / haber grupları | Eski yük |
 | RSS / Atom besleme hesapları | Tutarlı ama e-posta değil |
-| IRC | Eski yük; şifreleme yok |
+| **Sohbet (Matrix, XMPP, IRC)** | E-posta istemcisi olmanın asgari şartı değil ve dört iddiadan hiçbirini desteklemiyor. Önce M13, sonra M15 olarak planlandı; ikisinde de kendinden önceki posta işlerinin arkasında duruyordu — bu "hiçbir zaman" demenin uzun yolu. Kısa yolu burası |
 | Bulut ek (FileLink) | Üçüncü tarafa yükleme; gizlilik iddiasıyla çelişir |
 | İşletim sistemi arama entegrasyonu | Postayı OS indeksine verir |
 | Mozilla hesap senkronu | Ayarları sunucuya taşır; yerel-önce ile çelişir |

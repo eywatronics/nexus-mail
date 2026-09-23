@@ -46,9 +46,15 @@ func (s *MailService) EmptyTrash(accountID int64) error {
 	return nil
 }
 
-// forgetUndo drops the held action without cancelling it.
+// forgetUndo drops the held action, and the redo with it, without cancelling
+// either.
+//
+// The redo goes for the same reason the undo does: it names messages that may
+// have been among the ones just destroyed, and doing the action again to rows
+// whose server side is gone is not something to leave a keystroke away.
 func (s *MailService) forgetUndo() {
 	s.watchMu.Lock()
 	s.undo = nil
+	s.redo = nil
 	s.watchMu.Unlock()
 }

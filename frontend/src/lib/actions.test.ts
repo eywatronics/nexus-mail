@@ -12,6 +12,8 @@ vi.mock('./api', () => ({
   moveMessages: vi.fn(),
   undoable: vi.fn().mockResolvedValue({ kind: '', count: 0, expiresUnixMs: 0 }),
   undoLastAction: vi.fn().mockResolvedValue(false),
+  redoable: vi.fn().mockResolvedValue({ kind: '', count: 0, expiresUnixMs: 0 }),
+  redoLastAction: vi.fn().mockResolvedValue(false),
 }))
 
 const folder = (id: number, role: string): Folder => ({

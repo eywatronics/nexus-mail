@@ -353,19 +353,28 @@ Diğer IMAP davranışları:
 
 ## 11. Sohbet
 
+**Bu bölümün tamamı kapsam dışı.** Sohbet, e-posta istemcisi olmanın asgari
+şartı değil ve dört iddiadan hiçbirini desteklemiyor; Thunderbird'ün taşıdığı
+için biz de taşımamız gerekmiyor. Matrix bir ara M13, sonra M15 olarak
+planlanmıştı — ikisinde de kendinden önceki posta işlerinin arkasında
+duruyordu, ki bu "hiçbir zaman" demenin uzun yoludur. Kısa yolu yazıldı.
+
+Envanterde kalmasının sebebi, ileride fikir değişirse Thunderbird'ün bunu
+nasıl çözdüğüne bakılacak yer olması.
+
 | Özellik | Ne yapar | Yol | KT |
 |---|---|---|---|
-| Matrix | Homeserver'a bağlan, oda ve DM | `chat/protocols/matrix/matrix.sys.mjs` | M13 |
-| Matrix uçtan uca şifreleme | | `chat/protocols/matrix/matrixAccount.sys.mjs` | M13 |
-| Matrix cihaz/kullanıcı doğrulama | SAS/emoji doğrulama | `mail/components/im/content/verify.xhtml` | M13 |
-| XMPP | Roster, 1:1, MUC | `chat/protocols/xmpp/xmpp.sys.mjs` | M13 |
-| XMPP SASL (SCRAM-SHA-1/256) | | `chat/protocols/xmpp/xmpp-authmechs.sys.mjs` | M13 |
-| OTR şifreleme | 1:1 konuşmalar için | `chat/modules/OTR.sys.mjs` | M13 |
-| OTR doğrulama | Paylaşılan sır / soru-cevap / parmak izi | `chat/content/otr-auth.xhtml` | M13 |
-| Konuşma günlüğü | Yerel JSON, otomatik temizleme | `chat/components/src/logger.sys.mjs` | M13 |
-| Kişi listesi, gruplar, durum | | `chat/components/src/imContacts.sys.mjs` | M13 |
-| Mesaj temizleme | Gelen mesajın güvenli HTML'i | `chat/modules/imContentSink.sys.mjs` | M13 |
-| Bildirimler | | `mail/components/im/modules/chatNotifications.sys.mjs` | M13 |
+| Matrix | Homeserver'a bağlan, oda ve DM | `chat/protocols/matrix/matrix.sys.mjs` | — |
+| Matrix uçtan uca şifreleme | | `chat/protocols/matrix/matrixAccount.sys.mjs` | — |
+| Matrix cihaz/kullanıcı doğrulama | SAS/emoji doğrulama | `mail/components/im/content/verify.xhtml` | — |
+| XMPP | Roster, 1:1, MUC | `chat/protocols/xmpp/xmpp.sys.mjs` | — |
+| XMPP SASL (SCRAM-SHA-1/256) | | `chat/protocols/xmpp/xmpp-authmechs.sys.mjs` | — |
+| OTR şifreleme | 1:1 konuşmalar için | `chat/modules/OTR.sys.mjs` | — |
+| OTR doğrulama | Paylaşılan sır / soru-cevap / parmak izi | `chat/content/otr-auth.xhtml` | — |
+| Konuşma günlüğü | Yerel JSON, otomatik temizleme | `chat/components/src/logger.sys.mjs` | — |
+| Kişi listesi, gruplar, durum | | `chat/components/src/imContacts.sys.mjs` | — |
+| Mesaj temizleme | Gelen mesajın güvenli HTML'i | `chat/modules/imContentSink.sys.mjs` | — |
+| Bildirimler | | `mail/components/im/modules/chatNotifications.sys.mjs` | — |
 | IRC (+CAP, SASL, CTCP, DCC, servisler) | | `chat/protocols/irc/irc.sys.mjs` | — Eski yük; şifreleme yok |
 | Facebook / Twitter / Yahoo | | `chat/protocols/facebook/facebook.sys.mjs` | — Thunderbird'de zaten ölü saplama |
 | Google Talk, Odnoklassniki | | `chat/protocols/gtalk/gtalk.sys.mjs` | — Ölü / niş |

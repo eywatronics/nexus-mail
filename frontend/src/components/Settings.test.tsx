@@ -20,6 +20,8 @@ const stored = (over: Partial<AppSettings> = {}): AppSettings => ({
   retentionMaxMessages: 25000,
   notificationPreview: true,
   undoWindowSeconds: 5,
+  startAtLogin: false,
+  startAtLoginAvailable: true,
   ...over,
 })
 
@@ -35,6 +37,47 @@ beforeEach(() => {
     // Storage is unavailable in this environment; the prefs fall back to
     // defaults, which is what these tests assume anyway.
   }
+})
+
+describe('starting with the machine', () => {
+  it('offers the switch when the machine can be asked', async () => {
+    const { getByTestId } = render(<Settings onClose={() => {}} />)
+
+    await waitFor(() => expect(getByTestId('start-at-login-on')).toBeTruthy())
+    expect((getByTestId('start-at-login-on') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('saves the change to the backend', async () => {
+    const { getByTestId } = render(<Settings onClose={() => {}} />)
+    await waitFor(() => expect(getByTestId('start-at-login-on')).toBeTruthy())
+
+    fireEvent.click(getByTestId('start-at-login-on'))
+
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ startAtLogin: true }),
+      ),
+    )
+  })
+
+  // Off and "we could not ask" are different answers. A live switch reading
+  // Off would be claiming a state nobody established, and clicking it would
+  // fail for a reason the screen never mentioned.
+  it('disables the switch rather than showing it off when it cannot be read', async () => {
+    settings.mockResolvedValue(stored({ startAtLoginAvailable: false }))
+    const { getByTestId } = render(<Settings onClose={() => {}} />)
+
+    await waitFor(() => expect(getByTestId('start-at-login-on')).toBeTruthy())
+    expect((getByTestId('start-at-login-on') as HTMLButtonElement).disabled).toBe(true)
+    expect((getByTestId('start-at-login-off') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('says why it is unavailable rather than leaving a dead control', async () => {
+    settings.mockResolvedValue(stored({ startAtLoginAvailable: false }))
+    const { findByText } = render(<Settings onClose={() => {}} />)
+
+    expect(await findByText(/cannot register itself to start at login/i)).toBeTruthy()
+  })
 })
 
 describe('settings that live in the window', () => {

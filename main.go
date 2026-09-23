@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/dock"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"nexusmail/internal/app"
@@ -50,15 +52,32 @@ func showWindow(window application.Window) {
 	window.Focus()
 }
 
-// refreshTrayTooltip puts the unread count where it can be seen with the
-// window closed.
-func refreshTrayTooltip(tray *application.SystemTray, service *app.MailService, logger *slog.Logger) {
+// refreshUnreadIndicators puts the unread count everywhere it can be seen with
+// the window closed: the tray tooltip and the taskbar or dock badge.
+//
+// One function for both, fed by one count. Two refreshers reading the database
+// separately would eventually show two different numbers on the same screen,
+// and the user would have no way to tell which was right.
+func refreshUnreadIndicators(tray *application.SystemTray, badge *dock.DockService,
+	service *app.MailService, logger *slog.Logger) {
+
 	unread, err := service.UnreadCount()
 	if err != nil {
 		logger.Error("counting unread mail for the tray", "err", err)
 		return
 	}
 	tray.SetTooltip(app.TrayTooltip(unread))
+
+	// An empty label means no badge rather than a badge reading zero.
+	// Failures are logged and dropped: the count is already in the tooltip,
+	// and a platform that cannot draw a badge is not a reason to stop.
+	if label := app.BadgeLabel(unread); label == "" {
+		if err := badge.RemoveBadge(); err != nil {
+			logger.Debug("clearing the unread badge", "err", err)
+		}
+	} else if err := badge.SetBadge(label); err != nil {
+		logger.Debug("setting the unread badge", "err", err)
+	}
 }
 
 // notifyNewMail turns an arrival into an operating system notification.
@@ -199,10 +218,38 @@ func run(debug bool) error {
 		}
 	}
 
+	// The same cycle a third time. Starting with the machine is the Wails
+	// application's business — a registry value on Windows, a launch agent on
+	// macOS, a desktop file on Linux — and internal/app does not import Wails.
+	// Before NewMailService, because Config is passed by value.
+	cfg.Autostart = app.AutostartControl{
+		Enabled: func() (bool, error) {
+			if wailsApp == nil {
+				return false, errors.New("main: the application is not running yet")
+			}
+			return wailsApp.Autostart.IsEnabled()
+		},
+		Set: func(enabled bool) error {
+			if wailsApp == nil {
+				return errors.New("main: the application is not running yet")
+			}
+			if enabled {
+				return wailsApp.Autostart.Enable()
+			}
+			return wailsApp.Autostart.Disable()
+		},
+	}
+
 	// Registered as a service so Wails performs the platform's own setup — on
 	// Windows that means an app user model id, without which a toast is
 	// delivered to nothing at all.
 	notifier := notifications.New()
+
+	// The unread count on the taskbar or dock icon. A tray icon has no badge
+	// on Windows, which is why the count has lived in the tooltip — but the
+	// taskbar button does, through the same overlay API the dock uses on
+	// macOS, and a number on the icon is seen without hovering over anything.
+	badge := dock.New()
 
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
@@ -215,6 +262,7 @@ func run(debug bool) error {
 		Services: []application.Service{
 			application.NewService(service),
 			application.NewService(notifier),
+			application.NewService(badge),
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
@@ -279,12 +327,21 @@ func run(debug bool) error {
 	})
 	tray.SetMenu(trayMenu)
 
-	// The tooltip is refreshed from the same event the window redraws on, so
-	// the tray and the list never disagree about how much is unread.
+	// Refreshed from the same event the window redraws on, so the tray, the
+	// badge and the list never disagree about how much is unread.
 	wailsApp.Event.On(app.EventSyncFinished, func(*application.CustomEvent) {
-		refreshTrayTooltip(tray, service, logger)
+		refreshUnreadIndicators(tray, badge, service, logger)
 	})
-	refreshTrayTooltip(tray, service, logger)
+
+	// The first refresh waits for the application to start rather than running
+	// here. The badge is drawn by a registered service, and a service has not
+	// been started until Run has begun — calling it now would set the tooltip
+	// and silently fail to set the badge, leaving the icon bare until the
+	// first sync finished.
+	wailsApp.Event.OnApplicationEvent(events.Common.ApplicationStarted,
+		func(*application.ApplicationEvent) {
+			refreshUnreadIndicators(tray, badge, service, logger)
+		})
 
 	wailsApp.Event.On(app.EventNewMail, func(event *application.CustomEvent) {
 		notifyNewMail(notifier, window, event, logger)
