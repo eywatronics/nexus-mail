@@ -26,9 +26,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+      # -ts -i, the same flags build/Taskfile.yml uses. Without them the
+      # bindings come out as JavaScript, and because tsconfig sets
+      # noImplicitAny to false the build still passes — with every call across
+      # the bridge typed as `any`. This job would then be checking types
+      # everywhere except the one boundary where the two languages meet.
       - name: Generate bindings and build frontend
         run: |
-          wails3 generate bindings
+          wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build
 
       - name: gofmt
@@ -67,7 +72,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       - name: Generate bindings and build frontend
         run: |
-          wails3 generate bindings
+          wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build
 
       # -race requires cgo, so CGO_ENABLED stays at its default here. That is
@@ -145,6 +150,6 @@ jobs:
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          wails3 generate bindings
+          wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build && cd ..
           go build ./...

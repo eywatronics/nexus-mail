@@ -76,7 +76,7 @@ Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
 
 ## İndir
 
-`main`'e her birleşme üç platform için kurulum dosyası üretir. En son yapı:
+`main`'e her birleşme üç işletim sistemi için kurulum dosyası üretir. En son yapı:
 **[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
 
 | Platform | Dosya |
@@ -242,12 +242,20 @@ macOS'ta `.app`, Linux'ta AppImage / `.deb` / `.rpm`. Çıktılar `bin/` altınd
 Çapraz derleme yok: her platform kendi üzerinde derleniyor. Wails'in WebView
 bağlaması her sistemin kendi araç zincirini gerektiriyor ve Docker ile
 zorlamak, kimsenin çalıştırmadığı bir yapı üretirdi. Release iş akışı da bu
-yüzden üç ayrı runner kullanıyor.
+yüzden **dört** ayrı runner kullanıyor — Intel ve Apple silicon Mac'ler bunların
+ikisi, çünkü Intel bir Mac arm64 yapıyı çalıştıramaz.
+
+Yerel bir Linux paketi sürüm numarasını da istiyor; numara paketleme dosyasında
+değil `build/config.yml` içinde duruyor:
+
+```bash
+VERSION=0.5.0 wails3 task linux:create:deb
+```
 
 ### Sürüm çıkarma
 
-`main`'e her birleşme üç platformu da derler ve **`main` etiketli** yuvarlak bir
-ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
+`main`'e her birleşme dört hedefi de derler ve **`nightly` etiketli** yuvarlak
+bir ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
 `info.version` değerini yükseltin ve aynı numarayla etiket atın:
 
 ```bash

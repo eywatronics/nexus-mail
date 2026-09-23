@@ -74,7 +74,7 @@ Manager, macOS Keychain or the Linux Secret Service.
 
 ## Download
 
-Every merge to `main` produces installers for three platforms. Latest build:
+Every merge to `main` produces installers for three operating systems. Latest build:
 **[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
 
 | Platform | File |
@@ -242,12 +242,20 @@ a `.app` on macOS, AppImage / `.deb` / `.rpm` on Linux. Output lands in `bin/`.
 There is no cross-compilation: each platform builds on itself. The Wails
 WebView binding needs each system's own toolchain, and forcing it through
 Docker would produce a build nobody has ever run. That is also why the release
-workflow uses three separate runners.
+workflow uses four separate runners — Intel and Apple silicon Macs are two of
+them, because an Intel Mac cannot run an arm64 build.
+
+A local Linux package also needs the version, which lives in `build/config.yml`
+rather than in the packaging config:
+
+```bash
+VERSION=0.5.0 wails3 task linux:create:deb
+```
 
 ### Cutting a release
 
-Every merge to `main` builds all three platforms and replaces a rolling
-prerelease tagged **`main`**. For a permanent release, raise `info.version` in
+Every merge to `main` builds all four targets and replaces a rolling prerelease
+tagged **`nightly`**. For a permanent release, raise `info.version` in
 `build/config.yml` and push a tag with the same number:
 
 ```bash

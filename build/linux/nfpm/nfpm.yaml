@@ -8,10 +8,25 @@
 name: "nexus-mail"
 arch: ${GOARCH}
 platform: "linux"
-version: "0.5.0"
+# From the environment, not written here. The version belongs in
+# build/config.yml and nowhere else; a second copy in this file would keep the
+# old number after a bump, and a .deb claiming 0.5.0 inside a release called
+# 0.6.0 is the exact confusion the single source exists to avoid.
+#
+# nfpm does not object to an empty version — it was tried, and it produced a
+# package with a blank one rather than an error. That is why the deb, rpm and
+# archlinux tasks check VERSION themselves before calling it: a package that
+# fails to build is a nuisance, and one that builds without a version is a
+# release nobody can tell apart from the last.
+version: ${VERSION}
 section: "mail"
 priority: "optional"
-maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
+# A fixed address rather than ${GIT_COMMITTER_NAME}, which the template had.
+# Those variables are not set in CI, so every package built there carried a
+# maintainer field reading " <>" — and where they *are* set, the field would
+# carry the personal address of whoever merged, which is not something a
+# package should publish on their behalf.
+maintainer: "Nexus Mail contributors <nexus-mail@users.noreply.github.com>"
 description: |
   Local-first, privacy-focused mail client.
   Mail is synced to a local database and rendered from it, so reading works
