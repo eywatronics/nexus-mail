@@ -7,8 +7,8 @@ katman — kullanıcının gizliliğinden ödün vermeden.
 İki çalışma kipi: makinede çalışan **yerel model** (Ollama), ya da kullanıcının
 kendi anahtarıyla **bulut sağlayıcı** (BYOK).
 
-M13 daha önce Sohbet'ti (Matrix + XMPP). O iş [M15](roadmap.md#m15--sohbet)'e
-taşındı; kapsamı değişmedi, sırası değişti.
+M13 daha önce Sohbet'ti (Matrix + XMPP). O iş kapsamdan çıkarıldı ve yol
+haritasının "bilerek kapsam dışı" tablosuna geçti.
 
 ---
 

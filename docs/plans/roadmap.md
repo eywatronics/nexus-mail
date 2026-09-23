@@ -27,7 +27,6 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M12** | Yerelleştirme ve erişilebilirlik | Yeni |
 | **M13** | Yerel-önce RAG ve posta zekâsı | Yeni |
 | **M14** | Ürünleşme | Yeni |
-| **M15** | Sohbet | Yeni |
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
 sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
@@ -502,8 +501,8 @@ Bunu tabloya yazmadan geçmek, projenin kendi gerekçeleriyle çelişmek olurdu.
 
 ### Sohbet nereye gitti
 
-M13 daha önce Sohbet'ti. Kapsamı değişmeden M15'e taşındı; zaten "bağımsız,
-istenirse ertelenebilir" notuyla duruyordu.
+M13 daha önce Sohbet'ti (Matrix + XMPP). Kapsamdan çıkarıldı; aşağıdaki
+"bilerek kapsam dışı" tablosuna geçti.
 
 ---
 
@@ -512,20 +511,6 @@ istenirse ertelenebilir" notuyla duruyordu.
 - Otomatik güncelleme
 - Kod imzalama (Windows, macOS)
 - Kurulum paketleri, dağıtım
-
----
-
-## M15 — Sohbet
-
-Bağımsız; istenirse ertelenebilir.
-
-- Matrix (uçtan uca şifreli) — gizlilik konumlandırmasıyla en uyumlu protokol
-- XMPP (SCRAM-SHA-256) + OTR
-- Cihaz/oturum doğrulama — şifreleme varsa doğrulama zorunlu
-- Yerel konuşma günlüğü
-- Kişi listesi, gruplar, durum, bildirimler
-
-IRC kapsam dışı: eski yük, şifreleme yok.
 
 ---
 
@@ -596,7 +581,7 @@ Gerekçeleriyle birlikte [envanterde](../design/feature-inventory.md) yazılı.
 | POP3 | Sunucu tarafı durum yok; yerel-önce modelimizle çelişiyor |
 | NNTP / haber grupları | Eski yük |
 | RSS / Atom besleme hesapları | Tutarlı ama e-posta değil |
-| IRC | Eski yük; şifreleme yok |
+| **Sohbet (Matrix, XMPP, IRC)** | E-posta istemcisi olmanın asgari şartı değil ve dört iddiadan hiçbirini desteklemiyor. Önce M13, sonra M15 olarak planlandı; ikisinde de kendinden önceki posta işlerinin arkasında duruyordu — bu "hiçbir zaman" demenin uzun yolu. Kısa yolu burası |
 | Bulut ek (FileLink) | Üçüncü tarafa yükleme; gizlilik iddiasıyla çelişir |
 | İşletim sistemi arama entegrasyonu | Postayı OS indeksine verir |
 | Mozilla hesap senkronu | Ayarları sunucuya taşır; yerel-önce ile çelişir |

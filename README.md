@@ -154,7 +154,6 @@ reading pane, and is deferred to M6. **Code signing** (M14).
 | **M12** | Localisation, accessibility, customisable shortcuts | Planned |
 | **M13** | Local-first RAG: thread summaries, ask-your-inbox, draft assistance — local model or your own API key, off by default | Planned |
 | **M14** | Automatic updates, code signing, installation packages | Planned |
-| **M15** | Chat: Matrix and XMPP, end-to-end encrypted | Planned |
 
 How the roadmap was arrived at, why each feature is in scope, and what was
 **deliberately left out**: [docs/plans/roadmap.md](docs/plans/roadmap.md) and

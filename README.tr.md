@@ -154,7 +154,6 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M12** | Yerelleştirme, erişilebilirlik, özelleştirilebilir kısayollar | Planlandı |
 | **M13** | Yerel-önce RAG: zincir özeti, gelen kutusuna soru sorma, taslak asistanı — yerel model ya da kendi API anahtarınız, varsayılan kapalı | Planlandı |
 | **M14** | Otomatik güncelleme, kod imzalama, kurulum paketleri | Planlandı |
-| **M15** | Sohbet: Matrix ve XMPP, uçtan uca şifreli | Planlandı |
 
 Yol haritasının nasıl çıkarıldığı, hangi özelliğin neden kapsamda olduğu ve
 neyin **bilerek dışarıda** bırakıldığı:
