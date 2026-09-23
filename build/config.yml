@@ -5,13 +5,16 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "My Company" # The name of the company
-  productName: "My Product" # The name of the application
-  productIdentifier: "com.mycompany.myproduct" # The unique product identifier
-  description: "A program that does X" # The application description
-  copyright: "(c) 2025, My Company" # Copyright text
-  comments: "Some Product Comments" # Comments
-  version: "0.0.1" # The application version
+  companyName: "Nexus Mail"
+  productName: "Nexus Mail"
+  productIdentifier: "com.eywatronics.nexusmail"
+  description: "Local-first, privacy-focused mail client"
+  copyright: "(c) 2026 Nexus Mail contributors"
+  comments: "Mail stays on your machine. Trackers are blocked by default."
+  # Read by the release workflow and used as the tag. Bump it here, in one
+  # place: an installer named after one version and a release named after
+  # another is the kind of confusion nobody ever fully untangles.
+  version: "0.5.0"
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension
   #                               # If not set and Assets.car exists, defaults to "appicon"
