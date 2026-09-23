@@ -116,21 +116,26 @@ silme yalnızca yerelde.
 arama (Türkçe'nin noktasız ı'sı dahil — hiçbir harf katlama kuralı onu sizin
 için halletmiyor), klavye navigasyonu, ekleri listeleme ve indirme, kaynağı
 görüntüleme, `.eml` olarak kaydetme, yanlış beyan edilmiş karakter kodlamasını
-onarma ve üç gövde görüntüleme kipi: özgün HTML, sade HTML, düz metin.
+onarma, üç gövde görüntüleme kipi (özgün HTML, sade HTML, düz metin) ve mesaj
+içinde arama — arka uçta yapılıyor, çünkü okuma paneli hiçbir betiğin içine
+giremediği bir sandbox.
 
 **Durum yazma.** Okundu, yıldız, taşı ve sil anında görünür, kuyruğa alınır ve
 bağlantı izin verdiğinde sunucuya ulaşır. Silmek çöp kutusuna taşır; çöp
 kutusunun içinde önce sorar, sonra yok eder. Çöp kutusunu boşaltmak, bu
 istemcinin hiç indirmediği mesajları da kapsayan ayrı bir sunucu işlemidir. Son
-yıkıcı işlem beş saniye boyunca geri alınabilir (Ctrl+Z).
+yıkıcı işlem beş saniye boyunca geri alınabilir (Ctrl+Z) ve aynı pencerede
+yeniden yapılabilir (Ctrl+Shift+Z veya Ctrl+Y).
 
-**Arka plan.** Pencereyi kapatmak uygulamayı tepside bırakır ve senkron sürer.
-Yeni mail geldiğinde işletim sistemi bildirimi gösterilir, içeriği isteğe bağlı
-— çünkü Windows aksi söylenmedikçe bildirimleri kilit ekranında da gösterir.
+**Arka plan.** Pencereyi kapatmak uygulamayı tepside bırakır ve senkron sürer;
+uygulama makineyle birlikte başlayabilir. Yeni mail geldiğinde işletim sistemi
+bildirimi gösterilir, içeriği isteğe bağlı — çünkü Windows aksi söylenmedikçe
+bildirimleri kilit ekranında da gösterir. Okunmamış sayısı tepsi ipucunun yanı
+sıra görev çubuğu / dock rozetinde de görünür.
 
 **Ayarlar.** Tema, gövde görüntüleme kipi, okundu işaretleme davranışı, konuşma
-gruplama, bildirim önizlemesi, geri alma penceresi, saklama limitleri ve OAuth
-client ID'leri — hepsi uygulamanın içinden.
+gruplama, açılışta başlat, bildirim önizlemesi, geri alma penceresi, saklama
+limitleri ve OAuth client ID'leri — hepsi uygulamanın içinden.
 
 ### Henüz yok
 
@@ -145,7 +150,7 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
 | **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
-| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri | Büyük ölçüde bitti |
+| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri, mesajda bul, geri al/yinele | Bitti |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
 | **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
 | **M8** | Etiket, arşiv, birleşik gelen kutusu, gövde araması, kural motoru, junk | Planlandı |
