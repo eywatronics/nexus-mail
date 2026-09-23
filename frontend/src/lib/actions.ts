@@ -1,4 +1,12 @@
-import { deleteMessages, markRead, setStarred, undoLastAction, undoable } from './api'
+import {
+  deleteMessages,
+  markRead,
+  redoLastAction,
+  redoable,
+  setStarred,
+  undoLastAction,
+  undoable,
+} from './api'
 import { useMailStore } from '../store/useMailStore'
 
 /**
@@ -73,6 +81,7 @@ export async function applyDelete(ids: number[]): Promise<void> {
  * and the one that matters is the one the queue obeys.
  */
 let undoTimer: ReturnType<typeof setTimeout> | undefined
+let redoTimer: ReturnType<typeof setTimeout> | undefined
 
 export async function refreshUndoOffer(): Promise<void> {
   clearTimeout(undoTimer)
@@ -98,12 +107,40 @@ export async function refreshUndoOffer(): Promise<void> {
   )
 }
 
+/** The same arrangement for the other direction, on the same clock. */
+export async function refreshRedoOffer(): Promise<void> {
+  clearTimeout(redoTimer)
+
+  const offer = await redoable().catch(() => null)
+  const store = useMailStore.getState()
+
+  if (!offer || offer.kind === '') {
+    store.setRedoOffer(null)
+    return
+  }
+  store.setRedoOffer(offer)
+
+  const remaining = offer.expiresUnixMs - Date.now()
+  redoTimer = setTimeout(
+    () => {
+      const current = useMailStore.getState()
+      if (current.redoOffer?.expiresUnixMs === offer.expiresUnixMs) {
+        current.setRedoOffer(null)
+      }
+    },
+    Math.max(remaining, 0),
+  )
+}
+
 /**
  * Takes back the last destructive action.
  *
  * The offer is cleared either way. If the change had already gone out the
  * backend says so, and leaving the button up would invite a second press that
  * would fail the same way.
+ *
+ * A successful undo is what puts a redo on offer, so the notice does not
+ * simply vanish: it turns into the way back to where the reader just was.
  */
 export async function performUndo(): Promise<boolean> {
   const store = useMailStore.getState()
@@ -112,7 +149,27 @@ export async function performUndo(): Promise<boolean> {
   clearTimeout(undoTimer)
   store.setUndoOffer(null)
 
-  return undoLastAction().catch(() => false)
+  const undone = await undoLastAction().catch(() => false)
+  if (undone) await refreshRedoOffer().catch(() => {})
+  return undone
+}
+
+/**
+ * Does again what the last undo took back.
+ *
+ * The redone action is an ordinary one, so it becomes undoable in its turn —
+ * which is why the undo offer is refreshed rather than left as it was.
+ */
+export async function performRedo(): Promise<boolean> {
+  const store = useMailStore.getState()
+  if (store.redoOffer === null) return false
+
+  clearTimeout(redoTimer)
+  store.setRedoOffer(null)
+
+  const redone = await redoLastAction().catch(() => false)
+  if (redone) await refreshUndoOffer().catch(() => {})
+  return redone
 }
 
 /**

@@ -74,6 +74,18 @@ interface MailState {
   setUndoOffer: (offer: Undoable | null) => void
 
   /**
+   * What redo would do again, while it is still on offer.
+   *
+   * A second field rather than a direction on the first, because the two are
+   * never live together: taking an undo is what creates a redo, and doing
+   * anything at all ends it. Folding them into one would mean a component
+   * reading a flag to know which of two sentences to show, for no case where
+   * both exist.
+   */
+  redoOffer: Undoable | null
+  setRedoOffer: (offer: Undoable | null) => void
+
+  /**
    * Whether the reading pane's find bar is showing.
    *
    * Only the flag is here. Ctrl+F comes from the global key handler and Escape
@@ -141,6 +153,7 @@ const initialState = {
   pendingChanges: {} as Record<number, PendingChanges>,
   pendingDelete: null as number[] | null,
   undoOffer: null as Undoable | null,
+  redoOffer: null as Undoable | null,
   findOpen: false,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
   themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
@@ -154,6 +167,7 @@ export const useMailStore = create<MailState>((set, get) => ({
 
   askToConfirmDelete: (ids) => set({ pendingDelete: ids }),
   setUndoOffer: (offer) => set({ undoOffer: offer }),
+  setRedoOffer: (offer) => set({ redoOffer: offer }),
   cancelPendingDelete: () => set({ pendingDelete: null }),
 
   setThemeChoice: (next) => {

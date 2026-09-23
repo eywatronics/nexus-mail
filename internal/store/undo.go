@@ -71,20 +71,69 @@ func (s *Store) CancelOperations(ctx context.Context, ids []int64, now time.Time
 	return int(affected), err
 }
 
-// RestoreMessages puts snapshotted messages back where they were.
+// RestoreMessages puts snapshotted messages back where they were and reports
+// the ids they now have.
 //
 // Safe only for a message whose removal never reached the server, which is
 // what CancelOperations establishes: the UID in the snapshot still names the
 // same message in the same folder, because nothing moved it.
-func (s *Store) RestoreMessages(ctx context.Context, msgs []model.Message) error {
+//
+// The ids are returned because a restored message is usually not the row it
+// was. `id` is a plain INTEGER PRIMARY KEY, so SQLite hands out max(rowid)+1
+// and a message that was not the newest in the table comes back under a
+// different number. Carrying the old one forward would be worse than losing
+// it: the number does not become invalid, it becomes available, and the next
+// message to arrive can be given it.
+func (s *Store) RestoreMessages(ctx context.Context, msgs []model.Message) ([]int64, error) {
 	byFolder := map[int64][]model.Message{}
 	for _, m := range msgs {
 		byFolder[m.FolderID] = append(byFolder[m.FolderID], m)
 	}
+
+	var restored []int64
 	for folderID, batch := range byFolder {
 		if err := s.UpsertMessages(ctx, folderID, batch); err != nil {
-			return err
+			return nil, err
 		}
+		ids, err := s.messageIDsInFolder(ctx, folderID, batch)
+		if err != nil {
+			return nil, err
+		}
+		restored = append(restored, ids...)
 	}
-	return nil
+	return restored, nil
+}
+
+// messageIDsInFolder looks a batch of just-restored messages back up by the
+// pair that identifies them on the server rather than here.
+func (s *Store) messageIDsInFolder(ctx context.Context, folderID int64,
+	msgs []model.Message) ([]int64, error) {
+
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+
+	args := make([]any, 0, len(msgs)+1)
+	args = append(args, folderID)
+	for _, m := range msgs {
+		args = append(args, m.UID)
+	}
+
+	rows, err := s.read.QueryContext(ctx,
+		`SELECT id FROM messages
+		  WHERE folder_id = ? AND uid IN (`+placeholders(len(msgs))+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: reading back restored messages: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

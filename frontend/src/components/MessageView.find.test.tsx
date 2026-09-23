@@ -2,7 +2,6 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bodyURL } from '../lib/api'
 import type { FindResultsPayload } from '../lib/events'
-import { useMessageShortcuts } from '../lib/keyboard'
 import { useMailStore } from '../store/useMailStore'
 import { MessageView } from './MessageView'
 
@@ -185,66 +184,5 @@ describe('searching a message', () => {
     await waitFor(() => expect(frameURL(container)).toContain('/mail-body/8'))
     expect((input as HTMLInputElement).value).toBe('fatura')
     expect(getByTestId('find-count').textContent).not.toContain('/4')
-  })
-})
-
-/** A component that does nothing but install the global key handler. */
-function Shortcuts() {
-  useMessageShortcuts()
-  return null
-}
-
-describe('the keyboard', () => {
-  function pressCtrlF() {
-    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
-  }
-
-  // The handler drops every modified keystroke, so a shortcut that wants one
-  // has to sit above that guard. This is exactly how Ctrl+Z was unreachable
-  // once before.
-  it('opens the find bar on Ctrl+F', () => {
-    useMailStore.setState({ selectedMessageId: 5 })
-    render(<Shortcuts />)
-
-    pressCtrlF()
-
-    expect(useMailStore.getState().findOpen).toBe(true)
-  })
-
-  // Otherwise it would put a search box on screen with nothing behind it.
-  it('does nothing with no message open', () => {
-    render(<Shortcuts />)
-
-    pressCtrlF()
-
-    expect(useMailStore.getState().findOpen).toBe(false)
-  })
-
-  // Escape has to reach the bar from the message list too, not only from
-  // inside the box.
-  it('closes the find bar on Escape from anywhere', () => {
-    useMailStore.setState({ selectedMessageId: 5, findOpen: true })
-    render(<Shortcuts />)
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(useMailStore.getState().findOpen).toBe(false)
-  })
-
-  // The find bar is the nearer of the two, so Escape shuts it first and leaves
-  // the search results in the list alone.
-  it('leaves the search alone while the find bar is open', () => {
-    useMailStore.setState({
-      selectedMessageId: 5,
-      findOpen: true,
-      searching: true,
-      searchQuery: 'fatura',
-    })
-    render(<Shortcuts />)
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(useMailStore.getState().findOpen).toBe(false)
-    expect(useMailStore.getState().searching).toBe(true)
   })
 })

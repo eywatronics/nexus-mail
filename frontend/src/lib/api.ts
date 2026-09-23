@@ -244,6 +244,18 @@ export const undoable = () => MailService.Undoable() as Promise<Undoable>
 /** Reports whether anything was actually taken back. */
 export const undoLastAction = () => MailService.UndoLastAction() as Promise<boolean>
 
+/**
+ * What redo would do again, in the same shape and on the same clock.
+ *
+ * Redo has no deadline of its own — undo's is the moment the queue takes the
+ * change — but it expires on the same window anyway: both are a moment of
+ * hesitation, and a redo still live much later would be a keystroke that
+ * silently deletes mail the reader had decided to keep.
+ */
+export const redoable = () => MailService.Redoable() as Promise<Undoable>
+
+export const redoLastAction = () => MailService.RedoLastAction() as Promise<boolean>
+
 /** Destroys everything in the trash, on the server as well as here. */
 export const emptyTrash = (accountId: number) => MailService.EmptyTrash(accountId)
 

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import {
   applyRead,
   applyStar,
+  performRedo,
   performUndo,
   requestDelete,
   selectedIds,
@@ -42,14 +43,29 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function useMessageShortcuts() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // Ctrl+Z is the one shortcut here that wants a modifier, so it is
-      // handled above the guard that drops them. Uppercase Z too: the event
-      // reports the shifted character, and somebody holding shift by accident
-      // still means undo.
+      // Handled above the guard that drops modified keystrokes, like the redo
+      // above it. Uppercase Z is matched as well as lowercase because the
+      // event reports the shifted character — but only once the redo has had
+      // its look, since Ctrl+Shift+Z is the other direction rather than an
+      // undo with the shift key held by accident.
       //
       // Not skipped while typing. An undo aimed at a message and an undo aimed
       // at a search box are the same reflex, and the search box has nothing to
       // undo that losing would matter.
+      // Ctrl+Shift+Z and Ctrl+Y both mean redo. Two bindings because the
+      // platforms disagree and people carry the habit of whichever they
+      // learned first; supporting one of them means half the users conclude
+      // there is no redo. Checked before undo, or the shifted Z would be read
+      // as an undo with the shift key held by accident.
+      if (
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'z' || event.key === 'Z')) ||
+        ((event.ctrlKey || event.metaKey) && (event.key === 'y' || event.key === 'Y'))
+      ) {
+        event.preventDefault()
+        void performRedo()
+        return
+      }
+
       if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
         event.preventDefault()
         void performUndo()

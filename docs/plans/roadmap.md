@@ -17,7 +17,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Kısmen bitti |
-| **M5** | Okuma deneyimini tamamla | Sürüyor |
+| **M5** | Okuma deneyimini tamamla | Bitti |
 | **M6** | Gönderme | Yeni |
 | **M7** | Kişiler | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
@@ -75,7 +75,9 @@ başına teslim edilebilir.
 - ~~Geri al~~ — **bitti** (tek adım, yıkıcı işlemler için)
 - ~~Okundu işaretleme davranışı~~ — **bitti** (açınca / birkaç saniye sonra / hiç)
 - ~~Mesajda bul~~ — **bitti** (aşağıya bakın)
-- Yinele (redo)
+- ~~Yinele (redo)~~ — **bitti** (aşağıya bakın)
+
+**M5 bitti.**
 
 ### UTF8=ACCEPT neden burada değil
 
@@ -103,7 +105,36 @@ gereği ayrık — yarış yok.
 
 Pencere `undoWindowSeconds` ile ayarlanabilir; `0` kapatır.
 
-**Kalan:** yinele (redo) yok, ve geri alma tek adım.
+Geri alma tek adım, ve öyle kalıyor: eskiye uzanan bir yığın, sunucunun aradaki
+girdilere yetişmiş olmasıyla baş etmek zorunda kalırdı.
+
+### Yinele
+
+Yinele, iptal edilen işlemi tekrar oynatmıyor; eylemi baştan yapıyor. Yinelenen
+bir silme `DeleteMessages`'tan geçiyor, dolayısıyla kendi sırası geldiğinde
+geri alınabiliyor, kendi kuyruk kaydını alıyor, ve hesabın artık bir çöp
+kutusu olup olmadığını yeniden kendisi buluyor. İşlemi oynatmak üçünü de
+atlardı.
+
+**Bir tuzak vardı:** geri alma mesajı eski satırına koymuyor. `id` sıradan bir
+`INTEGER PRIMARY KEY`, yani SQLite `max(rowid)+1` veriyor ve tablodaki en yeni
+satır olmayan bir mesaj başka bir numarayla geri geliyor. Eski numarayı taşımak
+kaybetmekten kötü olurdu: numara geçersiz olmuyor, **boşa çıkıyor** ve sonraki
+gelen mesaja verilebiliyor. Bu yüzden `RestoreMessages` artık geri koyduğu
+satırların kimliklerini döndürüyor. (Tek mesajlı bir testte kimlik korunuyormuş
+gibi görünüyor — rowid yeniden kullanılıyor — o yüzden test ikinci bir mesajla
+kuruluyor.)
+
+Yinele, geri almayla **aynı pencerede** sönüyor. Bu bir mekanizma değil karar:
+geri almanın süresi kuyruğun değişikliği aldığı an, yinelemenin kendine ait bir
+süresi yok. Ama ikisi de bir tereddüt anı, ve on dakika sonra hâlâ canlı bir
+yinele, okuyucunun çoktan tutmaya karar verdiği postayı sessizce silen bir tuş
+olurdu.
+
+Şerit geri alma alınınca kaybolmuyor, tersine dönüyor: refleksle geri alıp
+sonra fikir değiştiren okuyucu, bu şeridin var olduğu okuyucunun bir adım
+sonrası. Ctrl+Shift+Z ve Ctrl+Y ikisi de yinele, çünkü platformlar anlaşamıyor
+ve insanlar ilk öğrendikleri alışkanlığı taşıyor.
 
 ### Silme artık yok etmiyor
 

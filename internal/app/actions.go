@@ -55,7 +55,7 @@ func (s *MailService) MoveMessages(messageIDs []int64, targetFolderID int64) err
 	if err != nil {
 		return err
 	}
-	s.rememberUndo(UndoMove, queued, snapshot)
+	s.rememberUndo(UndoMove, queued, targetFolderID, snapshot)
 
 	s.nudgeWatchers()
 	s.scheduleQueueNudge()
@@ -122,7 +122,9 @@ func (s *MailService) DeleteMessages(messageIDs []int64) error {
 	if len(toTrash) == 0 {
 		kind = UndoDelete
 	}
-	s.rememberUndo(kind, queued, snapshot)
+	// No target: a redone delete has to find the trash again for itself, since
+	// the selection may have spanned accounts with different ones — or none.
+	s.rememberUndo(kind, queued, 0, snapshot)
 
 	// The queue is woken now and again once the window closes: now so a change
 	// that needs no window is not held up, and again because the watch loop
