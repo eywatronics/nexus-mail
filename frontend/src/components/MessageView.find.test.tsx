@@ -12,7 +12,13 @@ const runtime = vi.hoisted(() => ({
   handlers: [] as Array<(event: { data: unknown }) => void>,
 }))
 
-vi.mock('@wailsio/runtime', () => ({
+// Only Events is replaced, and the rest of the module is kept. A factory that
+// returned Events alone would take the whole module with it: the generated
+// bindings import Create and Call from here too, so every test in this file
+// failed to load with "No 'Create' export is defined on the mock" — and only
+// when the bindings had been generated as JavaScript, which is what CI does.
+vi.mock('@wailsio/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@wailsio/runtime')>()),
   Events: {
     On: (_name: string, handler: (event: { data: unknown }) => void) => {
       runtime.handlers.push(handler)
