@@ -138,12 +138,22 @@ jobs:
       # A CLI newer or older than the library generates bindings the app does
       # not match, and the failure surfaces as confusing frontend type errors
       # rather than as a version problem.
+      #
+      # 2>&1 is the whole fix and it is not cosmetic: wails3 prints its
+      # version to stderr, so capturing stdout alone left cli empty and this
+      # gate failed on every run since it was written. The emptiness is now
+      # its own error, because "the versions differ" was a misleading way to
+      # say "nothing was read".
       - name: CLI must match the library version
         shell: bash
         run: |
           lib=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
-          cli=$(wails3 version | tr -d '\r' | grep -oE 'v3\.[0-9]+\.[0-9]+[^[:space:]]*' | head -1)
+          cli=$(wails3 version 2>&1 | tr -d '\r' | grep -oE 'v3\.[0-9]+\.[0-9]+[^[:space:]]*' | head -1)
           echo "library=$lib cli=$cli"
+          if [ -z "$cli" ]; then
+            echo "could not read a version out of wails3 version" >&2
+            exit 1
+          fi
           test "$lib" = "$cli"
 
       - name: Build
