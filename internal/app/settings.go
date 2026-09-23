@@ -29,6 +29,19 @@ type SettingsDTO struct {
 
 	NotificationPreview bool `json:"notificationPreview"`
 	UndoWindowSeconds   int  `json:"undoWindowSeconds"`
+
+	// StartAtLogin is the one setting here that is not in config.json.
+	//
+	// It lives in the operating system — a registry value, a launch agent, a
+	// desktop file — and the operating system is its source of truth. Writing a
+	// copy to config.json would make the file disagree with reality the moment
+	// somebody turned it off in Task Manager, and the file would win on the
+	// next start.
+	StartAtLogin bool `json:"startAtLogin"`
+	// StartAtLoginAvailable is false when the setting could not be read.
+	// "Off" and "we do not know" are different answers, and the window shows
+	// the switch disabled rather than showing the first when the second is true.
+	StartAtLoginAvailable bool `json:"startAtLoginAvailable"`
 }
 
 // Settings returns what is in force right now.
@@ -37,17 +50,24 @@ type SettingsDTO struct {
 // edits the file by hand while the app is running, and in that case what the
 // window should show is what the app is actually doing.
 func (s *MailService) Settings() SettingsDTO {
+	// Asked before the lock is taken. This one reaches the operating system,
+	// and holding a lock the whole service reads across a call that can block
+	// is how an unrelated screen freezes.
+	startAtLogin, startAtLoginAvailable := s.startAtLogin()
+
 	s.settingsMu.RLock()
 	defer s.settingsMu.RUnlock()
 
 	return SettingsDTO{
-		GoogleClientID:       s.cfg.GoogleClientID,
-		MicrosoftClientID:    s.cfg.MicrosoftClientID,
-		OAuthRedirectPort:    s.cfg.OAuthRedirectPort,
-		RetentionDays:        int(s.liveRetention.MaxAge / (24 * time.Hour)),
-		RetentionMaxMessages: s.liveRetention.MaxMessages,
-		NotificationPreview:  s.liveNotificationPreview,
-		UndoWindowSeconds:    int(s.liveUndoWindow / time.Second),
+		StartAtLogin:          startAtLogin,
+		StartAtLoginAvailable: startAtLoginAvailable,
+		GoogleClientID:        s.cfg.GoogleClientID,
+		MicrosoftClientID:     s.cfg.MicrosoftClientID,
+		OAuthRedirectPort:     s.cfg.OAuthRedirectPort,
+		RetentionDays:         int(s.liveRetention.MaxAge / (24 * time.Hour)),
+		RetentionMaxMessages:  s.liveRetention.MaxMessages,
+		NotificationPreview:   s.liveNotificationPreview,
+		UndoWindowSeconds:     int(s.liveUndoWindow / time.Second),
 	}
 }
 
@@ -83,7 +103,14 @@ func (s *MailService) UpdateSettings(next SettingsDTO) error {
 	// The engine keeps its own copy, because the purge runs inside a sync pass
 	// where reaching back into the service would be a layer inversion.
 	s.engine.SetRetention(retention)
-	return nil
+
+	// Last, and its failure does not undo the rest.
+	//
+	// This one lives outside config.json, so there is nothing for it to be
+	// inconsistent with. Running it first would mean a locked registry hive
+	// losing the user their retention change as well, which is a strange way
+	// to handle a failure in an unrelated setting.
+	return s.applyStartAtLogin(next.StartAtLogin)
 }
 
 // SettingsNeedRestart names the settings that will not take effect until the

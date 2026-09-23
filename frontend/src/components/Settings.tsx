@@ -132,6 +132,24 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
           {stored && (
             <>
+              <SettingsSection title="Background">
+                <Setting
+                  label="Start when I sign in"
+                  hint={
+                    stored.startAtLoginAvailable
+                      ? 'Nexus Mail opens in the tray and starts syncing, without a window. New mail arrives without you having launched anything.'
+                      : 'This build cannot register itself to start at login — on Linux that usually means it is running from an AppImage with no autostart directory.'
+                  }
+                >
+                  <Toggle
+                    name="start-at-login"
+                    value={stored.startAtLogin}
+                    disabled={!stored.startAtLoginAvailable}
+                    onChange={(next) => save({ ...stored, startAtLogin: next })}
+                  />
+                </Setting>
+              </SettingsSection>
+
               <SettingsSection title="Privacy">
                 <Setting
                   label="Show who and what in notifications"

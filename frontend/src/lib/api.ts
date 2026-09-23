@@ -268,6 +268,16 @@ export interface AppSettings {
   retentionMaxMessages: number
   notificationPreview: boolean
   undoWindowSeconds: number
+  /**
+   * Whether the app starts with the machine.
+   *
+   * Not in config.json like the rest: it lives in the operating system, and
+   * the operating system is its source of truth. Somebody can turn it off in
+   * Task Manager or System Settings and the app has to agree with them.
+   */
+  startAtLogin: boolean
+  /** False when the setting could not be read, which is not the same as off. */
+  startAtLoginAvailable: boolean
 }
 
 export const settings = () => MailService.Settings() as Promise<AppSettings>

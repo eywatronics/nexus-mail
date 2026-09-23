@@ -43,17 +43,58 @@ sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
 - Okunmamış sayısı tepsi ipucunda
 - Yeni mail geldiğinde işletim sistemi bildirimi, önizleme ayarlı
   (`notificationPreview`, varsayılan açık)
+- Görev çubuğu / dock rozetinde okunmamış sayısı
+- Açılışta başlat (ayarlar ekranından)
 
 **Kalan:**
 
-- Varsayılan posta istemcisi olarak ayarla (`mail/components/shell`)
-- Görev çubuğu ilerlemesi, Jump List, macOS dock rozeti
-- Açılışta başlat
+- Varsayılan posta istemcisi olarak ayarla (`mailto:`)
 
-**Doğrulanmayan:** toast'ın gerçekten teslim edildiği. Bildirim servisi çalışan
-bir Wails uygulaması gerektirdiği için tek başına denenemiyor; gerçek bir
-hesaba mail gelerek doğrulanmalı. Pencere kapatmanın süreci öldürmediği ise
-çalışan sürece `WM_CLOSE` gönderilerek doğrulandı.
+### Açılışta başlat, işletim sisteminin ayarıdır
+
+Diğerlerinden farklı olarak `config.json`'a **yazılmıyor**. Kayıt defteri
+değeri, launch agent ya da desktop dosyası — nerede duruyorsa gerçek orası. Bir
+kopyasını dosyaya yazmak, kullanıcı Görev Yöneticisi'nden kapattığı anda
+dosyanın gerçekle çelişmesi ve bir sonraki açılışta dosyanın kazanması
+demekti.
+
+İki sonucu var: ayar **okunarak** gösteriliyor, ve kaydederken yalnızca
+değiştiyse yazılıyor — aksi halde kullanıcının dışarıdan yaptığı değişiklik,
+ilgisiz bir ayarı kaydettiğinde sessizce geri alınırdı.
+
+Okunamadığında anahtar **kapalı değil, kullanılamaz** gösteriliyor. "Kapalı" ile
+"bilmiyoruz" farklı cevaplar, ve ilkini göstermek ayar ekranının yalan
+söylemesi olurdu.
+
+### Rozet ipucunun yerine değil, yanına
+
+`tray.go` şunu yazıyordu: *"Windows'ta tepsi ikonunun dock gibi bir rozeti
+yok — bu yüzden sayının dürüst yeri metin."* Tepsi için hâlâ doğru, ama **görev
+çubuğu düğmesinin** rozeti var; Wails bunu macOS dock'uyla aynı API üzerinden
+sunuyor. İkisi tek fonksiyondan besleniyor, yoksa aynı ekranda iki farklı sayı
+görünebilirdi.
+
+99'da duruyor: on altı piksellik bir dairede üç hane okunmuyor, ve dört yüz
+okunmamışta "kaç tane" sorusunun cevabı zaten "şu an okuyacağından fazla".
+Sıfırda rozet çizilmiyor — sıfır, fark edilecek bir şey olmadığını söyleyen bir
+işaret olurdu.
+
+### Görev çubuğu ilerlemesi ve Jump List neden yapılmadı
+
+Envanterde "görev çubuğu ilerlemesi, Jump List, dock rozeti" tek satırdı.
+Üçüncüsü yapıldı, ilk ikisi **bilerek yapılmadı**.
+
+İlerleme çubuğu uzun bir işlem ister. Buradaki tek aday ilk senkron, ve onun
+ilerlemesi zaten pencerede görünüyor; çubuk, pencere kapalıyken görülmeyen bir
+işlemin göstergesi olurdu. Jump List ise henüz olmayan eylemleri listeler —
+"yeni mesaj" M6'da gelecek. İkisi de Thunderbird'de olduğu için değil, burada
+karşılığı olduğu için yapılmalı; bugün yok.
+
+**Doğrulanmayan:** toast'ın gerçekten teslim edildiği, rozetin gerçekten
+çizildiği ve açılışta başlatmanın gerçekten çalıştığı. Üçü de çalışan bir Wails
+uygulaması gerektiriyor; mantık testli, işletim sistemi tarafı değil. Pencere
+kapatmanın süreci öldürmediği ise çalışan sürece `WM_CLOSE` gönderilerek
+doğrulandı.
 
 ---
 
