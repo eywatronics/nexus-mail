@@ -2,7 +2,7 @@
 
 # Nexus Mail
 
-**Yerel-önce, gizlilik odaklı, gecikmesiz masaüstü e-posta istemcisi.**
+**A local-first, privacy-focused desktop mail client.**
 
 Go · Wails v3 · React · SQLite
 
@@ -11,176 +11,203 @@ Go · Wails v3 · React · SQLite
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 
+English · [Türkçe](README.tr.md)
+
 </div>
 
 ---
 
-## Neden
+## Why this exists
 
-Modern e-posta istemcilerinin çoğu tarayıcıyı masaüstüne paketliyor. Sonuç
-tanıdık: yarım gigabaytlık bellek kullanımı, her tıklamada ağ beklemesi ve
-internet kesildiğinde işe yaramaz hale gelen bir uygulama.
+Most modern mail clients are a browser wrapped in a desktop window. The result
+is familiar: half a gigabyte of memory, a network round trip behind every
+click, and an application that becomes useless the moment the connection drops.
 
-Nexus Mail farklı bir kural üzerine kurulu: **veri önce diskte, sonra ağda.**
-Mailleriniz yerel bir SQLite veritabanında durur. Okumak, listelemek ve
-filtrelemek hiçbir zaman sunucuyu beklemez. İnternet yokken uygulama tam
-çalışır; yaptığınız değişiklikler kuyruğa alınır ve bağlantı geri geldiğinde
-uygulanır. Çevrimdışı çalışma sonradan eklenmiş bir özellik değil, mimarinin
-doğal sonucu.
+The other thing they have in common is quieter. Opening a message tells the
+sender you opened it, when, and roughly where from — not because anyone decided
+that, but because a remote image in an HTML mail is a network request, and
+nobody stopped it.
 
-## Ayırt eden dört şey
+Nexus Mail is built on one rule: **the data is on disk first and on the network
+second.** Your mail lives in a local SQLite database. Reading, listing,
+searching and filtering never wait for a server. With no connection the
+application still works completely; changes you make are queued and applied
+when the connection returns. Offline is not a feature bolted on afterwards — it
+is what falls out of the architecture.
 
-**Ağ beklemesi yok.** Arayüz her şeyi yerel veritabanından çizer. Klasör
-değiştirmek, listeyi kaydırmak ve daha önce açılmış bir maili okumak
-çevrimdışıyken de anında çalışır.
+## Goals
 
-**İzleyiciler varsayılan olarak engelli.** Uzak resimler ve CSS kaynakları,
-siz istemedikçe yüklenmez — ve yalnızca `<img src>` değil, `background`
-öznitelikleri, `srcset` ve CSS `url()` çağrıları da. İzin verdiğinizde
-istekler uygulama üzerinden geçer, böylece IP adresiniz ve `Referer` başlığınız
-gönderene ulaşmaz.
+**Be fast because of where the data is, not because of how it is drawn.** Every
+list, every search, every message body comes from a local database. There is no
+spinner between you and mail you already have.
 
-**Gerçek izolasyon.** Mail içeriği, `allow-same-origin` verilmemiş bir
-`<iframe sandbox>` içinde ve kısıtlayıcı bir içerik güvenlik politikası
-altında render edilir. Temizleme (sanitization) buna ek katmandır, alternatifi
-değil.
+**Make privacy the default rather than a setting.** A client that blocks
+trackers only after you find the option has already leaked the first message
+you opened.
 
-**Kimlik bilgileri işletim sisteminin anahtarlığında.** Parolalar ve OAuth
-token'ları veritabanına ya da yapılandırma dosyasına asla yazılmaz; Windows
-Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
+**Be honest about what it cannot do.** Where something is missing, or unsigned,
+or unverified, the documentation says so. A tool that reads your mail is a tool
+you have to be able to trust, and trust is not built by overstating.
 
-## İndir
+**Stay a program, not a platform.** No telemetry, no accounts with us, no
+sync-your-settings-to-a-cloud. The only servers it talks to are yours.
 
-Her `main` birleşmesi üç platform için kurulum dosyası üretir. En son yapı:
+## What makes it different
+
+**No network wait.** The interface draws everything from the local database.
+Switching folders, scrolling the list and reading a message you have opened
+before all work instantly, offline included.
+
+**Trackers blocked by default.** Remote images and CSS resources do not load
+until you ask — and not only `<img src>`, but `background` attributes, `srcset`
+and CSS `url()` calls too. When you do allow them, the requests go out through
+the application, so your IP address and `Referer` never reach the sender.
+
+**Real isolation.** Message content is rendered inside an `<iframe sandbox>`
+that is not granted `allow-same-origin`, under a restrictive Content Security
+Policy delivered as a real header. Sanitising is a second layer on top of that,
+not a substitute for it.
+
+**Credentials in the OS keyring.** Passwords and OAuth tokens are never written
+to the database or to a configuration file. They live in Windows Credential
+Manager, macOS Keychain or the Linux Secret Service.
+
+## Download
+
+Every merge to `main` produces installers for three platforms. Latest build:
 **[Releases](https://github.com/eywatronics/nexus-mail/releases)**.
 
-| Platform | Dosya |
+| Platform | File |
 |---|---|
-| Windows | `*-installer.exe` kurulum, `nexus-mail-windows-amd64.exe` taşınabilir |
+| Windows | `*-installer.exe` to install, `nexus-mail-windows-amd64.exe` to run as it is |
 | macOS | `nexus-mail-macos-arm64-unsigned.zip` (Apple silicon), `...-amd64-...` (Intel) |
-| Linux | `*.AppImage` her dağıtımda, `*.rpm` Fedora/RHEL, `*.deb` Debian/Ubuntu |
+| Linux | `*.AppImage` runs anywhere, `*.rpm` for Fedora and RHEL, `*.deb` for Debian and Ubuntu |
 
-**macOS ve Windows yapıları imzasız.** macOS, Sistem Ayarları → Gizlilik ve
-Güvenlik'ten izin verene kadar açmayı reddeder; Windows SmartScreen bilinmeyen
-yayıncı uyarısı gösterir. Kod imzalama M14'te; o zamana kadar imzasız bir
-yapının dürüst hâli bu.
+**The macOS and Windows builds are unsigned.** macOS will refuse to open the
+application until you allow it in System Settings → Privacy & Security, and
+Windows SmartScreen will warn about an unknown publisher. Code signing is
+planned; until then, this is what an unsigned build honestly looks like.
 
-Linux paketleri GTK 4 ve WebKitGTK 6.0 gerektiriyor; `.rpm` ve `.deb` bunu
-bağımlılık olarak bildiriyor, AppImage paketlemiyor.
+Linux packages need GTK 4 and WebKitGTK 6.0. The `.rpm` and `.deb` declare that
+as a dependency; the AppImage does not bundle it.
 
-## Durum
+## Status
 
-Geliştirme aşamasında, ama artık günlük kullanılabilir bir okuma istemcisi.
+Under development, but usable day to day as a reading client.
 
-### Bugün ne yapıyor
+### What it does today
 
-**Hesaplar.** Parola veya uygulama parolasıyla herhangi bir IMAP sunucusu;
-Google ve Microsoft için OAuth 2.0 (XOAUTH2); şirket içi Exchange için
-143/STARTTLS. Bağlantı güvenliği hesap başına seçilir ve şifresiz seçenek
-yoktur. Sunucunun sunduğu kimlik doğrulama mekanizması pazarlıkla seçilir
-(PLAIN → SASL LOGIN → LOGIN), ve hiçbiri tutmazsa hata mesajı sunucunun ne
-sunduğunu adlandırır.
+**Accounts.** Any IMAP server with a password or app password; OAuth 2.0
+(XOAUTH2) for Google and Microsoft; 143/STARTTLS for on-premises Exchange.
+Connection security is chosen per account and there is no unencrypted option.
+The authentication mechanism is negotiated against what the server offers
+(PLAIN → SASL LOGIN → LOGIN), and when none of them fit, the error names the
+mechanisms the server actually advertised.
 
-**Senkron.** İlk senkron, IMAP IDLE ile canlı güncelleme, CONDSTORE destekleyen
-sunucularda delta senkron, ve veritabanının sınırsız büyümesini durduran bir
-saklama penceresi (klasör başına 365 gün / 25.000 mesaj; yıldızlılar muaf,
-silme yalnızca yerelde).
+**Sync.** Initial sync, live updates over IMAP IDLE, delta sync on servers that
+support CONDSTORE, and a retention window that stops the database growing
+without bound — 365 days or 25,000 messages per folder, starred messages
+exempt, removal local only.
 
-**Okuma.** Üç sütunlu sanallaştırılmış liste, konuşma gruplama, FTS5 araması
-(Türkçe'nin noktasız ı'sı dahil), klavye navigasyonu, ekleri listeleme ve
-indirme, kaynağı görüntüleme, `.eml` kaydetme, yanlış beyan edilmiş kodlamayı
-onarma, ve üç gövde görüntüleme kipi (özgün HTML / sade HTML / düz metin).
+**Reading.** A three-column virtualised list, conversation grouping, full-text
+search (including the Turkish dotless ı, which no folding rule handles for
+you), keyboard navigation, attachment listing and download, view source, save
+as `.eml`, repair of a mis-declared character encoding, and three body display
+modes: original HTML, simple HTML, plain text.
 
-**Yazma.** Okundu, yıldız, taşı ve sil anında görünür, kuyruğa alınır ve
-bağlantı geldiğinde sunucuya gider. Silmek çöp kutusuna taşır; çöp kutusunun
-içinde sorar ve yok eder. Çöp kutusunu boşaltma, senkronlanmamış mesajları da
-kapsayan ayrı bir sunucu işlemidir. Son yıkıcı işlem beş saniye boyunca geri
-alınabilir (Ctrl+Z).
+**Writing state.** Read, star, move and delete appear immediately, are queued,
+and reach the server when the connection allows. Deleting moves to the trash;
+inside the trash it asks first and then destroys. Emptying the trash is a
+separate server-side operation that covers messages this client never
+downloaded. The last destructive action can be taken back for five seconds
+(Ctrl+Z).
 
-**Arka plan.** Pencere kapanınca uygulama tepside kalır ve senkron sürer; yeni
-mail geldiğinde işletim sistemi bildirimi gönderir, içeriği isteğe bağlı
-(kilit ekranı için).
+**Background.** Closing the window leaves the application in the tray with sync
+still running. New mail raises an operating system notification, with the
+content optional — because Windows shows notifications on the lock screen
+unless told otherwise.
 
-**Ayarlar.** Tema, gövde kipi, okundu işaretleme davranışı, konuşma gruplama,
-bildirim önizlemesi, geri alma penceresi, saklama limitleri ve OAuth client
-ID'leri uygulama içinden.
+**Settings.** Theme, body display mode, mark-as-read behaviour, conversation
+grouping, notification preview, undo window, retention limits and OAuth client
+IDs, all from inside the application.
 
-### Henüz yok
+### Not yet
 
-**Gönderme** (M6) — okuma istemcisidir, yanıt yazılamaz. **NTLM/GSSAPI** (M10)
-— temel kimlik doğrulamayı kapatmış kurumsal sunucular bağlanamaz.
-**Yazdırma**, sandbox'lı okuma paneli yüzünden ayrı bir pencere gerektiriyor ve
-M6'ya ertelendi. **Kod imzalama** (M14).
+**Sending** (M6) — this is a reading client; you cannot write a reply.
+**NTLM/GSSAPI** (M10) — corporate servers with basic authentication disabled
+cannot connect. **Printing** needs a separate window because of the sandboxed
+reading pane, and is deferred to M6. **Code signing** (M14).
 
-| Kilometre taşı | Kapsam | Durum |
+| Milestone | Scope | Status |
 |---|---|---|
-| **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
-| **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
-| **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
-| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
-| **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri | Büyük ölçüde bitti |
-| **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
-| **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
-| **M8** | Etiket, arşiv, birleşik gelen kutusu, gövde araması, kural motoru, junk | Planlandı |
-| **M9** | OpenPGP/S-MIME; CalDAV takvim ve toplantı davetleri | Planlandı |
-| **M10** | Microsoft Graph: M365 takvim ve kişileri | Planlandı |
-| **M11** | Thunderbird / Outlook / Apple Mail'den içe aktarma | Planlandı |
-| **M12** | Türkçe arayüz, erişilebilirlik, özelleştirilebilir kısayollar | Planlandı |
-| **M13** | Sohbet: Matrix ve XMPP, uçtan uca şifreli | Planlandı |
-| **M14** | Otomatik güncelleme, kod imzalama, kurulum paketleri | Planlandı |
+| **M1** | Account setup (3 paths), folder and header sync, isolated reading, search, keyboard navigation | Done |
+| **M2** | Live sync over IMAP IDLE, delta sync, retention window | Done |
+| **M3** | Offline-durable state writes (read, star, move, delete) | Done |
+| **M4** | System tray, notifications, running in the background | Partly done |
+| **M5** | Attachments, conversation grouping, source/save, encoding repair, body modes | Largely done |
+| **M6** | Sending: SMTP, multiple identities, signatures, drafts, outbox, composer | Planned |
+| **M7** | Contacts: local address book, vCard, CardDAV, LDAP | Planned |
+| **M8** | Tags, archive, unified inbox, body search, filter engine, junk | Planned |
+| **M9** | OpenPGP/S-MIME; CalDAV calendar and meeting invitations | Planned |
+| **M10** | Microsoft Graph: M365 calendar and contacts | Planned |
+| **M11** | Import from Thunderbird, Outlook and Apple Mail | Planned |
+| **M12** | Localisation, accessibility, customisable shortcuts | Planned |
+| **M13** | Chat: Matrix and XMPP, end-to-end encrypted | Planned |
+| **M14** | Automatic updates, code signing, installation packages | Planned |
 
-Yol haritasının nasıl çıkarıldığı, hangi özelliğin neden kapsamda olduğu ve
-neyin **bilerek dışarıda** bırakıldığı:
-[docs/plans/roadmap.md](docs/plans/roadmap.md) ve
+How the roadmap was arrived at, why each feature is in scope, and what was
+**deliberately left out**: [docs/plans/roadmap.md](docs/plans/roadmap.md) and
 [docs/design/feature-inventory.md](docs/design/feature-inventory.md).
 
-## Desteklenen hesaplar
+## Supported accounts
 
-| Sağlayıcı | Kimlik doğrulama | Not |
+| Provider | Authentication | Note |
 |---|---|---|
-| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Kendi Entra uygulama kaydınız gerekir |
-| Gmail / Google Workspace | OAuth 2.0 (XOAUTH2) | Kendi Google Cloud client ID'niz gerekir |
-| Şirket içi Exchange | Parola | IMAP üzerinden; 143/STARTTLS veya 993/TLS |
-| Genel IMAP | Parola veya uygulama parolası | Kayıt gerekmez |
+| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Needs your own Entra app registration |
+| Gmail / Google Workspace | OAuth 2.0 (XOAUTH2) | Needs your own Google Cloud client ID |
+| On-premises Exchange | Password | Over IMAP; 143/STARTTLS or 993/TLS |
+| Generic IMAP | Password or app password | No registration needed |
 
-Şirket içi Exchange IMAP üzerinden bağlanır: hesap eklerken *Other IMAP
-server*, sunucu adı BT'nin verdiği iç adres, şifreleme olarak **STARTTLS**
-(Exchange'in IMAP4 servisi varsayılan olarak 143'te yayınlanır ve bağlantı
-yükseltilmeden parola kabul etmez). Kayıt ya da client ID gerekmez. Kurum
-temel kimlik doğrulamayı kapatmışsa NTLM gerekir ve o henüz yok — bu durumda
-hata mesajı sunucunun hangi mekanizmaları sunduğunu adlandırır.
+On-premises Exchange connects over IMAP: choose *Other IMAP server*, use the
+internal host name your IT gave you, and pick **STARTTLS** — the Exchange IMAP4
+service is published on 143 by default and will not accept a password until the
+connection has been upgraded. No registration and no client ID. If the
+organisation has disabled basic authentication you will need NTLM, which does
+not exist yet; in that case the error names the mechanisms the server offers.
 
-Microsoft ve Google için kendi OAuth istemcinizi kaydetmeniz gerekir — bu, açık
-kaynak olmanın bir sonucu ve aslında bir avantaj: posta kutunuza erişim sizin
-kontrolünüzde kalır. Birkaç dakikalık kurulum
-[docs/oauth-setup.md](docs/oauth-setup.md) içinde anlatılıyor.
+Microsoft and Google need an OAuth client ID of your own. That is a consequence
+of being open source and it is genuinely an advantage: access to your mailbox
+stays under your control rather than routed through somebody else's app
+registration. The setup takes a few minutes and is described in
+[docs/oauth-setup.md](docs/oauth-setup.md).
 
-## Mimari
+## Architecture
 
 ```
 frontend/          React + TypeScript + Vite
       │
-internal/app       Wails servisleri: arayüze açılan tek yüzey
+internal/app       Wails services: the only surface the UI talks to
       │
-internal/sync      Senkron motoru: ilk senkron, delta, IDLE, işlem kuyruğu
+internal/sync      Sync engine: initial sync, delta, IDLE, operation queue
       │
-      ├── internal/imapx    go-imap sarmalayıcısı (MailBackend arayüzü)
-      ├── internal/store    SQLite: şema, migration, repository'ler
-      └── internal/auth     Kimlik sağlayıcıları ve sır saklama
+      ├── internal/imapx    go-imap wrapper (MailBackend interface)
+      ├── internal/store    SQLite: schema, migrations, repositories
+      └── internal/auth     Credential providers and secret storage
 ```
 
-Bağımlılık tek yönlüdür ve bu bir tercih değil, CI'da `depguard` ile zorlanan
-bir kuraldır. En önemli sınır şu: `sync` motoru go-imap'i doğrudan görmez,
-`MailBackend` arayüzünü görür. Bunun sayesinde tüm senkron mantığı, go-imap'in
-kendi bellek içi sunucusuna karşı gerçek ağ olmadan test edilebiliyor.
+Dependencies point one way, and that is not a preference — it is enforced in CI
+with `depguard`. The boundary that matters most: the `sync` engine never sees
+go-imap directly, only the `MailBackend` interface. That is what lets the whole
+of the sync logic be tested against go-imap's own in-memory server, with no
+network and no live account.
 
-Ayrıntılar: [docs/design/p0-architecture.md](docs/design/p0-architecture.md)
+Details: [docs/design/p0-architecture.md](docs/design/p0-architecture.md)
 
-## Kaynaktan derleme
+## Building from source
 
-**Gereksinimler:** Go 1.26+, Node 20+, Wails v3 CLI.
-Linux'ta ayrıca `libgtk-4-dev` ve `libwebkitgtk-6.0-dev` — Wails v3'ün
-`-tags gtk3` olmadan bağlandığı yığın bu.
+**Requirements:** Go 1.26+, Node 20+, the Wails v3 CLI.
+On Linux also `libgtk-4-dev` and `libwebkitgtk-6.0-dev` — the stack Wails v3
+links against without `-tags gtk3`.
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.9
@@ -191,64 +218,67 @@ cd frontend && npm ci && npm run build && cd ..
 wails3 build
 ```
 
-`main.go`, `frontend/dist` dizinini gömdüğü için **frontend bir kez
-derlenmeden hiçbir Go paketi derlenmez.** Yukarıdaki sıra bu yüzden önemli.
+`main.go` embeds `frontend/dist`, so **no Go package compiles until the
+frontend has been built once.** That is why the order above matters.
 
-### Testler
+### Tests
 
 ```bash
 go test ./...
 cd frontend && npm test
 ```
 
-Yarış dedektörü (`-race`) cgo gerektirir ve CI'da çalışır.
+The race detector (`-race`) needs cgo and runs in CI.
 
-### Kurulum paketi
+### Installation package
 
 ```bash
 wails3 task package
 ```
 
-Bulunduğunuz platform için paket üretir: Windows'ta NSIS kurulum dosyası,
-macOS'ta `.app`, Linux'ta AppImage / `.deb` / `.rpm`. Çıktılar `bin/` altında.
+Produces a package for the platform you are on: an NSIS installer on Windows,
+a `.app` on macOS, AppImage / `.deb` / `.rpm` on Linux. Output lands in `bin/`.
 
-Çapraz derleme yok: her platform kendi üzerinde derleniyor. Wails'in WebView
-bağlaması her sistemin kendi araç zincirini gerektiriyor ve Docker ile
-zorlamak, üretilen şeyin çalıştığını kimsenin denemediği bir yapı üretirdi.
-Release iş akışı da bu yüzden üç ayrı runner kullanıyor.
+There is no cross-compilation: each platform builds on itself. The Wails
+WebView binding needs each system's own toolchain, and forcing it through
+Docker would produce a build nobody has ever run. That is also why the release
+workflow uses three separate runners.
 
-### Sürüm çıkarma
+### Cutting a release
 
-`main`'e her birleşme, üç platform için yapı üretip **`main` etiketli** yuvarlak
-bir ön-sürümü değiştirir. Kalıcı sürüm için `build/config.yml` içindeki
-`info.version` değerini yükseltin ve aynı numarayla etiket atın:
+Every merge to `main` builds all three platforms and replaces a rolling
+prerelease tagged **`main`**. For a permanent release, raise `info.version` in
+`build/config.yml` and push a tag with the same number:
 
 ```bash
 git tag v0.6.0 && git push origin v0.6.0
 ```
 
-Sürüm numarası tek yerde durur: kurulum dosyasının kendi sürümü ile göründüğü
-release'in adı birbirinden ayrılamasın diye.
+The version lives in one place so that the installer's own version and the
+release it appears under cannot drift apart.
 
-## Verinin nerede durduğu
+## Where your data lives
 
-| Platform | Yol |
+| Platform | Path |
 |---|---|
 | Windows | `%APPDATA%\nexus-mail\` |
 | macOS | `~/Library/Application Support/nexus-mail/` |
-| Linux | `$XDG_DATA_HOME/nexus-mail/` (yoksa `~/.local/share/nexus-mail/`) |
+| Linux | `$XDG_DATA_HOME/nexus-mail/` (or `~/.local/share/nexus-mail/`) |
 
-Bu dizinde `mail.db`, ekler, `config.json` ve loglar bulunur. Sırlar buraya
-**yazılmaz** — yalnızca işletim sisteminin anahtarlığına gider.
+That directory holds `mail.db`, attachments, `config.json` and the logs.
+Secrets are **never** written there — they go only to the operating system's
+keyring.
 
-### Saklama penceresi
+Everything below can be changed from the settings screen inside the
+application; the JSON is what it writes.
 
-Canlı senkron aylarca çalıştıkça veritabanı sürekli büyür. Varsayılan olarak
-klasör başına **son 365 gün veya 25.000 mesaj** tutulur; hangisi önce dolarsa.
-Dışarıda kalanlar yerel veritabanından silinir — **sunucuya dokunulmaz**, mailler
-orada durmaya devam eder. **Yıldızlı mesajlar yaşına bakılmaksızın muaftır.**
+### Retention window
 
-`config.json` ile değiştirilebilir:
+Running live sync for months grows the database indefinitely. By default the
+last **365 days or 25,000 messages per folder** are kept, whichever comes
+first. Anything outside that is removed from the local database only — **the
+server is not touched** and the mail stays there. **Starred messages are exempt
+regardless of age.**
 
 ```json
 {
@@ -257,15 +287,16 @@ orada durmaya devam eder. **Yıldızlı mesajlar yaşına bakılmaksızın muaft
 }
 ```
 
-Her ikisine de `0` yazmak pencereyi kapatır: **her şey tutulur.** Diski nasıl
-kullanacağınız sizin kararınız; yerel-önce bir uygulamada doğru varsayılan bu.
+Setting either to `0` turns the window off: **everything is kept.** How you use
+your disk is your decision, and on a local-first application that is the right
+default.
 
-### Geri alma penceresi
+### Undo window
 
-Silme ve taşıma, sunucuya gitmeden önce **beş saniye** bekler. O aralıkta
-Ctrl+Z ya da penceredeki **Undo** işlemi tamamen geri alır — mesaj hiç
-taşınmamış olur. Süre dolduktan sonra teklif kaybolur; başarısız olacak bir
-düğme bırakmaktansa hiç bırakmamak daha iyi.
+A delete or a move waits **five seconds** before it goes to the server. During
+that time Ctrl+Z, or **Undo** in the window, takes it back completely — the
+message was never moved. After the window closes the offer disappears, because
+a button that would fail is worse than no button.
 
 ```json
 {
@@ -273,15 +304,13 @@ düğme bırakmaktansa hiç bırakmamak daha iyi.
 }
 ```
 
-`0` yazmak pencereyi kapatır: değişiklikler anında gider ve geri alma
-sunulmaz.
+`0` turns the window off: changes go out at once and no undo is offered.
 
-### Bildirim önizlemesi
+### Notification preview
 
-Yeni mail bildirimi varsayılan olarak gönderenin adını ve konuyu gösterir.
-Windows bildirimleri aksi söylenmedikçe **kilit ekranında** da gösterir;
-masanın başında duran birinin kimin ne hakkında yazdığını okuyabilmesini
-istemiyorsanız:
+A new-mail notification shows the sender and subject by default. Windows shows
+notifications on the **lock screen** unless told otherwise; if you would rather
+somebody standing at your desk could not read who wrote and about what:
 
 ```json
 {
@@ -289,32 +318,31 @@ istemiyorsanız:
 }
 ```
 
-O zaman bildirim yalnızca kaç mesaj geldiğini ve hangi hesaba geldiğini söyler.
-Windows'un kendi "kilitliyken bildirim içeriğini gizle" ayarı da aynı işi
-sistem genelinde yapar.
+The notification then says only how many messages arrived and to which account.
+Windows' own "hide notification content when locked" does the same job system
+wide.
 
-## Katkıda bulunma
+## Contributing
 
-CI yalnızca testleri değil, mimariyi de denetler:
+CI checks the architecture, not only the tests:
 
-- **Katman sınırları** `depguard` ile kontrol edilir. `store`, `imapx` ve
-  `auth` yukarı doğru import edemez; `sync` go-imap'i doğrudan import edemez.
-- **Windows ve Linux derlemeleri `CGO_ENABLED=0` ile** zorunlu kontroldür. Bu
-  aynı zamanda bağımlılıklarımızın saf Go kaldığının kanıtıdır: cgo gerektiren
-  bir kütüphane eklenirse bu iki iş kırılır.
-- **Arama indeksine doğrudan yazma yasağı** grep ile kontrol edilir; indeks
-  veritabanı tetikleyicileriyle korunur.
-- **`go test -race ./...`** ve ayrıca saf Go yolunda ikinci bir test koşumu.
+- **Layer boundaries** are enforced with `depguard`. `store`, `imapx` and
+  `auth` cannot import upwards; `sync` cannot import go-imap directly.
+- **Windows and Linux builds with `CGO_ENABLED=0`** are required checks. They
+  double as proof that the dependency tree stays pure Go: adding a library that
+  needs cgo breaks exactly these two jobs.
+- **Writing to the search index from application code is forbidden** and
+  checked with grep; the index is maintained by database triggers.
+- **`go test -race ./...`**, plus a second run over the pure-Go path.
 
-Proje kuralları [CLAUDE.md](CLAUDE.md) dosyasında; commit ve dal akışı da orada
-tanımlı.
+Commits explain *why*, not *what* — the reasoning and the rejected alternative
+are the only things that cannot be recovered by reading the code.
 
-### Depo yöneticileri için
+### For repository maintainers
 
-`build (windows-latest)` ve `build (ubuntu-latest)` işleri, dal koruma
-ayarlarında **zorunlu kontrol** olarak işaretlenmelidir. cgo muhafızı bunlara
-dayanıyor.
+The `build (windows-latest)` and `build (ubuntu-latest)` jobs should be marked
+as **required checks** in branch protection. The cgo guard depends on them.
 
-## Lisans
+## License
 
 [GNU General Public License v3.0](LICENSE)
