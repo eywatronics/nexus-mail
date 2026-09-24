@@ -47,6 +47,26 @@ linters:
             - pkg: "nexusmail/internal/store"
               desc: "imapx speaks IMAP only; persistence belongs to sync"
 
+        # mailmime assembles an outgoing message. Like mailhtml it is a pure
+        # transformation: what comes out is decided entirely by what goes in,
+        # which is what lets it be read and tested without a server. The
+        # net/http ban is the load-bearing half — building a message must never
+        # be a thing that fetches a remote image or a remote stylesheet on the
+        # sender's behalf.
+        mailmime-layer:
+          files: ["**/internal/mailmime/**"]
+          deny:
+            - pkg: "nexusmail/internal/store"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/sync"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/app"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/smtpx"
+              desc: "building a message and sending one are separate jobs"
+            - pkg: "net/http"
+              desc: "assembling a message must not fetch anything"
+
         # smtpx is imapx's twin: one narrow interface over one protocol
         # library, so the queue above it can be tested against a fake server.
         smtpx-layer:

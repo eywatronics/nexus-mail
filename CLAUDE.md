@@ -112,7 +112,9 @@ Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:
 - **Her yeni protokol kendi sahte sunucusuyla gelir.** IMAP için
   `imapmemserver` kullanılıyor; SMTP için `go-smtp`'nin sunucu tarafı, diğerleri
   için eşdeğeri. Gerçek hesaba karşı elle deneme test yerine geçmez.
-- `internal/mailhtml` saf bir dönüşümdür, `net/http` import edemez.
+- `internal/mailhtml` saf bir dönüşümdür, `net/http` import edemez. Aynısı
+  `internal/mailmime` için de geçerli: giden mesajı kurmak, gönderenin adına
+  uzak bir kaynağı çekmek olmamalı.
 - Uygulama kodu `fts_messages` tablosuna **doğrudan yazmaz**. İndeks
   tetikleyicilerle korunur; CI bunu kontrol eder.
 - Zamana bağlı mantık `testing/synctest` ile test edilir. `clockwork` gibi saat
