@@ -434,3 +434,43 @@ func (m Message) HasFlag(f string) bool {
 	}
 	return false
 }
+
+// Identity is who a message is from, which is not the same question as which
+// account it was sent through.
+//
+// One account can have several: a person answers support@ and their own
+// address from the same mailbox, and an alias is the ordinary way an employer
+// hands somebody a second address. Each wants its own display name, reply-to
+// and signature; none wants a second account with a second password.
+type Identity struct {
+	ID        int64
+	AccountID int64
+
+	Email       string
+	DisplayName string
+	// ReplyTo is where replies should go when that is not the From address.
+	// Empty means the From address, which is what it means in the header too.
+	ReplyTo string
+
+	// SignatureText is always used. SignatureHTML is used only for an HTML
+	// message, and a signature that exists only as HTML would read as a blank
+	// space in anything that will not render it.
+	SignatureText string
+	SignatureHTML string
+
+	// IsDefault marks the one the composer opens with. Exactly one per
+	// account, which the schema enforces with a partial unique index rather
+	// than leaving it to application code.
+	IsDefault bool
+	SortOrder int
+
+	CreatedAt time.Time
+}
+
+// From is the identity as it appears in a From header.
+func (i Identity) From() string {
+	if i.DisplayName == "" {
+		return i.Email
+	}
+	return i.DisplayName + " <" + i.Email + ">"
+}
