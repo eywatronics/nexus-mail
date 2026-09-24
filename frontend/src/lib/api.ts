@@ -284,3 +284,47 @@ export const settings = () => MailService.Settings() as Promise<AppSettings>
 
 /** Writes config.json and applies what can be applied without a restart. */
 export const updateSettings = (next: AppSettings) => MailService.UpdateSettings(next)
+
+/** One address an account can send as. */
+export interface Identity {
+  id: number
+  accountId: number
+  email: string
+  displayName: string
+  /** The two together, as the recipient will see them in the From header. */
+  from: string
+  isDefault: boolean
+}
+
+export const identities = (accountId: number) =>
+  MailService.Identities(accountId) as Promise<Identity[]>
+
+/** A message as the composer hands it over. Addresses are text, as typed. */
+export interface Draft {
+  identityId: number
+  accountId: number
+  to: string
+  cc: string
+  bcc: string
+  subject: string
+  text: string
+  html: string
+  inReplyTo: string
+  references: string[]
+}
+
+/** What the window is told about a message on its way. */
+export interface Queued {
+  operationId: number
+  /** How many addresses it will be delivered to, blind copies included. */
+  recipients: number
+}
+
+/**
+ * Queues a message. It is not sent by the time this resolves.
+ *
+ * The backend writes it to disk and returns; it goes out when the connection
+ * allows. Waiting for the server here would mean a composer that hangs for the
+ * length of a handshake and an upload, and a message lost if it were closed.
+ */
+export const sendMessage = (draft: Draft) => MailService.SendMessage(draft) as Promise<Queued>

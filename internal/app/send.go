@@ -212,3 +212,34 @@ func withHTMLSignature(body, htmlSignature, textSignature string) string {
 	return body + "\n<div class=\"nx-signature\"><pre>" +
 		htmlEscape(textSignature) + "</pre></div>\n"
 }
+
+// IdentityDTO is one address an account can send as.
+type IdentityDTO struct {
+	ID          int64  `json:"id"`
+	AccountID   int64  `json:"accountId"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	// From is the two together, as they appear in a From header, so the
+	// composer shows what the recipient will see rather than assembling it a
+	// second time and getting the quoting subtly different.
+	From      string `json:"from"`
+	IsDefault bool   `json:"isDefault"`
+}
+
+// Identities lists the addresses an account can send as, default first.
+func (s *MailService) Identities(accountID int64) ([]IdentityDTO, error) {
+	list, err := s.store.ListIdentities(context.Background(), accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]IdentityDTO, 0, len(list))
+	for _, i := range list {
+		out = append(out, IdentityDTO{
+			ID: i.ID, AccountID: i.AccountID,
+			Email: i.Email, DisplayName: i.DisplayName,
+			From: i.From(), IsDefault: i.IsDefault,
+		})
+	}
+	return out, nil
+}

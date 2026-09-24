@@ -296,7 +296,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
   olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
 - ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
 - ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
-- Compose penceresi: yanıtla / tümünü / listeye / ilet / yönlendir / yeni olarak düzenle
+- ~~Compose ekranı~~ — **bitti** (düz metin); yanıtla/ilet/yönlendir henüz yok
+- Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
 - Alıntılama ve yanıt konumu
 - Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
@@ -335,6 +336,27 @@ başarısız olursa kuyruk hâlâ "bekliyor" der ve bir sonraki geçiş aynı me
 tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmasını
 gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
 durdurmak — kalan mesajları aynı arızanın içine sürmemek.
+
+### Composer neden önce düz metin
+
+Zengin editör ve alıcı "pill" arayüzü listede duruyor ve yapılacak. Ama doğru
+mesaj gönderen bir `textarea`, bozuk mesaj gönderen yarım bir editörden iyi:
+arka uç zaten HTML kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan
+tek şey `html` alanının dolması.
+
+Cc ve Bcc istenene kadar gizli. Mesajların çoğunda ikisi de yok, ve her compose
+penceresinin tepesindeki dört boş satır, yazanla yazmaya geldiği şey arasında
+dört satır hiçlik demek.
+
+Adresler **yazıldığı gibi** arka uca gidiyor. Ayrıştırma tek yerde — pencerede
+ikinci bir "adres nedir" tanımı olsaydı, ikisi er geç ayrışırdı.
+
+Gönderme başarısız olursa pencere her şeyiyle açık kalıyor. Kapanan bir
+composer, yazanın geri getiremeyeceği bir mesaj demek.
+
+**Henüz ayrı bir işletim sistemi penceresi değil** — Wails v3 bunun için
+seçilmişti ve oraya varacak. Bileşen iki durumda da aynı; değişen yalnızca
+nereye monte edildiği.
 
 ### Gönderme kuyruğa alır, beklemez
 
