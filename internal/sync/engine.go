@@ -64,6 +64,14 @@ type Engine struct {
 	// which on a quiet mailbox can be hours.
 	nudgeMu sync.Mutex
 	nudges  map[int64]chan struct{}
+
+	// Sending is optional and set after construction, so an engine built for
+	// an IMAP-only account is a legitimate one rather than a half-built one.
+	// Guarded because the settings screen can add a submission server while a
+	// watch loop is running.
+	sendMu   sync.RWMutex
+	sendDial SenderDialer
+	outbox   Outbox
 }
 
 func New(s Store, d Dialer) *Engine {

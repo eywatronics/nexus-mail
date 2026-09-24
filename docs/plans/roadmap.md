@@ -301,7 +301,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
 - Ek ekleme, gömülü resim (`cid:`), **ek hatırlatıcı**
 - Taslak otomatik kaydetme
-- **Outbox**: kuyruğa al, bağlantı gelince gönder
+- ~~**Outbox**~~ — **bitti**: ham MIME diske, kuyrukta referans, SMTP ile
+  boşaltma, kalıcı/geçici hata ayrımı
 - Fcc — gönderilen kopyayı Gönderilenler'e yazma (UIDPLUS ile UID öğrenme)
 - Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
 - `mailto:` işleyicisi
@@ -314,10 +315,25 @@ bağlantısı istiyor, klasöre bağlı değil, ve `uid_validity` damgası taş�
 üstelik gönderdikten sonra kopyayı Gönderilenler'e yazmak için **yine IMAP**
 gerekiyor. Yani `send` işlemi tek başına iki protokole dokunuyor.
 
-Motora ikinci bir bağlayıcı (`SenderFor`) ve `send` için ayrı bir boşaltma yolu
-ekleniyor. Ham MIME `operations.payload` içine değil diske yazılıyor; kuyrukta
+Motora ikinci bir bağlayıcı (`SetSender`) ve `send` için ayrı bir boşaltma yolu
+eklendi. Ham MIME `operations.payload` içine değil diske yazılıyor; kuyrukta
 yalnızca referans duruyor, çünkü yirmi megabaytlık bir ek bir metin sütununa
 konacak şey değil.
+
+Kuyruk **bağlantı açılmadan** ikiye ayrılıyor: yalnızca gönderme bekleyen bir
+hesap posta kutusu açmıyor, yalnızca bayrak değişikliği bekleyen bir hesap da
+gönderim bağlantısı açmıyor.
+
+**Kalıcı/geçici ayrımı `smtpx`'te**, çünkü bilgi orada: SMTP yanıt kodu bunu
+söylüyor (5xx red, 4xx "şimdi değil") ve paketin kendi ön redleri `ErrRefused`
+sarıyor. Tanınmayan her şey geçici sayılıyor — sunucunun aslında reddetmediği
+bir mesajdan vazgeçmek, iki hatanın kötüsü: kullanıcı gönderildiğini sanır.
+
+**Kapatılamayan bir pencere var ve yazıldı:** mesaj gidip "done" yazımı
+başarısız olursa kuyruk hâlâ "bekliyor" der ve bir sonraki geçiş aynı mesajı
+tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmasını
+gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
+durdurmak — kalan mesajları aynı arızanın içine sürmemek.
 
 **Yazım denetimi:** hunspell cgo gerektirir. Composer `contenteditable` üzerine
 kurulur ve WebView'in yerleşik denetimi kullanılır; sözlük yönetimi işletim

@@ -2,8 +2,12 @@ package smtpx
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/emersion/go-smtp"
 
 	"nexusmail/internal/model"
 )
@@ -291,5 +295,47 @@ func TestANonASCIIAddressNeedsSMTPUTF8(t *testing.T) {
 func TestTheClientDoesNotAnnounceTheMachinesName(t *testing.T) {
 	if ehloName != "localhost" {
 		t.Errorf("EHLO says %q; it must not identify the machine", ehloName)
+	}
+}
+
+// The queue decides whether to retry from this, and both mistakes are bad in
+// their own way: a message the server will never accept retried forever never
+// leaves and never says so, and one given up on too early leaves the user
+// believing it was sent.
+func TestPermanenceIsClassifiedFromTheReplyCode(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nothing went wrong", nil, false},
+		{"our own refusal", fmt.Errorf("wrapped: %w", ErrRefused), true},
+		{"a 5xx refusal", &smtp.SMTPError{Code: 550, Message: "no such user"}, true},
+		{"a 4xx deferral", &smtp.SMTPError{Code: 451, Message: "try later"}, false},
+		{"a dropped connection", errors.New("connection reset by peer"), false},
+		// Anything unrecognised is transient, because giving up on a message
+		// the server never refused is the worse of the two mistakes.
+		{"something unfamiliar", errors.New("who knows"), false},
+	}
+
+	for _, c := range cases {
+		if got := IsPermanent(c.err); got != c.want {
+			t.Errorf("%s: IsPermanent() = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// The refusals made before the transaction have to be the permanent kind, or
+// the queue retries a message that can never be accepted as it is.
+func TestLocalRefusalsAreMarkedPermanent(t *testing.T) {
+	c := &Client{caps: Capabilities{MaxMessageSize: 10}}
+	env := Envelope{From: "u@example.com", To: []string{"r@example.com"}}
+
+	err := c.checkAcceptable(env, []byte(strings.Repeat("x", 100)))
+	if err == nil {
+		t.Fatal("an over-large message was accepted")
+	}
+	if !IsPermanent(err) {
+		t.Errorf("a size refusal was classified as worth retrying: %v", err)
 	}
 }

@@ -319,7 +319,17 @@ type AttachmentPart struct {
 // Every kind but one does. The exception exists because "empty this folder"
 // cannot be expressed as a list without becoming a different, weaker
 // instruction — see OpEmptyFolder.
-func (k OperationKind) ActsOnUIDs() bool { return k != OpEmptyFolder }
+func (k OperationKind) ActsOnUIDs() bool {
+	return k != OpEmptyFolder && k != OpSend
+}
+
+// NeedsFolder reports whether a kind is scoped to one mailbox.
+//
+// A send is not: the message has not reached a mailbox yet, and the folder it
+// will eventually be copied into is decided after the server accepts it. The
+// queue row therefore carries no folder and no UIDValidity stamp, and the
+// worker must not check one.
+func (k OperationKind) NeedsFolder() bool { return k != OpSend }
 
 // OperationKind is what an outgoing operation asks the server to do.
 //
@@ -341,6 +351,16 @@ const (
 	// emptied and would not be. The one honest way to say "everything" is to
 	// let the server decide what everything means.
 	OpEmptyFolder OperationKind = "empty_folder"
+
+	// OpSend submits a message the user wrote.
+	//
+	// The odd one out, and worth saying why. Every other operation is an IMAP
+	// command against a folder: it carries UIDs and a UIDValidity stamp, and
+	// the worker applies it through a MailBackend. A send carries neither. It
+	// needs an SMTP connection, it names no mailbox, and the message it
+	// carries is too large for the queue row — so the row holds a reference to
+	// a file in the outbox directory and the bytes live there until it goes.
+	OpSend OperationKind = "send"
 )
 
 // OperationState tracks one queued change through its life.
@@ -377,6 +397,17 @@ type Operation struct {
 	Flags []string
 	// TargetFolderID is where OpMove is going.
 	TargetFolderID int64
+
+	// Outbox names the file holding the raw message, for OpSend. A name
+	// rather than a path: where the outbox directory lives is the host's
+	// business, and a stored absolute path would break the first time the
+	// application moved or the profile was copied to another machine.
+	Outbox string
+	// Envelope is who an OpSend message is from and where it goes, which is
+	// not the same as its From and To headers — a blind copy is in the
+	// envelope and in no header at all.
+	EnvelopeFrom string
+	EnvelopeTo   []string
 
 	Attempts      int
 	LastError     string

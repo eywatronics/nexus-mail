@@ -282,19 +282,19 @@ func (c *Client) Send(ctx context.Context, env Envelope, raw []byte) error {
 // queue, seeing a server error, would spend them again on the retry.
 func (c *Client) checkAcceptable(env Envelope, raw []byte) error {
 	if len(raw) == 0 {
-		return errors.New("smtpx: refusing to send an empty message")
+		return fmt.Errorf("%w: it is empty", ErrRefused)
 	}
 	if c.caps.MaxMessageSize > 0 && int64(len(raw)) > c.caps.MaxMessageSize {
-		return fmt.Errorf("smtpx: this message is %d bytes and the server accepts at most %d",
-			len(raw), c.caps.MaxMessageSize)
+		return fmt.Errorf("%w: it is %d bytes and the server accepts at most %d",
+			ErrRefused, len(raw), c.caps.MaxMessageSize)
 	}
 	if !c.caps.EightBitMIME && !bytesAreASCII(raw) {
-		return errors.New("smtpx: this message has 8-bit content and the server does not " +
-			"offer 8BITMIME; it has to be transfer-encoded to 7 bits first")
+		return fmt.Errorf("%w: it has 8-bit content and the server does not offer "+
+			"8BITMIME, so it has to be transfer-encoded to 7 bits first", ErrRefused)
 	}
 	if !c.caps.SMTPUTF8 && !envelopeIsASCII(env) {
-		return errors.New("smtpx: an address on this message is not ASCII and the server " +
-			"does not offer SMTPUTF8")
+		return fmt.Errorf("%w: an address on it is not ASCII and the server does not "+
+			"offer SMTPUTF8", ErrRefused)
 	}
 	return nil
 }
@@ -320,4 +320,40 @@ func bytesAreASCII(b []byte) bool {
 		}
 	}
 	return true
+}
+
+// ErrRefused marks a refusal this client made on the server's behalf, before
+// the transaction started.
+//
+// Wrapped into the errors from checkAcceptable so the queue can tell them
+// apart from a connection that dropped. A message over the declared SIZE or
+// carrying 8-bit content a 7-bit server will not take is not going to succeed
+// on the fourth attempt either, and retrying it every few minutes is how a
+// message never leaves and never says so.
+var ErrRefused = errors.New("smtpx: this message cannot be submitted as it is")
+
+// IsPermanent reports whether retrying could ever help.
+//
+// The classification lives here because this is where the knowledge is: the
+// SMTP reply code says it (5xx is a refusal, 4xx is "not now"), and the
+// refusals this package makes itself say it by wrapping ErrRefused. A caller
+// that had to know either would be a caller that had to import go-smtp, which
+// is the dependency the MailSender interface exists to avoid.
+//
+// Anything unrecognised is transient. Giving up on a message the server never
+// actually refused is the worse of the two mistakes: the user believes it was
+// sent.
+func IsPermanent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrRefused) {
+		return true
+	}
+
+	var smtpErr *smtp.SMTPError
+	if errors.As(err, &smtpErr) {
+		return !smtpErr.Temporary()
+	}
+	return false
 }
