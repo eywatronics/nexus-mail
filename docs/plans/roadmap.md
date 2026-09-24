@@ -18,7 +18,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Bitti |
 | **M5** | Okuma deneyimini tamamla | Bitti |
-| **M6** | Gönderme | Yeni |
+| **M6** | Gönderme | Sürüyor |
 | **M7** | Kişiler | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
 | **M9** | Uçtan uca şifreleme + takvim | Yeni |
@@ -287,11 +287,14 @@ zinciri listede gruplanıyor.
 
 Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 
-- SMTP (`emersion/go-smtp`): STARTTLS, 8BITMIME, SIZE, SMTPUTF8, XOAUTH2
+- ~~SMTP (`internal/smtpx`)~~ — **bitti**: STARTTLS zorunlu, 8BITMIME, SIZE,
+  SMTPUTF8, PLAIN/LOGIN. XOAUTH2 hesap bağlamayla birlikte gelecek
+- ~~Giden mesajı kurma (`internal/mailmime`)~~ — **bitti**: yapı, başlıklar,
+  ekler, quoted-printable
+- ~~Hesap başına çoklu kimlik~~ — **bitti** (migration 004, `identities`)
 - **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
   olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
-- **Hesap başına çoklu kimlik** — şema değişikliği; bugün `accounts.display_name` tek kimlik varsayıyor
-- İmzalar (kimlik başına metin/HTML/dosya)
+- İmzalar (kimlik başına metin/HTML/dosya) — şema hazır, uygulaması yok
 - Compose penceresi: yanıtla / tümünü / listeye / ilet / yönlendir / yeni olarak düzenle
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
 - Alıntılama ve yanıt konumu
@@ -302,6 +305,19 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - Fcc — gönderilen kopyayı Gönderilenler'e yazma (UIDPLUS ile UID öğrenme)
 - Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
 - `mailto:` işleyicisi
+
+### Outbox neden motoru değiştiriyor
+
+Kuyruk işçisi (`applyOperation`) bugün yalnızca `imapx.MailBackend` alıyor,
+çünkü bugüne kadar her işlem IMAP işlemiydi. Gönderme öyle değil: SMTP
+bağlantısı istiyor, klasöre bağlı değil, ve `uid_validity` damgası taşımıyor —
+üstelik gönderdikten sonra kopyayı Gönderilenler'e yazmak için **yine IMAP**
+gerekiyor. Yani `send` işlemi tek başına iki protokole dokunuyor.
+
+Motora ikinci bir bağlayıcı (`SenderFor`) ve `send` için ayrı bir boşaltma yolu
+ekleniyor. Ham MIME `operations.payload` içine değil diske yazılıyor; kuyrukta
+yalnızca referans duruyor, çünkü yirmi megabaytlık bir ek bir metin sütununa
+konacak şey değil.
 
 **Yazım denetimi:** hunspell cgo gerektirir. Composer `contenteditable` üzerine
 kurulur ve WebView'in yerleşik denetimi kullanılır; sözlük yönetimi işletim
