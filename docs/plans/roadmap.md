@@ -294,7 +294,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Hesap başına çoklu kimlik~~ — **bitti** (migration 004, `identities`)
 - **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
   olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
-- İmzalar (kimlik başına metin/HTML/dosya) — şema hazır, uygulaması yok
+- ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
+- ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
 - Compose penceresi: yanıtla / tümünü / listeye / ilet / yönlendir / yeni olarak düzenle
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
 - Alıntılama ve yanıt konumu
@@ -334,6 +335,27 @@ başarısız olursa kuyruk hâlâ "bekliyor" der ve bir sonraki geçiş aynı me
 tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmasını
 gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
 durdurmak — kalan mesajları aynı arızanın içine sürmemek.
+
+### Gönderme kuyruğa alır, beklemez
+
+`SendMessage` mesajı kurar, diske yazar, kuyruğa koyar ve döner. Pencere bir
+dosya yazma süresinde cevap alıyor; mesaj bağlantı izin verince gidiyor.
+Senkron göndermek, bir TLS el sıkışması ve bir yükleme boyunca donan bir
+composer demek olurdu — ve kullanıcı kapatırsa kaybolan bir mesaj.
+
+**Dosya önce, kuyruk satırı sonra.** Ters sıra, var olmayan bir dosyayı
+adlandıran bir satır bırakırdı ve işçinin bunu çözmenin tek yolu mesajı kalıcı
+olarak başarısız saymak olurdu. Satırsız bir dosya ise sonradan süpürülüyor ve
+disk dışında bir maliyeti yok.
+
+**Ayrıştırılamayan adres reddediliyor, atlanmıyor.** Dört alıcının üçüne
+sessizce göndermek, dördüncü kişi neden dışarıda bırakıldığını sorana kadar
+kimsenin fark etmediği türden bir arıza.
+
+**OAuth ile gönderme henüz yok.** XOAUTH2 gerekiyor; go-sasl bunu sunmuyor ve
+`imapx` IMAP için elle uygulamış. O uygulamayı paylaşmak kendi başına bir iş ve
+buraya sıkıştırılmak yerine M6'nın geri kalanıyla ele alınacak. Hata mesajı
+bunu adlandırıyor.
 
 **Yazım denetimi:** hunspell cgo gerektirir. Composer `contenteditable` üzerine
 kurulur ve WebView'in yerleşik denetimi kullanılır; sözlük yönetimi işletim
