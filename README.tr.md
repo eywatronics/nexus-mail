@@ -83,7 +83,7 @@ Credential Manager, macOS Keychain veya Linux Secret Service üzerinde durur.
 | Platform | Dosya |
 |---|---|
 | Windows | `*-installer.exe` kurulum, `nexus-mail-windows-amd64.exe` taşınabilir |
-| macOS | `nexus-mail-macos-arm64-unsigned.zip` (Apple silicon), `...-amd64-...` (Intel) |
+| macOS | `nexus-mail-macos-universal-unsigned.zip` (Apple silicon ve Intel) |
 | Linux | `*.AppImage` her dağıtımda, `*.rpm` Fedora/RHEL, `*.deb` Debian/Ubuntu |
 
 **macOS ve Windows yapıları imzasız.** macOS, Sistem Ayarları → Gizlilik ve
@@ -149,7 +149,7 @@ gerektiriyor ve M6'ya ertelendi. **Kod imzalama** (M14).
 | **M1** | Hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | IMAP IDLE ile canlı senkron, delta senkron, saklama penceresi | Bitti |
 | **M3** | Çevrimdışı dayanıklı durum yazma (okundu, yıldız, taşı, sil) | Bitti |
-| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma | Kısmen bitti |
+| **M4** | Sistem tepsisi, bildirimler, arka planda çalışma, açılışta başlat, okunmamış rozeti | Bitti |
 | **M5** | Ekler, konuşma gruplama, kaynak/kaydet, kodlama onarımı, gövde kipleri, mesajda bul, geri al/yinele | Bitti |
 | **M6** | Gönderme: SMTP, çoklu kimlik, imza, taslak, outbox, composer | Planlandı |
 | **M7** | Kişiler: yerel defter, vCard, CardDAV, LDAP | Planlandı |
@@ -248,8 +248,10 @@ macOS'ta `.app`, Linux'ta AppImage / `.deb` / `.rpm`. Çıktılar `bin/` altınd
 Çapraz derleme yok: her platform kendi üzerinde derleniyor. Wails'in WebView
 bağlaması her sistemin kendi araç zincirini gerektiriyor ve Docker ile
 zorlamak, kimsenin çalıştırmadığı bir yapı üretirdi. Release iş akışı da bu
-yüzden **dört** ayrı runner kullanıyor — Intel ve Apple silicon Mac'ler bunların
-ikisi, çünkü Intel bir Mac arm64 yapıyı çalıştıramaz.
+yüzden **üç** ayrı runner kullanıyor. macOS bunlardan biri ve tek bir evrensel
+ikili üretiyor: eskiden Intel için ayrı bir runner'da ikinci bir iş vardı, ama
+GitHub o imajı emekliye ayırdı ve iş artık var olmayan bir makineyi beklerken
+tüm release'i arkasında tuttu.
 
 Yerel bir Linux paketi sürüm numarasını da istiyor; numara paketleme dosyasında
 değil `build/config.yml` içinde duruyor:

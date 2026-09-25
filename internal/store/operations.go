@@ -20,6 +20,13 @@ type opPayload struct {
 	UIDs           []uint32 `json:"uids"`
 	Flags          []string `json:"flags,omitempty"`
 	TargetFolderID int64    `json:"targetFolderId,omitempty"`
+
+	// The send fields. A name rather than a path, because where the outbox
+	// directory lives is the host's business and a stored absolute path would
+	// break the first time the profile moved to another machine.
+	Outbox       string   `json:"outbox,omitempty"`
+	EnvelopeFrom string   `json:"envelopeFrom,omitempty"`
+	EnvelopeTo   []string `json:"envelopeTo,omitempty"`
 }
 
 // EnqueueOperation records a change to be sent to the server.
@@ -37,17 +44,31 @@ func (s *Store) EnqueueOperation(ctx context.Context, op model.Operation) (int64
 	if op.Kind == "" {
 		return 0, errors.New("store: an operation must have a kind")
 	}
-	// Every kind we have acts on UIDs, and a UID only means something inside
-	// one folder. Caught here rather than as a foreign key violation three
-	// frames down, where the message says nothing about what was wrong.
-	if op.FolderID == 0 {
+	// A UID only means something inside one folder. Caught here rather than as
+	// a foreign key violation three frames down, where the message says
+	// nothing about what was wrong.
+	//
+	// A send names no folder, because the message has not reached one: where
+	// the copy is filed is decided after the server accepts it.
+	if op.Kind.NeedsFolder() && op.FolderID == 0 {
 		return 0, errors.New("store: an operation must name the folder its UIDs belong to")
+	}
+	if op.Kind == model.OpSend {
+		if op.Outbox == "" {
+			return 0, errors.New("store: a send must name the file holding the message")
+		}
+		if op.EnvelopeFrom == "" || len(op.EnvelopeTo) == 0 {
+			return 0, errors.New("store: a send needs a return path and at least one recipient")
+		}
 	}
 
 	payload, err := json.Marshal(opPayload{
 		UIDs:           op.UIDs,
 		Flags:          op.Flags,
 		TargetFolderID: op.TargetFolderID,
+		Outbox:         op.Outbox,
+		EnvelopeFrom:   op.EnvelopeFrom,
+		EnvelopeTo:     op.EnvelopeTo,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("store: encoding operation payload: %w", err)
@@ -63,7 +84,7 @@ func (s *Store) EnqueueOperation(ctx context.Context, op model.Operation) (int64
 		   (account_id, folder_id, uid_validity, kind, payload, state,
 		    attempts, last_error, created_at, next_attempt_at)
 		 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, 0)`,
-		op.AccountID, op.FolderID, op.UIDValidity, string(op.Kind),
+		op.AccountID, nullableFolder(op), op.UIDValidity, string(op.Kind),
 		string(payload), string(model.OpPending), created.UnixNano())
 	if err != nil {
 		return 0, fmt.Errorf("store: queueing %s operation: %w", op.Kind, err)
@@ -121,6 +142,9 @@ func (s *Store) ClaimOperations(ctx context.Context, accountID int64, limit int)
 		op.UIDs = p.UIDs
 		op.Flags = p.Flags
 		op.TargetFolderID = p.TargetFolderID
+		op.Outbox = p.Outbox
+		op.EnvelopeFrom = p.EnvelopeFrom
+		op.EnvelopeTo = p.EnvelopeTo
 		op.CreatedAt = time.Unix(0, createdAt)
 		op.NextAttemptAt = time.Unix(0, nextAt)
 
@@ -207,4 +231,15 @@ func (s *Store) ForgetFinishedOperations(ctx context.Context, accountID int64) e
 		return fmt.Errorf("store: clearing finished operations: %w", err)
 	}
 	return nil
+}
+
+// nullableFolder writes NULL for an operation that belongs to no mailbox.
+//
+// Zero would be a foreign key to a folder that does not exist, and the column
+// is nullable precisely so that a send can say "none" rather than "folder 0".
+func nullableFolder(op model.Operation) any {
+	if !op.Kind.NeedsFolder() || op.FolderID == 0 {
+		return nil
+	}
+	return op.FolderID
 }

@@ -251,9 +251,32 @@ func run(debug bool) error {
 	// macOS, and a number on the icon is seen without hovering over anything.
 	badge := dock.New()
 
+	// The outbox is on disk because until a message is sent, that file is the
+	// only copy in existence — and a twenty-megabyte attachment does not
+	// belong in a queue row.
+	outboxDir, err := paths.OutboxDir()
+	if err != nil {
+		return err
+	}
+	outbox := store.NewOutbox(outboxDir)
+	cfg.Outbox = outbox
+
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
+	engine.SetSender(app.SenderFor(db, secrets, cfg), outbox)
 	service := app.NewMailService(db, secrets, engine, cfg)
+
+	// Files nothing refers to accumulate two ways: a crash between writing one
+	// and recording its row, and a message the user cancelled. Swept at start
+	// rather than on a timer, because that is the one moment nothing is
+	// mid-write.
+	if names, err := db.PendingOutboxNames(); err != nil {
+		logger.Error("listing queued messages", "err", err)
+	} else if removed, err := outbox.Sweep(names); err != nil {
+		logger.Error("sweeping the outbox", "err", err)
+	} else if removed > 0 {
+		logger.Info("removed outbox files nothing referred to", "count", removed)
+	}
 	bodies = app.NewBodyHandler(service)
 
 	wailsApp = application.New(application.Options{

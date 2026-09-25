@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -203,6 +204,7 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 			m.From = firstAddress(env.From)
 			m.To = addressesFrom(env.To)
 			m.Cc = addressesFrom(env.Cc)
+			m.ReplyTo = replyToFrom(env)
 			// The Date: header is attacker-controlled and often malformed, so
 			// INTERNALDATE wins whenever it is unusable or implausible.
 			m.Date = reconcileDate(env.Date, buf.InternalDate)
@@ -419,6 +421,51 @@ func (cl *client) EmptyFolder(_ context.Context) error {
 		return fmt.Errorf("imapx: EXPUNGE failed: %w", err)
 	}
 	return nil
+}
+
+// Append writes a message into a mailbox, which is how a sent copy is filed.
+//
+// The one command in this client that puts a message on the server rather than
+// reading or moving one. Sending happens over SMTP and leaves no trace in the
+// mailbox: without this, a message the user sent would exist on the recipient's
+// server and nowhere they could see it.
+//
+// The flags are the caller's business and the sent copy wants \Seen: the writer
+// has read it, they wrote it, and a Sent folder in bold is a folder that looks
+// like it needs attention.
+//
+// The returned UID is zero unless the server offers UIDPLUS or IMAP4rev2. Zero
+// means "filed, but we do not know where" — the next sync of that folder finds
+// it, which is slower and always correct.
+func (cl *client) Append(_ context.Context, mailbox string, raw []byte,
+	flags []string, when time.Time) (uint32, error) {
+
+	if len(raw) == 0 {
+		return 0, fmt.Errorf("imapx: refusing to append an empty message")
+	}
+
+	opts := &imap.AppendOptions{Time: when}
+	for _, f := range flags {
+		opts.Flags = append(opts.Flags, imap.Flag(f))
+	}
+
+	cmd := cl.c.Append(mailbox, int64(len(raw)), opts)
+	if _, err := cmd.Write(raw); err != nil {
+		_ = cmd.Close()
+		return 0, fmt.Errorf("imapx: writing the message to %q: %w", mailbox, err)
+	}
+	if err := cmd.Close(); err != nil {
+		return 0, fmt.Errorf("imapx: finishing the append to %q: %w", mailbox, err)
+	}
+
+	data, err := cmd.Wait()
+	if err != nil {
+		return 0, fmt.Errorf("imapx: the server refused the message for %q: %w", mailbox, err)
+	}
+	if data == nil {
+		return 0, nil
+	}
+	return uint32(data.UID), nil
 }
 
 // uidSet converts our UID list into go-imap's set type, refusing an empty one.

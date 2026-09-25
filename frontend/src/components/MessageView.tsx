@@ -1,7 +1,22 @@
-import { Envelope, EnvelopeOpen, EyeSlash, Star, Trash } from '@phosphor-icons/react'
+import {
+  ArrowBendDoubleUpLeft,
+  ArrowBendUpLeft,
+  ArrowBendUpRight,
+  Envelope,
+  EnvelopeOpen,
+  EyeSlash,
+  Star,
+  Trash,
+} from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { bodyURL, sourceURL, type FindRequest } from '../lib/api'
+import {
+  bodyURL,
+  forwardDraft,
+  replyDraft,
+  sourceURL,
+  type FindRequest,
+} from '../lib/api'
 import { FIND_RESULTS_EVENT, type FindResultsPayload } from '../lib/events'
 import { useBodyView } from '../lib/bodyView'
 import { MARK_READ_DELAY_MS, useMarkReadWhen } from '../lib/markRead'
@@ -164,6 +179,41 @@ export function MessageView() {
     })
   }, [findOpen, settledId, appliedQuery])
 
+  // The draft is built in the backend, which is where the threading headers
+  // and the body are. A failure leaves the reader where they were rather than
+  // opening an empty composer that has lost the thread it was answering.
+  const openReply = useCallback(async (messageId: number, all: boolean) => {
+    const draft = await replyDraft(messageId, all).catch(() => null)
+    if (draft === null) return
+    useMailStore.getState().openComposer({
+      accountId: draft.accountId,
+      reply: {
+        subject: draft.subject,
+        to: draft.to,
+        cc: draft.cc,
+        inReplyTo: draft.inReplyTo,
+        references: draft.references,
+        quoted: draft.quoted,
+      },
+    })
+  }, [])
+
+  const openForward = useCallback(async (messageId: number) => {
+    const draft = await forwardDraft(messageId).catch(() => null)
+    if (draft === null) return
+    useMailStore.getState().openComposer({
+      accountId: draft.accountId,
+      reply: {
+        subject: draft.subject,
+        to: '',
+        cc: '',
+        inReplyTo: '',
+        references: [],
+        quoted: draft.quoted,
+      },
+    })
+  }, [])
+
   const stepFind = useCallback(
     (delta: number) => {
       setFindIndex((was) => {
@@ -268,6 +318,43 @@ export function MessageView() {
                   aria-hidden
                   className={message.isStarred ? 'text-[var(--color-accent)]' : undefined}
                 />
+              </button>
+
+              {/* Answering is the commonest thing done to a message that is
+                  not a flag, so the three sit where the hand already is. Ghost
+                  buttons: the message is the content here, and the one filled
+                  button on the screen belongs to writing a new one. */}
+              <button
+                type="button"
+                data-testid="reply"
+                aria-label="Reply"
+                title="Reply"
+                onClick={() => void openReply(message.id, false)}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+              >
+                <ArrowBendUpLeft size={ICON.size} weight={ICON.weight} aria-hidden />
+              </button>
+
+              <button
+                type="button"
+                data-testid="reply-all"
+                aria-label="Reply to everyone"
+                title="Reply to everyone"
+                onClick={() => void openReply(message.id, true)}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+              >
+                <ArrowBendDoubleUpLeft size={ICON.size} weight={ICON.weight} aria-hidden />
+              </button>
+
+              <button
+                type="button"
+                data-testid="forward"
+                aria-label="Forward"
+                title="Forward"
+                onClick={() => void openForward(message.id)}
+                className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+              >
+                <ArrowBendUpRight size={ICON.size} weight={ICON.weight} aria-hidden />
               </button>
 
               <MoveMenu messageId={message.id} folderId={message.folderId} />

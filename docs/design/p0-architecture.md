@@ -25,12 +25,39 @@ işlevseldir; yapılan değişiklikler kuyruğa alınır ve bağlantı geldiğin
 | Platform | Windows + macOS + Linux | Kullanıcı gereksinimi. cgo'yu fiilen yasaklar. |
 | Masaüstü çatı | Wails v3-beta, sürüm sabitlenmiş | v2 tek pencere mimarisi; e-posta istemcisi ayrı compose/okuma pencereleri ve sistem tepsisi gerektirir. v3'ün masaüstü API'si stabil ilan edildi. |
 | cgo | Bağımlılıklarımızda kullanılmayacak | Katkıcı kurulum eşiğini düşük tutmak; C derleme zinciri gerektirmemek. **Not:** macOS'ta Wails'in WebView bağlaması cgo gerektirir, bu kaçınılamaz. Kural bizim bağımlılık ağacımız için geçerlidir; Windows/Linux `CGO_ENABLED=0` ile derlenerek zorlanır. |
-| Veritabanı | modernc.org/sqlite (saf Go) + FTS5 | cgo yasağının doğal sonucu. FTS5 mevcut. |
+| Veritabanı | modernc.org/sqlite (saf Go) + FTS5 | cgo yasağının doğal sonucu. FTS5 mevcut. **Ölçüldü** — bkz. §2.1. |
 | IMAP | emersion/go-imap v2 (beta) | IMAP4rev2, CONDSTORE, API'si dondurulmuş. v1 eski nesil. **QRESYNC yok** — yetenek adı tanımlı ama uzantı uygulanmamış; delta senkron bu yüzden silinenleri sayım farkından buluyor (§6.3). |
 | Şifreleme | Yalnızca kimlik bilgileri (OS anahtarlığı) | SQLCipher cgo gerektirir → çapraz platform ve saf Go hedefiyle çelişir. Thunderbird/Apple Mail de bu modeli kullanır. |
 | Senkron mimarisi | Yerel-önce + giden işlem kuyruğu | Çevrimdışı çalışma ayrı bir özellik değil, mimarinin doğal sonucu olur. |
 | JMAP | Uygulanmayacak | 2026'da Gmail/Outlook/Yahoo desteklemiyor; yalnızca Fastmail/Cyrus/Stalwart. Gelecekte eklenebilmesi için `sync` motoru `imapx`'e doğrudan değil, `MailBackend` arayüzü üzerinden bağlanır. |
 | Yeni protokol arka uçları | Hepsi arayüz üzerinden | `MailBackend` deseni takvim ve kişiler için de tekrarlanır (`CalendarBackend`, `ContactsBackend`). Microsoft Graph/EWS bu arayüzlerin ikinci uygulaması olarak girer, motorlar somut protokolü hiç görmez. Thunderbird de aynı yere vardı: `IExchangeClient.idl` arayüzünü hem EWS hem Graph uyguluyor. |
+
+### 2.1 Saf Go SQLite yavaş mı? Ölçüldü
+
+Yaygın ve haklı bir itiraz: `modernc.org/sqlite`, C ile derlenen SQLite'ın
+Go'ya çevrilmiş hali ve birkaç kat daha yavaş olduğu biliniyor. Bu doğruysa,
+cgo yasağı kullanıcıya gerçek bir bedel ödetiyor demektir — çünkü bu istemcinin
+iddiası "ağ beklemeden arama".
+
+Tartışmak yerine ölçüldü. `internal/store/search_bench_test.go`, saklama
+penceresinin izin verdiği en büyük posta kutusunu (klasör başına 25.000 mesaj)
+Türkçe ve İngilizce karışık gerçekçi metinle doldurup sorguluyor:
+
+| Sorgu | Süre |
+|---|---|
+| Arama, isabet (~2.500 eşleşme, limit 50) | 22 ms |
+| Arama, ıska (bitmemiş kelime) | 5 ms |
+| Arama, **25.000 eşleşme** (patolojik) | 48 ms |
+| Liste, ilk sayfa | 0,8 ms |
+
+**Karar: yasak kalıyor.** Yavaşlık oranı gerçek olabilir ama sonucu değil —
+dört kat bile olsa tipik arama etkileşimli kalıyor. Buna karşılık cgo, her
+katkıcıya C araç zinciri kurdurur, çapraz derlemeyi zorlaştırır ve
+`CGO_ENABLED=0` kontrolünün saf Go kanıtı olma işlevini yok eder.
+
+**Bu kararı ne değiştirir:** bu sayılardan biri yüz milisaniyeyi geçerse.
+Ölçüm depoda duruyor, tekrar çalıştırmak bir komut. Sayılar bu makinede ve
+sıcak sayfa önbelleğiyle alındı; soğuk bir disk daha yavaş olur.
 
 ### Reddedilen alternatifler
 

@@ -13,7 +13,8 @@ import (
 
 const messageColumns = `id, account_id, folder_id, uid, message_id, thread_id,
 	in_reply_to, refs, subject, from_name, from_addr, to_addrs, cc_addrs,
-	date, internal_date, size, snippet, flags, has_attachments, body_fetched`
+	reply_to, date, internal_date, size, snippet, flags, has_attachments,
+	body_fetched`
 
 // UpsertMessages writes a batch of message headers in one transaction.
 //
@@ -38,9 +39,9 @@ func (s *Store) UpsertMessages(ctx context.Context, folderID int64, msgs []model
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO messages
 		   (account_id, folder_id, uid, message_id, thread_id, in_reply_to, refs,
-		    subject, from_name, from_addr, to_addrs, cc_addrs, date, internal_date,
-		    size, snippet, flags, has_attachments, body_fetched)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		    subject, from_name, from_addr, to_addrs, cc_addrs, reply_to, date,
+		    internal_date, size, snippet, flags, has_attachments, body_fetched)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(account_id, folder_id, uid) DO UPDATE SET
 		   subject         = excluded.subject,
 		   snippet         = excluded.snippet,
@@ -65,6 +66,10 @@ func (s *Store) UpsertMessages(ctx context.Context, folderID int64, msgs []model
 		if err != nil {
 			return fmt.Errorf("store: encode Cc for UID %d: %w", m.UID, err)
 		}
+		replyTo, err := json.Marshal(m.ReplyTo)
+		if err != nil {
+			return fmt.Errorf("store: encode Reply-To for UID %d: %w", m.UID, err)
+		}
 		flags, err := json.Marshal(m.Flags)
 		if err != nil {
 			return fmt.Errorf("store: encode flags for UID %d: %w", m.UID, err)
@@ -73,7 +78,7 @@ func (s *Store) UpsertMessages(ctx context.Context, folderID int64, msgs []model
 		if _, err := stmt.ExecContext(ctx,
 			m.AccountID, folderID, m.UID, m.MessageID, m.ThreadID, m.InReplyTo,
 			string(refs), m.Subject, m.From.Name, m.From.Addr, string(to), string(cc),
-			m.Date.Unix(), m.InternalDate.Unix(), m.Size, m.Snippet, string(flags),
+			string(replyTo), m.Date.Unix(), m.InternalDate.Unix(), m.Size, m.Snippet, string(flags),
 			boolToInt(m.HasAttachments), boolToInt(m.BodyFetched)); err != nil {
 			return fmt.Errorf("store: upsert message UID %d: %w", m.UID, err)
 		}
@@ -128,9 +133,9 @@ func prefixColumns(columns, alias string) string {
 // rawMessage holds the columns that arrive as text or integers and become
 // something else on the model.
 type rawMessage struct {
-	refs, to, cc, flags string
-	date, internal      int64
-	hasAtt, bodyFetched int
+	refs, to, cc, replyTo, flags string
+	date, internal               int64
+	hasAtt, bodyFetched          int
 }
 
 // scanTargets maps messageColumns onto a message, in the same order.
@@ -142,8 +147,8 @@ func scanTargets(m *model.Message, raw *rawMessage) []any {
 	return []any{
 		&m.ID, &m.AccountID, &m.FolderID, &m.UID, &m.MessageID,
 		&m.ThreadID, &m.InReplyTo, &raw.refs, &m.Subject, &m.From.Name, &m.From.Addr,
-		&raw.to, &raw.cc, &raw.date, &raw.internal, &m.Size, &m.Snippet, &raw.flags,
-		&raw.hasAtt, &raw.bodyFetched,
+		&raw.to, &raw.cc, &raw.replyTo, &raw.date, &raw.internal, &m.Size,
+		&m.Snippet, &raw.flags, &raw.hasAtt, &raw.bodyFetched,
 	}
 }
 
@@ -179,6 +184,9 @@ func scanRows(rows *sql.Rows, withThreadCount bool) ([]model.Message, error) {
 			return nil, err
 		}
 		if err := unmarshalIfSet(raw.cc, &m.Cc); err != nil {
+			return nil, err
+		}
+		if err := unmarshalIfSet(raw.replyTo, &m.ReplyTo); err != nil {
 			return nil, err
 		}
 		if err := unmarshalIfSet(raw.flags, &m.Flags); err != nil {

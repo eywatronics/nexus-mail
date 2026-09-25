@@ -30,13 +30,26 @@ func (e *Engine) DrainQueue(ctx context.Context, acct model.Account) error {
 		return nil
 	}
 
+	// Messages to submit go over SMTP and everything else over IMAP, so the
+	// two are separated before either connection is opened. An account whose
+	// queue holds only a message written offline must not open a mailbox to
+	// find that out — and one holding only flag changes must not open a
+	// submission connection.
+	sends, rest := partitionSends(ops)
+	if err := e.drainSends(ctx, acct, sends); err != nil {
+		return err
+	}
+	if len(rest) == 0 {
+		return nil
+	}
+
 	be, err := e.dial(ctx, acct.ID)
 	if err != nil {
 		return fmt.Errorf("sync: connecting account %d to drain the queue: %w", acct.ID, err)
 	}
 	defer func() { _ = be.Close() }()
 
-	return e.drainOn(ctx, be, acct, ops)
+	return e.drainOn(ctx, be, acct, rest)
 }
 
 // drainOn applies claimed operations over a connection the caller already has.

@@ -81,7 +81,7 @@ Every merge to `main` produces installers for three operating systems. Latest bu
 | Platform | File |
 |---|---|
 | Windows | `*-installer.exe` to install, `nexus-mail-windows-amd64.exe` to run as it is |
-| macOS | `nexus-mail-macos-arm64-unsigned.zip` (Apple silicon), `...-amd64-...` (Intel) |
+| macOS | `nexus-mail-macos-universal-unsigned.zip` (Apple silicon and Intel) |
 | Linux | `*.AppImage` runs anywhere, `*.rpm` for Fedora and RHEL, `*.deb` for Debian and Ubuntu |
 
 **The macOS and Windows builds are unsigned.** macOS will refuse to open the
@@ -147,7 +147,7 @@ reading pane, and is deferred to M6. **Code signing** (M14).
 | **M1** | Account setup (3 paths), folder and header sync, isolated reading, search, keyboard navigation | Done |
 | **M2** | Live sync over IMAP IDLE, delta sync, retention window | Done |
 | **M3** | Offline-durable state writes (read, star, move, delete) | Done |
-| **M4** | System tray, notifications, running in the background | Partly done |
+| **M4** | System tray, notifications, running in the background, start at login, unread badge | Done |
 | **M5** | Attachments, conversation grouping, source/save, encoding repair, body modes, find in message, undo/redo | Done |
 | **M6** | Sending: SMTP, multiple identities, signatures, drafts, outbox, composer | Planned |
 | **M7** | Contacts: local address book, vCard, CardDAV, LDAP | Planned |
@@ -246,8 +246,10 @@ a `.app` on macOS, AppImage / `.deb` / `.rpm` on Linux. Output lands in `bin/`.
 There is no cross-compilation: each platform builds on itself. The Wails
 WebView binding needs each system's own toolchain, and forcing it through
 Docker would produce a build nobody has ever run. That is also why the release
-workflow uses four separate runners — Intel and Apple silicon Macs are two of
-them, because an Intel Mac cannot run an arm64 build.
+workflow uses three separate runners. macOS is one of them and produces a
+single universal binary: there used to be a second job on a dedicated Intel
+runner, but GitHub retired that image and the job sat queued for a machine that
+no longer exists, holding the whole release behind it.
 
 A local Linux package also needs the version, which lives in `build/config.yml`
 rather than in the packaging config:

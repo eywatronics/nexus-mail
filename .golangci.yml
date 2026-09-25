@@ -47,6 +47,40 @@ linters:
             - pkg: "nexusmail/internal/store"
               desc: "imapx speaks IMAP only; persistence belongs to sync"
 
+        # mailmime assembles an outgoing message. Like mailhtml it is a pure
+        # transformation: what comes out is decided entirely by what goes in,
+        # which is what lets it be read and tested without a server. The
+        # net/http ban is the load-bearing half — building a message must never
+        # be a thing that fetches a remote image or a remote stylesheet on the
+        # sender's behalf.
+        mailmime-layer:
+          files: ["**/internal/mailmime/**"]
+          deny:
+            - pkg: "nexusmail/internal/store"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/sync"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/app"
+              desc: "mailmime is a pure transformation over a draft"
+            - pkg: "nexusmail/internal/smtpx"
+              desc: "building a message and sending one are separate jobs"
+            - pkg: "net/http"
+              desc: "assembling a message must not fetch anything"
+
+        # smtpx is imapx's twin: one narrow interface over one protocol
+        # library, so the queue above it can be tested against a fake server.
+        smtpx-layer:
+          files: ["**/internal/smtpx/**"]
+          deny:
+            - pkg: "nexusmail/internal/sync"
+              desc: "smtpx must not depend on sync"
+            - pkg: "nexusmail/internal/app"
+              desc: "smtpx must not depend on app"
+            - pkg: "nexusmail/internal/store"
+              desc: "smtpx speaks SMTP only; persistence belongs to sync"
+            - pkg: "nexusmail/internal/imapx"
+              desc: "the two protocols are siblings; neither is built on the other"
+
         sync-layer:
           files: ["**/internal/sync/**"]
           deny:
@@ -54,6 +88,8 @@ linters:
               desc: "sync must not depend on app"
             - pkg: "github.com/emersion/go-imap/v2"
               desc: "sync must go through the MailBackend interface so it stays testable against a fake server"
+            - pkg: "github.com/emersion/go-smtp"
+              desc: "sending goes through the MailSender interface, for the same reason receiving goes through MailBackend"
 
         auth-layer:
           files: ["**/internal/auth/**"]

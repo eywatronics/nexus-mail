@@ -9,6 +9,7 @@ package imapx
 
 import (
 	"context"
+	"time"
 
 	"nexusmail/internal/model"
 )
@@ -129,6 +130,16 @@ type MailBackend interface {
 	// FetchRaw returns the message as it arrived, headers and all. It is what
 	// "view source", "save as .eml" and the charset repair all work from.
 	FetchRaw(ctx context.Context, uid uint32) ([]byte, error)
+
+	// Append writes a message into a mailbox, which is how a sent copy is
+	// filed. Sending happens over SMTP and leaves no trace in the mailbox, so
+	// without this a message the user sent would exist on the recipient's
+	// server and nowhere they could see it.
+	//
+	// The returned UID is zero when the server does not offer UIDPLUS: filed,
+	// but we do not know where. The next sync of that folder finds it.
+	Append(ctx context.Context, mailbox string, raw []byte, flags []string,
+		when time.Time) (uint32, error)
 
 	Close() error
 }

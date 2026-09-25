@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nexusmail/internal/model"
+	"nexusmail/internal/store"
 )
 
 const configFileName = "config.json"
@@ -98,6 +99,14 @@ type Config struct {
 	// the service becomes part of the window's API, and the window has no
 	// business reaching into a cache.
 	InvalidateBody func(messageID int64)
+
+	// Outbox holds the bytes of messages waiting to be sent.
+	//
+	// Nil in a build with nowhere to put them — a test that never sends, or a
+	// host with no writable data directory. SendMessage reports that rather
+	// than dereferencing it, because "this build cannot queue mail" is a
+	// sentence and a nil panic is not.
+	Outbox *store.Outbox
 
 	// Autostart reads and changes whether the app starts with the machine.
 	// Zero when the host cannot offer it, which the settings screen shows as an

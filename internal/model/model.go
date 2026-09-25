@@ -4,6 +4,7 @@
 package model
 
 import (
+	"net/mail"
 	"sort"
 	"strings"
 	"time"
@@ -260,6 +261,22 @@ type Address struct {
 	Addr string `json:"addr"`
 }
 
+// String is the address as it appears in a header.
+//
+// net/mail does the quoting, because the rules are not obvious: a display name
+// containing a comma, a quote or a full stop has to be quoted or the address
+// list parses as two addresses — and "Kabatepe, İsmet <u@example.com>" is
+// exactly the shape a name takes in a corporate directory.
+func (a Address) String() string {
+	if a.Addr == "" {
+		return a.Name
+	}
+	if a.Name == "" {
+		return a.Addr
+	}
+	return (&mail.Address{Name: a.Name, Address: a.Addr}).String()
+}
+
 type Message struct {
 	ID        int64
 	AccountID int64
@@ -277,6 +294,13 @@ type Message struct {
 	From        Address
 	To          []Address
 	Cc          []Address
+	// ReplyTo is the Reply-To header, empty when the author did not set one.
+	//
+	// Kept beside From rather than folded into it on ingest, because the two
+	// answer different questions: From is who wrote this, ReplyTo is where
+	// they want the answer. A reader looking at a mailing list message needs
+	// to be able to see both.
+	ReplyTo []Address
 	// Date comes from the Date: header, reconciled against InternalDate on
 	// ingest: an unparseable or implausible header is replaced by the server's
 	// delivery time. Sorting and display use InternalDate regardless.
@@ -319,7 +343,17 @@ type AttachmentPart struct {
 // Every kind but one does. The exception exists because "empty this folder"
 // cannot be expressed as a list without becoming a different, weaker
 // instruction — see OpEmptyFolder.
-func (k OperationKind) ActsOnUIDs() bool { return k != OpEmptyFolder }
+func (k OperationKind) ActsOnUIDs() bool {
+	return k != OpEmptyFolder && k != OpSend
+}
+
+// NeedsFolder reports whether a kind is scoped to one mailbox.
+//
+// A send is not: the message has not reached a mailbox yet, and the folder it
+// will eventually be copied into is decided after the server accepts it. The
+// queue row therefore carries no folder and no UIDValidity stamp, and the
+// worker must not check one.
+func (k OperationKind) NeedsFolder() bool { return k != OpSend }
 
 // OperationKind is what an outgoing operation asks the server to do.
 //
@@ -341,6 +375,16 @@ const (
 	// emptied and would not be. The one honest way to say "everything" is to
 	// let the server decide what everything means.
 	OpEmptyFolder OperationKind = "empty_folder"
+
+	// OpSend submits a message the user wrote.
+	//
+	// The odd one out, and worth saying why. Every other operation is an IMAP
+	// command against a folder: it carries UIDs and a UIDValidity stamp, and
+	// the worker applies it through a MailBackend. A send carries neither. It
+	// needs an SMTP connection, it names no mailbox, and the message it
+	// carries is too large for the queue row — so the row holds a reference to
+	// a file in the outbox directory and the bytes live there until it goes.
+	OpSend OperationKind = "send"
 )
 
 // OperationState tracks one queued change through its life.
@@ -377,6 +421,17 @@ type Operation struct {
 	Flags []string
 	// TargetFolderID is where OpMove is going.
 	TargetFolderID int64
+
+	// Outbox names the file holding the raw message, for OpSend. A name
+	// rather than a path: where the outbox directory lives is the host's
+	// business, and a stored absolute path would break the first time the
+	// application moved or the profile was copied to another machine.
+	Outbox string
+	// Envelope is who an OpSend message is from and where it goes, which is
+	// not the same as its From and To headers — a blind copy is in the
+	// envelope and in no header at all.
+	EnvelopeFrom string
+	EnvelopeTo   []string
 
 	Attempts      int
 	LastError     string
@@ -433,4 +488,44 @@ func (m Message) HasFlag(f string) bool {
 		}
 	}
 	return false
+}
+
+// Identity is who a message is from, which is not the same question as which
+// account it was sent through.
+//
+// One account can have several: a person answers support@ and their own
+// address from the same mailbox, and an alias is the ordinary way an employer
+// hands somebody a second address. Each wants its own display name, reply-to
+// and signature; none wants a second account with a second password.
+type Identity struct {
+	ID        int64
+	AccountID int64
+
+	Email       string
+	DisplayName string
+	// ReplyTo is where replies should go when that is not the From address.
+	// Empty means the From address, which is what it means in the header too.
+	ReplyTo string
+
+	// SignatureText is always used. SignatureHTML is used only for an HTML
+	// message, and a signature that exists only as HTML would read as a blank
+	// space in anything that will not render it.
+	SignatureText string
+	SignatureHTML string
+
+	// IsDefault marks the one the composer opens with. Exactly one per
+	// account, which the schema enforces with a partial unique index rather
+	// than leaving it to application code.
+	IsDefault bool
+	SortOrder int
+
+	CreatedAt time.Time
+}
+
+// From is the identity as it appears in a From header.
+func (i Identity) From() string {
+	if i.DisplayName == "" {
+		return i.Email
+	}
+	return i.DisplayName + " <" + i.Email + ">"
 }

@@ -106,8 +106,16 @@ func (e *Engine) watchOnce(ctx context.Context, acct model.Account, onPass func(
 		if err != nil {
 			return synced, err
 		}
-		if len(claimed) > 0 {
-			if err := e.drainOn(ctx, be, acct, claimed); err != nil {
+		// Split the same way DrainQueue does. This loop already holds an IMAP
+		// connection, but a send needs an SMTP one — handing a send to the
+		// IMAP applier would reach the default branch and mark it failed for a
+		// kind the worker simply does not handle here.
+		sends, rest := partitionSends(claimed)
+		if err := e.drainSends(ctx, acct, sends); err != nil {
+			return synced, err
+		}
+		if len(rest) > 0 {
+			if err := e.drainOn(ctx, be, acct, rest); err != nil {
 				return synced, err
 			}
 		}

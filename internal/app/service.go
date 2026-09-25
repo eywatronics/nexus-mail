@@ -15,6 +15,7 @@ import (
 	"nexusmail/internal/auth"
 	"nexusmail/internal/imapx"
 	"nexusmail/internal/model"
+	"nexusmail/internal/smtpx"
 	"nexusmail/internal/store"
 	imapsync "nexusmail/internal/sync"
 )
@@ -51,6 +52,11 @@ type MailService struct {
 	// Under watchMu for the same reason undo is.
 	redo *redoable
 
+	// outbox holds the bytes of messages waiting to be sent. Nil in a build
+	// with nowhere to put them, which SendMessage reports rather than
+	// dereferencing.
+	outbox *store.Outbox
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.
@@ -70,6 +76,7 @@ func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engi
 	}
 	return &MailService{
 		store: s, secrets: secrets, engine: eng, cfg: cfg,
+		outbox:                  cfg.Outbox,
 		liveRetention:           cfg.Retention,
 		liveNotificationPreview: cfg.NotificationPreview,
 		liveUndoWindow:          cfg.UndoWindow,
@@ -456,5 +463,53 @@ func DialerFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Di
 			Security: acct.IMAPSecurity,
 			Username: acct.Email,
 		}, provider)
+	}
+}
+
+// SenderFor builds the submission dialer the sync engine uses.
+//
+// A separate factory beside DialerFor, not a branch inside it. Sending and
+// receiving are separate services with separate hosts and separate ports, and
+// on a corporate server separate permissions — an account allowed to read mail
+// is not automatically allowed to send it.
+func SenderFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.SenderDialer {
+	return func(ctx context.Context, accountID int64) (smtpx.MailSender, error) {
+		acct, err := s.GetAccount(ctx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		if acct.SMTPHost == "" || acct.SMTPPort == 0 {
+			return nil, fmt.Errorf(
+				"app: account %d has no submission server configured", accountID)
+		}
+
+		// Only a password for now. OAuth submission needs XOAUTH2, which
+		// go-sasl does not ship and imapx implements by hand for IMAP; sharing
+		// that implementation is its own piece of work and belongs with the
+		// rest of M6 rather than smuggled in here.
+		if acct.AuthKind != model.AuthPassword {
+			return nil, fmt.Errorf(
+				"app: sending from an OAuth account is not supported yet (account %d)", accountID)
+		}
+		secret, err := secrets.Get(acct.SecretRef)
+		if err != nil {
+			return nil, fmt.Errorf("app: reading the password to send with: %w", err)
+		}
+
+		// Port 465 is implicit TLS and 587 is STARTTLS. Chosen from the port
+		// rather than stored, because a submission server that wants something
+		// else on one of those two numbers is rare enough that guessing wrong
+		// produces an error naming both — see smtpx.describeDialError.
+		security := model.SecuritySTARTTLS
+		if acct.SMTPPort == 465 {
+			security = model.SecurityTLS
+		}
+
+		return smtpx.Dial(ctx, smtpx.Config{
+			Host:     acct.SMTPHost,
+			Port:     acct.SMTPPort,
+			Security: security,
+			Username: acct.Email,
+		}, secret)
 	}
 }

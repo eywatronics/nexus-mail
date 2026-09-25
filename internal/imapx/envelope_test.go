@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/emersion/go-imap/v2"
 )
 
 func TestThreadKeyPrefersReferencesRoot(t *testing.T) {
@@ -220,5 +222,58 @@ func TestNormaliseSubjectCollapsesWhitespaceAndCase(t *testing.T) {
 	// ignore how the whitespace landed.
 	if got, want := normaliseSubject("  Quarterly\t Report  "), "quarterly report"; got != want {
 		t.Errorf("normaliseSubject() = %q, want %q", got, want)
+	}
+}
+
+// A Reply-To that differs from From is the whole point of the column.
+func TestReplyToIsKeptWhenItIsNotTheSender(t *testing.T) {
+	got := replyToFrom(&imap.Envelope{
+		From:    []imap.Address{{Name: "Yazan", Mailbox: "yazan", Host: "example.com"}},
+		ReplyTo: []imap.Address{{Name: "Liste", Mailbox: "liste", Host: "example.com"}},
+	})
+
+	if len(got) != 1 || got[0].Addr != "liste@example.com" {
+		t.Fatalf("replyToFrom() = %+v", got)
+	}
+}
+
+// RFC 3501 tells a server to answer the Reply-To part of an ENVELOPE with the
+// From addresses when the message has no Reply-To of its own. Storing that
+// would make every message claim one, and the window could never tell the
+// reader which messages actually have a different reply address.
+func TestTheServersDefaultedReplyToIsNotStored(t *testing.T) {
+	got := replyToFrom(&imap.Envelope{
+		From:    []imap.Address{{Name: "Yazan", Mailbox: "yazan", Host: "example.com"}},
+		ReplyTo: []imap.Address{{Name: "Yazan", Mailbox: "yazan", Host: "example.com"}},
+	})
+
+	if got != nil {
+		t.Errorf("replyToFrom() = %+v, which only repeats From", got)
+	}
+}
+
+// The same mailbox written differently is the same mailbox. A server echoing
+// From into Reply-To is free to change the case or attach a different display
+// name, and neither makes it a reply address worth recording.
+func TestAnEchoedReplyToIsRecognisedThroughCaseAndName(t *testing.T) {
+	got := replyToFrom(&imap.Envelope{
+		From:    []imap.Address{{Name: "Yazan", Mailbox: "Yazan", Host: "Example.COM"}},
+		ReplyTo: []imap.Address{{Name: "", Mailbox: "yazan", Host: "example.com"}},
+	})
+
+	if got != nil {
+		t.Errorf("replyToFrom() = %+v, which is the sender in different clothes", got)
+	}
+}
+
+// A server that ignores the defaulting rule and sends nothing is the ordinary
+// case on a message with no Reply-To, and it means the same thing.
+func TestAnAbsentReplyToIsNothing(t *testing.T) {
+	got := replyToFrom(&imap.Envelope{
+		From: []imap.Address{{Mailbox: "yazan", Host: "example.com"}},
+	})
+
+	if got != nil {
+		t.Errorf("replyToFrom() = %+v", got)
 	}
 }

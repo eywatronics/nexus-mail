@@ -16,9 +16,9 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M1** | Salt okunur istemci: hesap bağlama (3 yol), klasör ve başlık senkronu, izole okuma, arama, klavye navigasyonu | Bitti |
 | **M2** | Canlı senkron: IDLE, delta senkron, yeniden bağlanma, saklama penceresi | Bitti |
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
-| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Kısmen bitti |
+| **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Bitti |
 | **M5** | Okuma deneyimini tamamla | Bitti |
-| **M6** | Gönderme | Yeni |
+| **M6** | Gönderme | Sürüyor |
 | **M7** | Kişiler | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
 | **M9** | Uçtan uca şifreleme + takvim | Yeni |
@@ -46,9 +46,21 @@ sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
 - Görev çubuğu / dock rozetinde okunmamış sayısı
 - Açılışta başlat (ayarlar ekranından)
 
-**Kalan:**
+**M4 bitti.** Son madde (`mailto:`) M6'ya taşındı — gerekçe aşağıda.
 
-- Varsayılan posta istemcisi olarak ayarla (`mailto:`)
+### `mailto:` neden M6'da
+
+Varsayılan posta istemcisi olarak kaydolmak M4'ün son maddesiydi. Bugün
+yapılsaydı **zararlı** olurdu: gönderme M6'da, yani bir `mailto:` bağlantısına
+tıklayan kişi Nexus Mail'i açar ve hiçbir şey olmaz. Outlook'u varsayılan
+bırakmaktan kötü bir sonuç.
+
+Bir de işin Windows tarafı sanıldığı gibi değil: Windows 10'dan beri bir
+uygulama kendini programatik olarak varsayılan **yapamıyor**. Yapılabilecek
+olan, uygulamayı aday olarak kaydedip Ayarlar sayfasını açmak. Yani madde
+"bir kayıt defteri yazımı" değil, "aday olarak görün + kullanıcıyı doğru
+sayfaya götür + gelen `mailto:` URL'sini compose penceresine bağla" — ve
+sonuncusu M6 olmadan yok.
 
 ### Açılışta başlat, işletim sisteminin ayarıdır
 
@@ -275,19 +287,144 @@ zinciri listede gruplanıyor.
 
 Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 
-- SMTP (`emersion/go-smtp`): STARTTLS, 8BITMIME, SIZE, SMTPUTF8, XOAUTH2
-- **Hesap başına çoklu kimlik** — şema değişikliği; bugün `accounts.display_name` tek kimlik varsayıyor
-- İmzalar (kimlik başına metin/HTML/dosya)
-- Compose penceresi: yanıtla / tümünü / listeye / ilet / yönlendir / yeni olarak düzenle
+- ~~SMTP (`internal/smtpx`)~~ — **bitti**: STARTTLS zorunlu, 8BITMIME, SIZE,
+  SMTPUTF8, PLAIN/LOGIN. XOAUTH2 hesap bağlamayla birlikte gelecek
+- ~~Giden mesajı kurma (`internal/mailmime`)~~ — **bitti**: yapı, başlıklar,
+  ekler, quoted-printable
+- ~~Hesap başına çoklu kimlik~~ — **bitti** (migration 004, `identities`)
+- **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
+  olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
+- ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
+- ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
+- ~~Compose ekranı~~ — **bitti** (düz metin)
+- ~~Yanıtla / tümünü yanıtla / ilet~~ — **bitti**; yönlendir (redirect) yok
+- Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
-- Alıntılama ve yanıt konumu
+- ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
 - Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
 - Ek ekleme, gömülü resim (`cid:`), **ek hatırlatıcı**
 - Taslak otomatik kaydetme
-- **Outbox**: kuyruğa al, bağlantı gelince gönder
-- Fcc — gönderilen kopyayı Gönderilenler'e yazma (UIDPLUS ile UID öğrenme)
+- ~~**Outbox**~~ — **bitti**: ham MIME diske, kuyrukta referans, SMTP ile
+  boşaltma, kalıcı/geçici hata ayrımı
+- ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
+  UID bilinmiyor ve bir sonraki senkron buluyor
 - Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
 - `mailto:` işleyicisi
+
+### Outbox neden motoru değiştiriyor
+
+Kuyruk işçisi (`applyOperation`) bugün yalnızca `imapx.MailBackend` alıyor,
+çünkü bugüne kadar her işlem IMAP işlemiydi. Gönderme öyle değil: SMTP
+bağlantısı istiyor, klasöre bağlı değil, ve `uid_validity` damgası taşımıyor —
+üstelik gönderdikten sonra kopyayı Gönderilenler'e yazmak için **yine IMAP**
+gerekiyor. Yani `send` işlemi tek başına iki protokole dokunuyor.
+
+Motora ikinci bir bağlayıcı (`SetSender`) ve `send` için ayrı bir boşaltma yolu
+eklendi. Ham MIME `operations.payload` içine değil diske yazılıyor; kuyrukta
+yalnızca referans duruyor, çünkü yirmi megabaytlık bir ek bir metin sütununa
+konacak şey değil.
+
+Kuyruk **bağlantı açılmadan** ikiye ayrılıyor: yalnızca gönderme bekleyen bir
+hesap posta kutusu açmıyor, yalnızca bayrak değişikliği bekleyen bir hesap da
+gönderim bağlantısı açmıyor.
+
+**Kalıcı/geçici ayrımı `smtpx`'te**, çünkü bilgi orada: SMTP yanıt kodu bunu
+söylüyor (5xx red, 4xx "şimdi değil") ve paketin kendi ön redleri `ErrRefused`
+sarıyor. Tanınmayan her şey geçici sayılıyor — sunucunun aslında reddetmediği
+bir mesajdan vazgeçmek, iki hatanın kötüsü: kullanıcı gönderildiğini sanır.
+
+**Kapatılamayan bir pencere var ve yazıldı:** mesaj gidip "done" yazımı
+başarısız olursa kuyruk hâlâ "bekliyor" der ve bir sonraki geçiş aynı mesajı
+tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmasını
+gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
+durdurmak — kalan mesajları aynı arızanın içine sürmemek.
+
+### Reply-To
+
+Kapatıldı, iki yönde birden.
+
+**Gelen tarafta** başlık `messages.reply_to` kolonunda saklanıyor ve yanıt
+oraya gidiyor. Bir incelik var: RFC 3501, mesajda `Reply-To` yoksa sunucunun
+ENVELOPE'ta `From` adreslerini döndürmesini şart koşuyor. Olduğu gibi saklamak
+her mesajın bir `Reply-To` iddia etmesi demek olurdu; `imapx.replyToFrom` bu
+varsayılanı geri alıyor, böylece kolon "başlık farklı bir adres söylüyordu"
+anlamına geliyor.
+
+`Reply-To`, `From`'a eklenmiyor, onun **yerine geçiyor** — "tümünü yanıtla"da
+da. İkisine birden göndermek listeye bir kopya, gönderen kişiye ayrıca özel bir
+kopya bırakırdı; `Reply-To`'nun önlemek için konduğu sonuç tam olarak bu.
+
+Migration'dan önce senkronlanan satırlarda kolon boş ve bu iki farklı şey
+demek; ikisi de `From`'a düşüyor, yani eski satır her zaman yaptığı şeyi
+yapmaya devam ediyor. Yeniden senkron dolduruyor.
+
+**Giden tarafta** kimliğin `reply_to` alanı artık mesaja yazılıyor. Alan 004'ten
+beri saklanıyor, okunuyordu ve hiçbir yere yazılmıyordu — ölü veriydi.
+
+Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
+taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
+yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
+
+### Composer neden önce düz metin
+
+Zengin editör ve alıcı "pill" arayüzü listede duruyor ve yapılacak. Ama doğru
+mesaj gönderen bir `textarea`, bozuk mesaj gönderen yarım bir editörden iyi:
+arka uç zaten HTML kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan
+tek şey `html` alanının dolması.
+
+Cc ve Bcc istenene kadar gizli. Mesajların çoğunda ikisi de yok, ve her compose
+penceresinin tepesindeki dört boş satır, yazanla yazmaya geldiği şey arasında
+dört satır hiçlik demek.
+
+Adresler **yazıldığı gibi** arka uca gidiyor. Ayrıştırma tek yerde — pencerede
+ikinci bir "adres nedir" tanımı olsaydı, ikisi er geç ayrışırdı.
+
+Gönderme başarısız olursa pencere her şeyiyle açık kalıyor. Kapanan bir
+composer, yazanın geri getiremeyeceği bir mesaj demek.
+
+**Henüz ayrı bir işletim sistemi penceresi değil** — Wails v3 bunun için
+seçilmişti ve oraya varacak. Bileşen iki durumda da aynı; değişen yalnızca
+nereye monte edildiği.
+
+### Fcc en fazla "en iyi çaba" olabilir
+
+Gönderme SMTP'den geçiyor ve posta kutusunda hiçbir iz bırakmıyor: kopya
+yazılmazsa mesaj alıcının sunucusunda var, yazanın görebileceği hiçbir yerde
+yok. Bu yüzden `Append` eklendi.
+
+Ama **kopyanın başarısızlığı göndermenin başarısızlığı değil.** Teslim olan
+şey mesajın kendisi; kotası dolu bir Gönderilenler klasörü, posta kutusunda
+bir boşluk demek, mesajı ikinci kez göndermek için bir sebep değil. İşlem
+"done" kalıyor ve outbox dosyası gidiyor. Bunun testi var, çünkü ters
+davranış — kopyanın hatasında işlemi başarısız saymak — teslim edilmiş bir
+mesajı tekrar gönderirdi.
+
+Klasör **role göre** bulunuyor, ada göre değil: Türkçe bir hesabın
+"Gönderilmiş Öğeler"i de Gönderilenler. Hiç yoksa hiçbir şey yazılmıyor —
+bazı sunucular kopyayı kendileri dosyalıyor (Gmail kendi SMTP'sinden geçen
+mail için yapıyor) ve uydurduğumuz bir klasöre yazmak, yalnızca bu istemcinin
+gördüğü bir posta kutusu bırakırdı.
+
+### Gönderme kuyruğa alır, beklemez
+
+`SendMessage` mesajı kurar, diske yazar, kuyruğa koyar ve döner. Pencere bir
+dosya yazma süresinde cevap alıyor; mesaj bağlantı izin verince gidiyor.
+Senkron göndermek, bir TLS el sıkışması ve bir yükleme boyunca donan bir
+composer demek olurdu — ve kullanıcı kapatırsa kaybolan bir mesaj.
+
+**Dosya önce, kuyruk satırı sonra.** Ters sıra, var olmayan bir dosyayı
+adlandıran bir satır bırakırdı ve işçinin bunu çözmenin tek yolu mesajı kalıcı
+olarak başarısız saymak olurdu. Satırsız bir dosya ise sonradan süpürülüyor ve
+disk dışında bir maliyeti yok.
+
+**Ayrıştırılamayan adres reddediliyor, atlanmıyor.** Dört alıcının üçüne
+sessizce göndermek, dördüncü kişi neden dışarıda bırakıldığını sorana kadar
+kimsenin fark etmediği türden bir arıza.
+
+**OAuth ile gönderme henüz yok.** XOAUTH2 gerekiyor; go-sasl bunu sunmuyor ve
+`imapx` IMAP için elle uygulamış. O uygulamayı paylaşmak kendi başına bir iş ve
+buraya sıkıştırılmak yerine M6'nın geri kalanıyla ele alınacak. Hata mesajı
+bunu adlandırıyor.
 
 **Yazım denetimi:** hunspell cgo gerektirir. Composer `contenteditable` üzerine
 kurulur ve WebView'in yerleşik denetimi kullanılır; sözlük yönetimi işletim

@@ -543,3 +543,52 @@ describe('what delete means', () => {
     expect(button.getAttribute('data-permanent')).toBe('true')
   })
 })
+
+// The backend has built reply drafts since before there was a way to ask for
+// one. These three buttons are that way, and a test that they exist is the
+// guard against the capability going unreachable again.
+describe('answering', () => {
+  // The header block, and everything in it, renders only for a message the
+  // list is actually holding.
+  const seed = () =>
+    useMailStore.setState({
+      messages: [
+        {
+          id: 1,
+          folderId: 1,
+          uid: 1,
+          threadId: '<t1@x>',
+          threadCount: 1,
+          subject: 'Konu',
+          fromName: 'Gönderen',
+          fromAddr: 'g@example.com',
+          snippet: 'önizleme',
+          internalDateUnix: 1700000000,
+          isRead: true,
+          isStarred: false,
+          hasAttachments: false,
+          bodyFetched: false,
+        },
+      ],
+    })
+
+  it('offers reply, reply to everyone and forward', async () => {
+    seed()
+    const { getByTestId } = await renderSelected(1)
+
+    for (const id of ['reply', 'reply-all', 'forward']) {
+      expect(getByTestId(id)).toBeTruthy()
+    }
+  })
+
+  // Reply and reply-all are one icon apart and do different things, so each
+  // has to say which it is to anything that cannot see the icon.
+  it('distinguishes them for a reader who cannot see the icons', async () => {
+    seed()
+    const { getByTestId } = await renderSelected(1)
+
+    expect(getByTestId('reply').getAttribute('aria-label')).toBe('Reply')
+    expect(getByTestId('reply-all').getAttribute('aria-label')).toBe('Reply to everyone')
+    expect(getByTestId('forward').getAttribute('aria-label')).toBe('Forward')
+  })
+})

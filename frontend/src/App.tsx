@@ -1,4 +1,4 @@
-import { GearSix, Plus } from '@phosphor-icons/react'
+import { GearSix, PencilSimple, Plus } from '@phosphor-icons/react'
 import { Events } from '@wailsio/runtime'
 import { useCallback, useEffect, useState } from 'react'
 import { AddAccount } from './components/AddAccount'
@@ -10,6 +10,7 @@ import { ChangeFailureNotice } from './components/ChangeFailureNotice'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
 import { UndoNotice } from './components/UndoNotice'
+import { Composer } from './components/Composer'
 import { Settings } from './components/Settings'
 import {
   listAccounts,
@@ -23,7 +24,7 @@ import { EVENTS, type SyncEventPayload } from './lib/events'
 import { useMessageShortcuts } from './lib/keyboard'
 import { useApplyTheme } from './lib/theme'
 import { useMailStore } from './store/useMailStore'
-import { BUTTON_GHOST, ICON, ICON_ONLY, SURFACE, TEXT } from './lib/ui'
+import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, SURFACE, TEXT } from './lib/ui'
 
 const PAGE_SIZE = 100
 const SEARCH_LIMIT = 200
@@ -38,6 +39,9 @@ const SEARCH_DEBOUNCE_MS = 180
 export default function App() {
   const [adding, setAdding] = useState(false)
   const [showingSettings, setShowingSettings] = useState(false)
+  const composing = useMailStore((s) => s.composing)
+  const openComposer = useMailStore((s) => s.openComposer)
+  const closeComposer = useMailStore((s) => s.closeComposer)
   const [ready, setReady] = useState(false)
 
   const accounts = useMailStore((s) => s.accounts)
@@ -183,6 +187,23 @@ export default function App() {
     return <Settings onClose={() => setShowingSettings(false)} />
   }
 
+  // A full window for the same reason Settings is one: a message is written,
+  // re-read and rewritten, and keeping the list visible behind it offers a
+  // distraction at the one moment the reader is not reading.
+  //
+  // Not yet a separate operating-system window, which is what Wails v3 was
+  // chosen for and where this ends up. The component is the same either way;
+  // only where it is mounted changes.
+  if (composing) {
+    return (
+      <Composer
+        accountId={composing.accountId}
+        reply={composing.reply}
+        onClose={closeComposer}
+      />
+    )
+  }
+
   return (
     <Layout
       sidebar={
@@ -213,6 +234,25 @@ export default function App() {
               <GearSix size={ICON.size} weight={ICON.weight} aria-hidden />
             </button>
           </div>
+          {/* The one primary action on the screen, and the only place the
+              accent appears as a filled button. Above the folders rather than
+              in the message column: writing is not an action on the folder
+              being read. */}
+          <div className="p-2">
+            <button
+              type="button"
+              data-testid="open-composer"
+              disabled={activeAccountId === null}
+              onClick={() =>
+                activeAccountId !== null && openComposer({ accountId: activeAccountId })
+              }
+              className={`${BUTTON_PRIMARY} inline-flex w-full items-center justify-center gap-1.5 py-1.5 text-sm`}
+            >
+              <PencilSimple size={ICON.size} weight={ICON.weight} aria-hidden />
+              New message
+            </button>
+          </div>
+
           <div className="flex-1 overflow-y-auto">
             <FolderList />
           </div>

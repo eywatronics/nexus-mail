@@ -60,3 +60,26 @@ func AttachmentDir() (string, error) {
 	}
 	return dir, nil
 }
+
+// OutboxDir returns where messages waiting to be sent are kept, creating it if
+// necessary.
+//
+// On disk rather than in the database, and the queue row holds only a
+// reference. A message with a twenty-megabyte attachment is not a thing to put
+// in a text column: every read of the operations table would carry it, and
+// SQLite would rewrite the whole row on each retry.
+//
+// Inside the data directory, and not cleaned by the retention purge. Unlike
+// attachments these are not a cache of what a server already holds — until the
+// message is sent, this file is the only copy in existence.
+func OutboxDir() (string, error) {
+	data, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(data, "outbox")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}

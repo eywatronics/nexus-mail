@@ -101,6 +101,10 @@ func (stubBackend) FetchBody(context.Context, uint32) (imapx.Body, error) {
 	return imapx.Body{HTML: "<p>hi</p>", Text: "hi"}, nil
 }
 
+func (stubBackend) Append(context.Context, string, []byte, []string, time.Time) (uint32, error) {
+	return 0, nil
+}
+
 func (stubBackend) FetchRaw(context.Context, uint32) ([]byte, error) {
 	return []byte("Subject: hi\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>hi</p>"), nil
 }
