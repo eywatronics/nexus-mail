@@ -2,7 +2,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -330,19 +334,10 @@ func TestIdentitiesGoWithTheirAccount(t *testing.T) {
 //
 // Without it, a database created before migration 004 comes back with accounts
 // that have no identity at all — and an account with none cannot open a
-// composer. Simulated by winding user_version back and dropping the table,
-// which is what such a database looks like.
+// composer.
 func TestTheMigrationGivesExistingAccountsTheIdentityTheyHad(t *testing.T) {
-	s := openTestStore(t)
-	db := s.Write()
-
-	// Wind the schema back to before identities existed.
-	if _, err := db.Exec(`DROP TABLE identities`); err != nil {
-		t.Fatalf("dropping the table: %v", err)
-	}
-	if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
-		t.Fatalf("winding user_version back: %v", err)
-	}
+	old := databaseAtVersion(t, 3)
+	db := old.Write()
 
 	// An account as it would have been left by the older schema.
 	if _, err := db.Exec(
@@ -363,7 +358,7 @@ func TestTheMigrationGivesExistingAccountsTheIdentityTheyHad(t *testing.T) {
 		t.Fatalf("finding the account: %v", err)
 	}
 
-	got, err := s.DefaultIdentity(context.Background(), accountID)
+	got, err := old.DefaultIdentity(context.Background(), accountID)
 	if err != nil {
 		t.Fatalf("the migrated account has no default identity: %v", err)
 	}
@@ -384,4 +379,53 @@ func TestTheMigrationGivesExistingAccountsTheIdentityTheyHad(t *testing.T) {
 	if count != 1 {
 		t.Errorf("the account got %d identities", count)
 	}
+}
+
+// databaseAtVersion builds a database holding the first n migrations and
+// nothing after them: an installation from before the rest of them landed.
+//
+// Built forwards from the embedded files rather than by undoing the current
+// schema. Undoing means one more line in this test for every migration that
+// lands afterwards, and the line somebody forgets is the one that leaves the
+// test passing while testing nothing — or, as happened here, failing for a
+// reason that has nothing to do with what it is checking.
+func databaseAtVersion(t *testing.T, n int) *Store {
+	t.Helper()
+
+	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "old.db")) + dsnOptions
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("opening the old database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("reading migrations: %v", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+
+	if n > len(names) {
+		t.Fatalf("asked for migration %d of %d", n, len(names))
+	}
+	for _, name := range names[:n] {
+		body, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("applying %s: %v", name, err)
+		}
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", n)); err != nil {
+		t.Fatalf("setting user_version: %v", err)
+	}
+	// One handle for both pools: the caller is a test with one goroutine, and
+	// a second pool would only be a second thing to close.
+	return &Store{read: db, write: db}
 }
