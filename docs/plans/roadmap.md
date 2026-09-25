@@ -305,7 +305,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - Taslak otomatik kaydetme
 - ~~**Outbox**~~ — **bitti**: ham MIME diske, kuyrukta referans, SMTP ile
   boşaltma, kalıcı/geçici hata ayrımı
-- Fcc — gönderilen kopyayı Gönderilenler'e yazma (UIDPLUS ile UID öğrenme)
+- ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
+  UID bilinmiyor ve bir sonraki senkron buluyor
 - Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
 - `mailto:` işleyicisi
 
@@ -357,6 +358,25 @@ composer, yazanın geri getiremeyeceği bir mesaj demek.
 **Henüz ayrı bir işletim sistemi penceresi değil** — Wails v3 bunun için
 seçilmişti ve oraya varacak. Bileşen iki durumda da aynı; değişen yalnızca
 nereye monte edildiği.
+
+### Fcc en fazla "en iyi çaba" olabilir
+
+Gönderme SMTP'den geçiyor ve posta kutusunda hiçbir iz bırakmıyor: kopya
+yazılmazsa mesaj alıcının sunucusunda var, yazanın görebileceği hiçbir yerde
+yok. Bu yüzden `Append` eklendi.
+
+Ama **kopyanın başarısızlığı göndermenin başarısızlığı değil.** Teslim olan
+şey mesajın kendisi; kotası dolu bir Gönderilenler klasörü, posta kutusunda
+bir boşluk demek, mesajı ikinci kez göndermek için bir sebep değil. İşlem
+"done" kalıyor ve outbox dosyası gidiyor. Bunun testi var, çünkü ters
+davranış — kopyanın hatasında işlemi başarısız saymak — teslim edilmiş bir
+mesajı tekrar gönderirdi.
+
+Klasör **role göre** bulunuyor, ada göre değil: Türkçe bir hesabın
+"Gönderilmiş Öğeler"i de Gönderilenler. Hiç yoksa hiçbir şey yazılmıyor —
+bazı sunucular kopyayı kendileri dosyalıyor (Gmail kendi SMTP'sinden geçen
+mail için yapıyor) ve uydurduğumuz bir klasöre yazmak, yalnızca bu istemcinin
+gördüğü bir posta kutusu bırakırdı.
 
 ### Gönderme kuyruğa alır, beklemez
 

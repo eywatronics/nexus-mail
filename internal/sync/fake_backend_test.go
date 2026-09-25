@@ -26,6 +26,10 @@ type fakeBackend struct {
 	folders  []model.Folder
 	selected string
 
+	// What Append filed, and a way to make it fail.
+	appends   []appended
+	appendErr error
+
 	uidValidity map[string]uint32
 	messages    map[string][]model.Message
 	bodies      map[uint32]imapx.Body
@@ -326,6 +330,33 @@ func (f *fakeBackend) FetchBody(_ context.Context, uid uint32) (imapx.Body, erro
 // that never set any gets the HTML body wrapped in a minimal header block,
 // which is enough for anything that only needs "something that looks like a
 // message".
+// appended records what was filed into which mailbox, so a test can assert on
+// the sent copy rather than on the fact that no error came back.
+type appended struct {
+	mailbox string
+	raw     []byte
+	flags   []string
+}
+
+func (f *fakeBackend) Append(_ context.Context, mailbox string, raw []byte,
+	flags []string, _ time.Time) (uint32, error) {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.appendErr != nil {
+		return 0, f.appendErr
+	}
+	f.appends = append(f.appends, appended{mailbox: mailbox,
+		raw: append([]byte(nil), raw...), flags: append([]string(nil), flags...)})
+	return uint32(len(f.appends)), nil
+}
+
+func (f *fakeBackend) appendedMessages() []appended {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]appended(nil), f.appends...)
+}
+
 func (f *fakeBackend) FetchRaw(_ context.Context, uid uint32) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

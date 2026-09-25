@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"nexusmail/internal/imapx"
 	"nexusmail/internal/model"
 	"nexusmail/internal/smtpx"
 )
@@ -100,11 +102,20 @@ type recordingStore struct {
 	done      []int64
 	failed    map[int64]string
 	permanent map[int64]string
+	// folders is what the sent copy is filed against. Empty means the account
+	// has no Sent folder, which is a real configuration and not a broken one.
+	folders []model.Folder
 }
 
 func newRecordingStore(inner Store) *recordingStore {
 	return &recordingStore{Store: inner,
 		failed: map[int64]string{}, permanent: map[int64]string{}}
+}
+
+func (r *recordingStore) ListFolders(context.Context, int64) ([]model.Folder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]model.Folder(nil), r.folders...), nil
 }
 
 func (r *recordingStore) MarkOperationDone(ctx context.Context, id int64) error {
@@ -387,5 +398,138 @@ func TestNoSendsMeansNoSubmissionConnection(t *testing.T) {
 	}
 	if dials != 0 {
 		t.Errorf("an empty batch opened %d connections", dials)
+	}
+}
+
+// sentFolder is an account with somewhere to file the copy.
+func sentFolder() []model.Folder {
+	return []model.Folder{
+		{ID: 1, AccountID: 1, Path: "INBOX", Name: "INBOX"},
+		{ID: 2, AccountID: 1, Path: "Gönderilmiş Öğeler", Name: "Gönderilmiş Öğeler",
+			Attributes: []string{"\\Sent"}},
+	}
+}
+
+// Sending happens over SMTP and leaves no trace in the mailbox. Without this
+// the message exists on the recipient's server and nowhere the writer can see
+// it.
+func TestASentMessageIsFiledInTheSentFolder(t *testing.T) {
+	be := newFakeBackend()
+	outbox := newFakeOutbox(map[string][]byte{"a.eml": []byte("From: u@example.com\r\n\r\nmetin")})
+
+	e := New(newRecordingStore(nil), func(context.Context, int64) (imapx.MailBackend, error) {
+		return be, nil
+	})
+	e.store.(*recordingStore).folders = sentFolder()
+	e.SetSender(func(context.Context, int64) (smtpx.MailSender, error) { return &fakeSender{}, nil },
+		outbox)
+
+	if err := e.drainSends(context.Background(), model.Account{ID: 1},
+		[]model.Operation{sendOp(1, "a.eml")}); err != nil {
+		t.Fatalf("drainSends() error: %v", err)
+	}
+
+	filed := be.appendedMessages()
+	if len(filed) != 1 {
+		t.Fatalf("%d copies were filed", len(filed))
+	}
+	// The folder is found by role, not by name: a Turkish account's
+	// "Gönderilmiş Öğeler" is as much the Sent folder as "Sent" is.
+	if filed[0].mailbox != "Gönderilmiş Öğeler" {
+		t.Errorf("the copy went to %q", filed[0].mailbox)
+	}
+	if !bytes.Equal(filed[0].raw, []byte("From: u@example.com\r\n\r\nmetin")) {
+		t.Errorf("the filed copy is not the message that was sent: %q", filed[0].raw)
+	}
+	// The writer has read it: they wrote it. A Sent folder in bold is a folder
+	// that looks like it needs attention.
+	if len(filed[0].flags) != 1 || filed[0].flags[0] != model.FlagSeen {
+		t.Errorf("the copy was filed with flags %v", filed[0].flags)
+	}
+}
+
+// Some servers file the copy themselves, and appending to a folder we invented
+// would leave a mailbox this client alone can see.
+func TestWithNoSentFolderNothingIsFiledAndTheSendStillSucceeds(t *testing.T) {
+	be := newFakeBackend()
+	e := New(newRecordingStore(nil), func(context.Context, int64) (imapx.MailBackend, error) {
+		return be, nil
+	})
+	// Folders, but none of them Sent.
+	e.store.(*recordingStore).folders = []model.Folder{
+		{ID: 1, AccountID: 1, Path: "INBOX", Name: "INBOX"},
+	}
+	e.SetSender(func(context.Context, int64) (smtpx.MailSender, error) { return &fakeSender{}, nil },
+		newFakeOutbox(map[string][]byte{"a.eml": []byte("metin")}))
+
+	if err := e.drainSends(context.Background(), model.Account{ID: 1},
+		[]model.Operation{sendOp(2, "a.eml")}); err != nil {
+		t.Fatalf("drainSends() error: %v", err)
+	}
+
+	if filed := be.appendedMessages(); len(filed) != 0 {
+		t.Errorf("a copy was filed into %q with no Sent folder", filed[0].mailbox)
+	}
+	if done := e.store.(*recordingStore).done; len(done) != 1 {
+		t.Errorf("the send was not recorded as done: %v", done)
+	}
+}
+
+// The one thing that must not happen: a delivered message sent a second time.
+//
+// The copy is a convenience and the delivery is the point, so a Sent folder
+// the server refused is a gap in the mailbox rather than a reason to retry.
+func TestAFailedSentCopyDoesNotResendTheMessage(t *testing.T) {
+	be := newFakeBackend()
+	be.appendErr = errors.New("over quota")
+	outbox := newFakeOutbox(map[string][]byte{"a.eml": []byte("metin")})
+
+	e := New(newRecordingStore(nil), func(context.Context, int64) (imapx.MailBackend, error) {
+		return be, nil
+	})
+	rec := e.store.(*recordingStore)
+	rec.folders = sentFolder()
+	e.SetSender(func(context.Context, int64) (smtpx.MailSender, error) { return &fakeSender{}, nil },
+		outbox)
+
+	if err := e.drainSends(context.Background(), model.Account{ID: 1},
+		[]model.Operation{sendOp(3, "a.eml")}); err != nil {
+		t.Fatalf("drainSends() error: %v", err)
+	}
+
+	if len(rec.done) != 1 || rec.done[0] != 3 {
+		t.Errorf("done = %v; a failed copy must not undo a successful send", rec.done)
+	}
+	if _, retried := rec.failed[3]; retried {
+		t.Error("the message was queued for retry, which would deliver it twice")
+	}
+	if _, gaveUp := rec.permanent[3]; gaveUp {
+		t.Error("a delivered message was marked failed")
+	}
+	// And the outbox file goes: the message is delivered, so there is nothing
+	// left to send.
+	if !outbox.wasRemoved("a.eml") {
+		t.Error("the delivered message was left in the outbox")
+	}
+}
+
+// A copy of something that was never sent would be a Sent folder that lies.
+func TestNothingIsFiledWhenTheSendItselfFailed(t *testing.T) {
+	be := newFakeBackend()
+	e := New(newRecordingStore(nil), func(context.Context, int64) (imapx.MailBackend, error) {
+		return be, nil
+	})
+	e.store.(*recordingStore).folders = sentFolder()
+	e.SetSender(func(context.Context, int64) (smtpx.MailSender, error) {
+		return &fakeSender{sendErr: errors.New("connection reset")}, nil
+	}, newFakeOutbox(map[string][]byte{"a.eml": []byte("metin")}))
+
+	if err := e.drainSends(context.Background(), model.Account{ID: 1},
+		[]model.Operation{sendOp(4, "a.eml")}); err != nil {
+		t.Fatalf("drainSends() error: %v", err)
+	}
+
+	if filed := be.appendedMessages(); len(filed) != 0 {
+		t.Error("a copy was filed for a message that never went out")
 	}
 }

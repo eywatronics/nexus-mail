@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"nexusmail/internal/model"
 	"nexusmail/internal/smtpx"
@@ -156,8 +157,59 @@ func (e *Engine) submit(ctx context.Context, sender smtpx.MailSender, outbox Out
 	if err := e.store.MarkOperationDone(ctx, op.ID); err != nil {
 		return fmt.Errorf("sync: the message was sent but could not be marked done: %w", err)
 	}
+
+	// The copy is filed before the file goes, and its failure is not this
+	// operation's failure. The message has been delivered; a Sent folder
+	// missing a copy is a gap the next full sync cannot fill, but it is not a
+	// reason to send the message a second time — which is what marking the
+	// operation failed would cause.
+	e.fileSentCopy(ctx, op, raw)
+
 	_ = outbox.Remove(op.Outbox)
 	return nil
+}
+
+// fileSentCopy writes the message into the account's Sent folder.
+//
+// Separate from submission because they are separate services: the message
+// went out over SMTP and leaves no trace in the mailbox, so without this it
+// exists on the recipient's server and nowhere the writer can see it.
+//
+// Best effort, and deliberately. Every failure here is logged against the
+// operation as a note rather than a failure, because the one thing that must
+// not happen is a delivered message being sent again.
+func (e *Engine) fileSentCopy(ctx context.Context, op model.Operation, raw []byte) {
+	folders, err := e.store.ListFolders(ctx, op.AccountID)
+	if err != nil {
+		return
+	}
+
+	var sent model.Folder
+	for _, f := range folders {
+		if f.Role() == model.RoleSent {
+			sent = f
+			break
+		}
+	}
+	if sent.Path == "" {
+		// No Sent folder. Some servers file the copy themselves — Gmail does
+		// for mail submitted through its own SMTP — and appending to a folder
+		// we invented would leave a mailbox this client alone can see.
+		return
+	}
+
+	be, err := e.dial(ctx, op.AccountID)
+	if err != nil {
+		return
+	}
+	defer func() { _ = be.Close() }()
+
+	// \Seen, because the writer has read it: they wrote it. A Sent folder in
+	// bold is a folder that looks like it needs attention.
+	if _, err := be.Append(ctx, sent.Path, raw,
+		[]string{model.FlagSeen}, time.Now()); err != nil {
+		return
+	}
 }
 
 func (e *Engine) retrySend(ctx context.Context, op model.Operation, cause error) error {
