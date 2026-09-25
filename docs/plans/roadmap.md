@@ -20,6 +20,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M5** | Okuma deneyimini tamamla | Bitti |
 | **M6** | Gönderme | Sürüyor |
 | **M7** | Kişiler | Yeni |
+| **M7b** | GNOME Online Accounts: Linux'ta hesap eklemeden hesap eklemek | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
 | **M9** | Uçtan uca şifreleme + takvim | Yeni |
 | **M10** | Microsoft Graph / Exchange | Yeni |
@@ -30,6 +31,25 @@ bir taşın üzerine bir sonraki başlamaz.
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
 sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
+
+Neyin bilerek dışarıda bırakıldığı — ortak posta kutusu, şirket içi Exchange,
+kurumsal masaüstü — ve bunun bedeli `docs/design/konumlandirma.md` içinde.
+Aşağıdaki sıralama değişiklikleri oradan geliyor.
+
+### Sıralaması değişenler
+
+Dışarıdan gelen bir rakip değerlendirmesi, bu yazılımı hedef kitlesi için bile
+kullanılamaz kılan üç şeyin M14'e (ürünleşme) yığılmış olduğunu gösterdi.
+Üçü de teknik değil ama ikisinin bir bölümü koddan çözülebiliyor:
+
+| İş | Neredeydi | Nerede | Neden taşındı |
+|---|---|---|---|
+| Uygulama parolası yolunun anlatılması | — | M6 sonu | Bugün yazılabilir, kimseye bağlı değil, BYOK duvarını en ucuz aşan yol |
+| GNOME Online Accounts (`internal/auth/goa`) | — | M7 yanı | Linux/GNOME'da duvarı tamamen kaldırıyor; saf Go kaldığı ölçüldü |
+| İçerik taşımayan protokol günlüğü | M14 | M8 | Hata raporu alamadan uç durum yamalanamaz |
+| `.ics` davetinin okunabilir görünmesi | M9 | M8 | Tam CalDAV pahalı; davetin *ne olduğunu* göstermek değil |
+| İmzalı `.rpm`/`.deb` ve depo | M14 | M14'te ama erken | Linux paket imzası kimseden onay istemiyor |
+| Doğrulanmış OAuth istemcisi, Windows/macOS kod imzası | M14 | M14 | Tek kod dışı iş; tüzel kişilik ve para gerektiriyor |
 
 ---
 
