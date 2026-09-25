@@ -3,12 +3,22 @@ import { useEffect, useRef, useState } from 'react'
 import {
   identities as readIdentities,
   pickAttachments,
+  saveDraft,
   sendMessage,
+  type DraftRecord,
   type Identity,
   type OutgoingAttachment,
 } from '../lib/api'
 import { formatSize } from '../lib/format'
 import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
+
+/**
+ * How long a pause counts as "stopped typing".
+ *
+ * Short enough that almost nothing is lost to a crash, long enough that
+ * writing a sentence is one write rather than forty.
+ */
+const AUTOSAVE_PAUSE_MS = 2000
 
 /**
  * Writing a message.
@@ -26,10 +36,13 @@ import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } 
 export function Composer({
   accountId,
   onClose,
+  draft,
   reply,
 }: {
   accountId: number
   onClose: () => void
+  /** An existing draft being picked up again. */
+  draft?: DraftRecord
   /**
    * Set when answering or forwarding, which carries the threading headers and
    * the quoted original through.
@@ -46,29 +59,51 @@ export function Composer({
   const [from, setFrom] = useState<Identity[]>([])
   const [identityId, setIdentityId] = useState(0)
 
-  const [to, setTo] = useState(reply?.to ?? '')
-  const [cc, setCc] = useState(reply?.cc ?? '')
-  const [bcc, setBcc] = useState('')
+  const [to, setTo] = useState(draft?.to ?? reply?.to ?? '')
+  const [cc, setCc] = useState(draft?.cc ?? reply?.cc ?? '')
+  const [bcc, setBcc] = useState(draft?.bcc ?? '')
   // Cc and Bcc are hidden until asked for. Most messages have neither, and
   // four empty fields at the top of every compose window is four lines of
   // nothing between the writer and the thing they came to write.
   // Shown from the start when a reply-all already put people there: a Cc line
   // with names on it that the writer cannot see is a message going somewhere
   // they did not check.
-  const [showCopies, setShowCopies] = useState((reply?.cc ?? '') !== '')
+  const [showCopies, setShowCopies] = useState(
+    (draft?.cc ?? reply?.cc ?? '') !== '' || (draft?.bcc ?? '') !== '',
+  )
 
-  const [subject, setSubject] = useState(reply?.subject ?? '')
+  const [subject, setSubject] = useState(draft?.subject ?? reply?.subject ?? '')
   // The quote starts below an empty line, and the cursor starts above it.
   // Top-posting is what the rest of the world does and what a reader scanning
   // a thread expects; the quote is there to be referred to, not read first.
-  const [body, setBody] = useState(reply?.quoted ? `\n\n${reply.quoted}` : '')
+  const [body, setBody] = useState(
+    draft ? draft.body : reply?.quoted ? `\n\n${reply.quoted}` : '',
+  )
 
   // Files, by path. The bytes stay on disk until Send, so a composer left
   // open with three photographs on it costs this window three filenames.
-  const [files, setFiles] = useState<OutgoingAttachment[]>([])
+  const [files, setFiles] = useState<OutgoingAttachment[]>(draft?.attachments ?? [])
 
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
+  // A reopened draft whose attachment has gone says so from the moment it
+  // opens. Not an error — the message is fine and the person may not care
+  // about the file — but not a silence either.
+  const missing = draft?.missingAttachments ?? []
+  const [error, setError] = useState(
+    missing.length > 0 ? `No longer on disk, so not attached: ${missing.join(', ')}` : '',
+  )
+
+  // The draft's id, once it has one. A ref rather than state because the
+  // autosave that creates it must hand the id to the autosave after it, and a
+  // state update would not have landed by then — which is how autosave ends up
+  // writing a new row every time instead of replacing one.
+  const draftId = useRef(draft?.id ?? 0)
+  const [savedAt, setSavedAt] = useState<number | null>(
+    draft ? draft.updatedAtUnix * 1000 : null,
+  )
+  // Set once the message is on its way, so the unmount save does not put back
+  // a draft the send just cleared.
+  const sent = useRef(false)
   const firstField = useRef<HTMLInputElement>(null)
   const bodyField = useRef<HTMLTextAreaElement>(null)
 
@@ -96,6 +131,74 @@ export function Composer({
   }, [reply])
 
   const canSend = to.trim() !== '' || cc.trim() !== '' || bcc.trim() !== ''
+
+  // Everything a save would write. Named so the effect below can depend on it
+  // without listing nine things and getting one of them wrong.
+  const contents = { identityId, to, cc, bcc, subject, body, files }
+  const empty =
+    to.trim() === '' && cc.trim() === '' && bcc.trim() === '' &&
+    subject.trim() === '' && body.trim() === '' && files.length === 0
+
+  // Saved on a pause rather than on every keystroke: two seconds is short
+  // enough that almost nothing is lost and long enough that typing a sentence
+  // is one write.
+  //
+  // An empty composer is not saved. Opening one, thinking better of it and
+  // closing it should leave nothing behind — a Drafts folder that fills up
+  // with blank messages is one nobody looks at.
+  const save = async () => {
+    if (empty || sent.current) return
+    try {
+      const id = await saveDraft({
+        id: draftId.current,
+        accountId,
+        identityId: contents.identityId,
+        to: contents.to,
+        cc: contents.cc,
+        bcc: contents.bcc,
+        subject: contents.subject,
+        body: contents.body,
+        inReplyTo: reply?.inReplyTo ?? '',
+        references: reply?.references ?? [],
+        attachmentPaths: contents.files.map((f) => f.path),
+        attachments: null,
+        missingAttachments: null,
+        updatedAtUnix: 0,
+      })
+      draftId.current = id
+      setSavedAt(Date.now())
+    } catch {
+      // Deliberately quiet. A failed autosave is worth knowing about, but not
+      // as a red banner over a message somebody is in the middle of writing:
+      // the next pause tries again, and the heading stops saying the draft is
+      // saved, which is the honest signal.
+      setSavedAt(null)
+    }
+  }
+
+  useEffect(() => {
+    if (empty || sent.current) return
+
+    const timer = setTimeout(() => void save(), AUTOSAVE_PAUSE_MS)
+
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, empty, identityId, to, cc, bcc, subject, body, files])
+
+  // The pause is not enough on its own. Typing a sentence and closing the
+  // window straight away would clear the pending timer and lose it, which is
+  // the exact thing this whole mechanism exists to prevent — so closing saves
+  // too, whatever the timer was doing.
+  //
+  // The contents go through a ref because this effect runs once: a cleanup
+  // that closed over the first render's empty fields would save nothing.
+  const latest = useRef(save)
+  latest.current = save
+  useEffect(() => {
+    return () => {
+      void latest.current()
+    }
+  }, [])
 
   const attach = async () => {
     try {
@@ -129,7 +232,11 @@ export function Composer({
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
         attachmentPaths: files.map((f) => f.path),
+        draftId: draftId.current,
       })
+      // Before onClose, so the autosave timer that may still be pending does
+      // not write the draft back after the backend has just deleted it.
+      sent.current = true
       onClose()
     } catch (err: unknown) {
       // The window stays open with everything in it. A send that failed and a
@@ -142,9 +249,16 @@ export function Composer({
   return (
     <div className={`flex h-full flex-col ${SURFACE.page}`}>
       <header className={`flex items-center gap-3 border-b px-6 py-3 ${SURFACE.divider}`}>
-        <h1 className={`flex-1 text-base font-semibold tracking-tight ${TEXT.primary}`}>
+        <h1 className={`text-base font-semibold tracking-tight ${TEXT.primary}`}>
           {reply ? (reply.to === '' ? 'Forward' : 'Reply') : 'New message'}
         </h1>
+
+        {/* Quiet, and only ever after a save has actually happened. A composer
+            that claims to be saved when it is not is worse than one that says
+            nothing: it is the claim people close the window on. */}
+        <p data-testid="composer-saved" className={`flex-1 text-xs ${TEXT.muted}`}>
+          {savedAt !== null && 'Draft saved'}
+        </p>
 
         <button
           type="button"

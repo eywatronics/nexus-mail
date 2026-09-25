@@ -37,6 +37,11 @@ type DraftDTO struct {
 	// AttachmentPaths are files the person chose in the dialog, by path. Only
 	// paths PickAttachments handed out are accepted; see readAttachments.
 	AttachmentPaths []string `json:"attachmentPaths"`
+
+	// DraftID is the saved draft this message came from, zero when it never
+	// was one. Cleared once the message is queued: a draft left behind after
+	// the message went out is a message the user will send a second time.
+	DraftID int64 `json:"draftId"`
 }
 
 // QueuedDTO is what the window is told about a message on its way.
@@ -108,6 +113,17 @@ func (s *MailService) SendMessage(d DraftDTO) (QueuedDTO, error) {
 		// sweep to notice.
 		_ = s.outbox.Remove(name)
 		return QueuedDTO{}, err
+	}
+
+	// After the queue row, never before. A draft discarded first and a queue
+	// row that then failed to write would be a message that exists nowhere.
+	if d.DraftID != 0 {
+		// Ignored on purpose. The message is queued and will go out; reporting
+		// this as a failed send would invite a second copy of it. The cost is
+		// a draft that lingers, and that is not a silent failure — it is
+		// sitting in the Drafts list where the person can see it and throw it
+		// away, which is more than a log line would give them.
+		_ = s.store.DeleteDraft(ctx, d.DraftID)
 	}
 
 	s.nudgeWatchers()

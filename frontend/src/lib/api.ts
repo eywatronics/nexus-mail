@@ -320,6 +320,11 @@ export interface Draft {
    * to ask it to read something the person did not choose.
    */
   attachmentPaths: string[]
+  /**
+   * The saved draft this message came from, zero when it never was one.
+   * Cleared once the message is queued.
+   */
+  draftId: number
 }
 
 /** A file chosen in the dialog, described but not read. */
@@ -339,6 +344,65 @@ export interface OutgoingAttachment {
  */
 export const pickAttachments = () =>
   MailService.PickAttachments() as Promise<OutgoingAttachment[]>
+
+/**
+ * A draft, on its way to or from the composer.
+ *
+ * Address lines are strings as typed, not parsed lists. A half-typed address
+ * is the normal state of a draft and would not survive a parse.
+ */
+export interface DraftRecord {
+  /** Zero for a draft that has never been saved. */
+  id: number
+  accountId: number
+  identityId: number
+  to: string
+  cc: string
+  bcc: string
+  subject: string
+  body: string
+  inReplyTo: string
+  references: string[]
+  /** What a save carries: the files by path. */
+  attachmentPaths: string[]
+  /**
+   * What a read of one draft carries: the same files, described, so the
+   * composer can show names and sizes without reading them.
+   *
+   * Optional because it is genuinely absent twice over — on the way in, and in
+   * the list, which does not go to disk to describe every draft's files.
+   */
+  attachments?: OutgoingAttachment[] | null
+  /**
+   * Files a reopened draft referred to that are no longer on disk. Named
+   * rather than dropped in silence — a draft that quietly comes back with one
+   * fewer attachment is a message sent without the thing it was about.
+   */
+  missingAttachments?: string[] | null
+  updatedAtUnix: number
+}
+
+/**
+ * Writes what is in the composer and resolves to the draft's id.
+ *
+ * The two describe-only fields are filled in as null. One backend struct
+ * serves both directions, so the generated type asks for them on the way in
+ * as well; the save ignores them, and sending what the composer happens to
+ * hold would be sending derived data back as though it were input.
+ */
+export const saveDraft = (draft: DraftRecord) =>
+  MailService.SaveDraft({
+    ...draft,
+    attachments: null,
+    missingAttachments: null,
+  }) as Promise<number>
+
+/** An account's unfinished messages, newest first. */
+export const drafts = (accountId: number) =>
+  MailService.Drafts(accountId) as Promise<DraftRecord[]>
+
+/** Throws one away. Discarding one that is already gone is not an error. */
+export const discardDraft = (id: number) => MailService.DiscardDraft(id) as Promise<void>
 
 /** What the window is told about a message on its way. */
 export interface Queued {
