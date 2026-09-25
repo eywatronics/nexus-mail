@@ -23,26 +23,43 @@ export function Composer({
 }: {
   accountId: number
   onClose: () => void
-  /** Set when answering a message, which threads the reply under it. */
-  reply?: { subject: string; to: string; inReplyTo: string; references: string[] }
+  /**
+   * Set when answering or forwarding, which carries the threading headers and
+   * the quoted original through.
+   */
+  reply?: {
+    subject: string
+    to: string
+    cc: string
+    inReplyTo: string
+    references: string[]
+    quoted: string
+  }
 }) {
   const [from, setFrom] = useState<Identity[]>([])
   const [identityId, setIdentityId] = useState(0)
 
   const [to, setTo] = useState(reply?.to ?? '')
-  const [cc, setCc] = useState('')
+  const [cc, setCc] = useState(reply?.cc ?? '')
   const [bcc, setBcc] = useState('')
   // Cc and Bcc are hidden until asked for. Most messages have neither, and
   // four empty fields at the top of every compose window is four lines of
   // nothing between the writer and the thing they came to write.
-  const [showCopies, setShowCopies] = useState(false)
+  // Shown from the start when a reply-all already put people there: a Cc line
+  // with names on it that the writer cannot see is a message going somewhere
+  // they did not check.
+  const [showCopies, setShowCopies] = useState((reply?.cc ?? '') !== '')
 
   const [subject, setSubject] = useState(reply?.subject ?? '')
-  const [body, setBody] = useState('')
+  // The quote starts below an empty line, and the cursor starts above it.
+  // Top-posting is what the rest of the world does and what a reader scanning
+  // a thread expects; the quote is there to be referred to, not read first.
+  const [body, setBody] = useState(reply?.quoted ? `\n\n${reply.quoted}` : '')
 
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
+  const bodyField = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     readIdentities(accountId)
@@ -58,7 +75,13 @@ export function Composer({
   // A reply already knows who it is going to, so the cursor belongs in the
   // body; a new message has an empty To line and belongs there.
   useEffect(() => {
-    if (!reply) firstField.current?.focus()
+    if (reply) {
+      // The cursor goes to the top of the body, above the quote.
+      bodyField.current?.focus()
+      bodyField.current?.setSelectionRange(0, 0)
+      return
+    }
+    firstField.current?.focus()
   }, [reply])
 
   const canSend = to.trim() !== '' || cc.trim() !== '' || bcc.trim() !== ''
@@ -94,7 +117,7 @@ export function Composer({
     <div className={`flex h-full flex-col ${SURFACE.page}`}>
       <header className={`flex items-center gap-3 border-b px-6 py-3 ${SURFACE.divider}`}>
         <h1 className={`flex-1 text-base font-semibold tracking-tight ${TEXT.primary}`}>
-          {reply ? 'Reply' : 'New message'}
+          {reply ? (reply.to === '' ? 'Forward' : 'Reply') : 'New message'}
         </h1>
 
         <button
@@ -183,6 +206,7 @@ export function Composer({
       </div>
 
       <textarea
+        ref={bodyField}
         data-testid="composer-body"
         aria-label="Message"
         value={body}

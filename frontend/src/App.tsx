@@ -39,7 +39,9 @@ const SEARCH_DEBOUNCE_MS = 180
 export default function App() {
   const [adding, setAdding] = useState(false)
   const [showingSettings, setShowingSettings] = useState(false)
-  const [composing, setComposing] = useState(false)
+  const composing = useMailStore((s) => s.composing)
+  const openComposer = useMailStore((s) => s.openComposer)
+  const closeComposer = useMailStore((s) => s.closeComposer)
   const [ready, setReady] = useState(false)
 
   const accounts = useMailStore((s) => s.accounts)
@@ -192,8 +194,14 @@ export default function App() {
   // Not yet a separate operating-system window, which is what Wails v3 was
   // chosen for and where this ends up. The component is the same either way;
   // only where it is mounted changes.
-  if (composing && activeAccountId !== null) {
-    return <Composer accountId={activeAccountId} onClose={() => setComposing(false)} />
+  if (composing) {
+    return (
+      <Composer
+        accountId={composing.accountId}
+        reply={composing.reply}
+        onClose={closeComposer}
+      />
+    )
   }
 
   return (
@@ -235,7 +243,9 @@ export default function App() {
               type="button"
               data-testid="open-composer"
               disabled={activeAccountId === null}
-              onClick={() => setComposing(true)}
+              onClick={() =>
+                activeAccountId !== null && openComposer({ accountId: activeAccountId })
+              }
               className={`${BUTTON_PRIMARY} inline-flex w-full items-center justify-center gap-1.5 py-1.5 text-sm`}
             >
               <PencilSimple size={ICON.size} weight={ICON.weight} aria-hidden />

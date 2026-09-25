@@ -328,3 +328,29 @@ export interface Queued {
  * length of a handshake and an upload, and a message lost if it were closed.
  */
 export const sendMessage = (draft: Draft) => MailService.SendMessage(draft) as Promise<Queued>
+
+/** A composer opened on an existing message. */
+export interface ReplyDraft {
+  accountId: number
+  to: string
+  cc: string
+  subject: string
+  inReplyTo: string
+  references: string[]
+  /** The original, marked up and ready to sit under the reply. */
+  quoted: string
+}
+
+/**
+ * Builds the draft for answering a message.
+ *
+ * Assembled in the backend because every part needs something the window does
+ * not have: the Message-ID and References for threading, the full address
+ * lists, and the body — which the window holds only as sanitised HTML inside a
+ * sandboxed frame it cannot read back.
+ */
+export const replyDraft = (messageId: number, all: boolean) =>
+  MailService.ReplyDraft(messageId, all) as Promise<ReplyDraft>
+
+export const forwardDraft = (messageId: number) =>
+  MailService.ForwardDraft(messageId) as Promise<ReplyDraft>

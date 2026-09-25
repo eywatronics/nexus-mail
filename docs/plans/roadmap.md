@@ -296,10 +296,11 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
   olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
 - ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
 - ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
-- ~~Compose ekranı~~ — **bitti** (düz metin); yanıtla/ilet/yönlendir henüz yok
+- ~~Compose ekranı~~ — **bitti** (düz metin)
+- ~~Yanıtla / tümünü yanıtla / ilet~~ — **bitti**; yönlendir (redirect) yok
 - Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
-- Alıntılama ve yanıt konumu
+- ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
 - Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
 - Ek ekleme, gömülü resim (`cid:`), **ek hatırlatıcı**
 - Taslak otomatik kaydetme
@@ -337,6 +338,16 @@ başarısız olursa kuyruk hâlâ "bekliyor" der ve bir sonraki geçiş aynı me
 tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmasını
 gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
 durdurmak — kalan mesajları aynı arızanın içine sürmemek.
+
+### Reply-To yakalanmıyor
+
+Yanıt, gönderenin `From` adresine gidiyor. Doğrusu `Reply-To` varsa ona
+gitmesi — başlığın var olma sebebi bu — ve bunu yapmayan bir istemci, posta
+listesine gitmesi gereken yanıtı listeye gönderen kişiye yolluyor.
+
+Boşluğun sebebi şu: `Reply-To` hiç saklanmıyor. Kapatmak için bir kolon ve
+zarf ayrıştırıcısında bir satır gerekiyor; burada tahmin etmek yerine kendi
+işi olarak yapılacak. Kodda yorumla işaretli.
 
 ### Composer neden önce düz metin
 

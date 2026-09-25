@@ -209,8 +209,10 @@ describe('replying', () => {
       reply: {
         subject: 'Re: Konu',
         to: 'ilk@example.com',
+        cc: '',
         inReplyTo: 'parent@example.com',
         references: ['root@example.com', 'parent@example.com'],
+        quoted: '> özgün gövde',
       },
     })
     await waitFor(() => expect(identities).toHaveBeenCalled())
@@ -227,5 +229,60 @@ describe('replying', () => {
         }),
       ),
     )
+  })
+})
+
+describe('quoting', () => {
+  const reply = {
+    subject: 'Re: Konu',
+    to: 'yazan@example.com',
+    cc: 'biri@example.com',
+    inReplyTo: 'parent@example.com',
+    references: ['parent@example.com'],
+    quoted: 'On 25 September 2026, Yazan wrote:\n> özgün gövde',
+  }
+
+  // Top-posting is what the rest of the world does and what a reader scanning
+  // a thread expects: the quote is there to be referred to, not read first.
+  it('puts the quote below an empty line and the cursor above it', async () => {
+    const { getByTestId } = open({ reply })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    const body = getByTestId('composer-body') as HTMLTextAreaElement
+    expect(body.value.startsWith('\n\n')).toBe(true)
+    expect(body.value).toContain('> özgün gövde')
+    expect(body.selectionStart).toBe(0)
+  })
+
+  // A Cc line with names on it that the writer cannot see is a message going
+  // somewhere they did not check.
+  it('shows the copy lines when a reply-all already filled them', async () => {
+    const { getByTestId } = open({ reply })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect((getByTestId('composer-cc') as HTMLInputElement).value).toBe('biri@example.com')
+  })
+
+  it('sends the quote as part of the body', async () => {
+    const { getByTestId } = open({ reply })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: expect.stringContaining('> özgün gövde') }),
+      ),
+    )
+  })
+
+  // A forward has nobody on it yet, and the heading has to say so rather than
+  // calling itself a reply.
+  it('calls itself a forward when there is nobody to reply to', async () => {
+    const { getByText } = open({
+      reply: { ...reply, to: '', cc: '', inReplyTo: '', references: [] },
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByText('Forward')).toBeTruthy()
   })
 })

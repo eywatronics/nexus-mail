@@ -97,6 +97,18 @@ interface MailState {
   openFind: () => void
   closeFind: () => void
 
+  /**
+   * The composer, and what it opens on.
+   *
+   * Here rather than in the shell because two places open it: the New message
+   * button beside the folders and the reply buttons in the reading pane. A
+   * second copy of "is the composer open" would be a second thing to keep in
+   * step with the first.
+   */
+  composing: ComposerRequest | null
+  openComposer: (request: ComposerRequest) => void
+  closeComposer: () => void
+
   setAccounts: (accounts: Account[]) => void
   setPendingChanges: (accountId: number, counts: PendingChanges) => void
   clearPendingChanges: (accountId: number) => void
@@ -133,6 +145,19 @@ interface MailState {
   reset: () => void
 }
 
+/** What the composer opens on. A bare account means a new message. */
+export interface ComposerRequest {
+  accountId: number
+  reply?: {
+    subject: string
+    to: string
+    cc: string
+    inReplyTo: string
+    references: string[]
+    quoted: string
+  }
+}
+
 const THREADED_KEY = 'nexus-mail-threaded'
 const THREADED_VALUES = ['on', 'off'] as const
 const THEME_KEY = 'nexus-mail-theme'
@@ -155,12 +180,16 @@ const initialState = {
   undoOffer: null as Undoable | null,
   redoOffer: null as Undoable | null,
   findOpen: false,
+  composing: null as ComposerRequest | null,
   threaded: readPref(THREADED_KEY, THREADED_VALUES, 'off') === 'on',
   themeChoice: readPref<ThemeChoice>(THEME_KEY, THEME_CHOICES, 'system'),
 }
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...initialState,
+
+  openComposer: (request) => set({ composing: request }),
+  closeComposer: () => set({ composing: null }),
 
   openFind: () => set({ findOpen: true }),
   closeFind: () => set({ findOpen: false }),

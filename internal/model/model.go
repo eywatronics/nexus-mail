@@ -4,6 +4,7 @@
 package model
 
 import (
+	"net/mail"
 	"sort"
 	"strings"
 	"time"
@@ -258,6 +259,22 @@ func folderRank(f Folder) int {
 type Address struct {
 	Name string `json:"name"`
 	Addr string `json:"addr"`
+}
+
+// String is the address as it appears in a header.
+//
+// net/mail does the quoting, because the rules are not obvious: a display name
+// containing a comma, a quote or a full stop has to be quoted or the address
+// list parses as two addresses — and "Kabatepe, İsmet <u@example.com>" is
+// exactly the shape a name takes in a corporate directory.
+func (a Address) String() string {
+	if a.Addr == "" {
+		return a.Name
+	}
+	if a.Name == "" {
+		return a.Addr
+	}
+	return (&mail.Address{Name: a.Name, Address: a.Addr}).String()
 }
 
 type Message struct {
