@@ -1,0 +1,21 @@
+-- Where the author asked for answers to go, which is not always where they
+-- came from.
+--
+-- Until now a reply went to From:, and that is wrong in the one case it
+-- matters most: a mailing list sets Reply-To to the list address precisely so
+-- that answers reach everybody, and answering the person who happened to post
+-- takes the conversation off the list without anyone noticing. The same header
+-- is how a no-reply sender points at a real mailbox, and how somebody sends on
+-- behalf of a colleague.
+--
+-- Stored as the same JSON array of addresses that to_addrs and cc_addrs use,
+-- because Reply-To is a list in RFC 5322 and the one-address shortcut would
+-- have to be undone the first time it holds two.
+--
+-- Empty means two different things on this column and only one of them is
+-- "the header was absent": rows written before this migration were synced
+-- without ever reading it. The reply path falls back to From: when the column
+-- is empty, which is exactly what those rows did before, so an old row keeps
+-- behaving the way it always did rather than behaving wrongly in a new way.
+-- A re-sync fills it in.
+ALTER TABLE messages ADD COLUMN reply_to TEXT NOT NULL DEFAULT '';

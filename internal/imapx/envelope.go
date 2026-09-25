@@ -194,3 +194,42 @@ func hasAttachmentParts(bs imap.BodyStructure) bool {
 	})
 	return found
 }
+
+// replyToFrom reads the envelope's Reply-To, and returns nothing when it only
+// repeats From.
+//
+// RFC 3501 requires a server to answer the Reply-To part of an ENVELOPE with
+// the From addresses when the message has no Reply-To header of its own. That
+// defaulting is convenient for a client that only wants to know where to send
+// an answer, but it destroys the distinction this column is for: stored as-is,
+// every message in the database would claim a Reply-To, and the window could
+// never tell the reader that this one is different from the sender.
+//
+// So the defaulted case is undone here, at the one place that knows the
+// convention. Dropping it loses nothing: a reply with no Reply-To falls back
+// to From, which is the same address the server would have handed back.
+func replyToFrom(env *imap.Envelope) []model.Address {
+	replyTo := addressesFrom(env.ReplyTo)
+	if len(replyTo) == 0 {
+		return nil
+	}
+	if sameAddresses(replyTo, addressesFrom(env.From)) {
+		return nil
+	}
+	return replyTo
+}
+
+// sameAddresses compares two lists by address, ignoring display names and
+// case. A server that echoes From into Reply-To may capitalise it differently
+// or attach a different display name; neither makes it a different mailbox.
+func sameAddresses(a, b []model.Address) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(a[i].Addr, b[i].Addr) {
+			return false
+		}
+	}
+	return true
+}

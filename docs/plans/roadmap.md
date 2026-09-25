@@ -339,15 +339,31 @@ tekrar gönderir. Düzgün kapatmak, göndermeyle kaydın birlikte commit olmas�
 gerektirir; SMTP bunu sunmuyor. Dürüst hafifletme, boşaltmayı orada
 durdurmak — kalan mesajları aynı arızanın içine sürmemek.
 
-### Reply-To yakalanmıyor
+### Reply-To
 
-Yanıt, gönderenin `From` adresine gidiyor. Doğrusu `Reply-To` varsa ona
-gitmesi — başlığın var olma sebebi bu — ve bunu yapmayan bir istemci, posta
-listesine gitmesi gereken yanıtı listeye gönderen kişiye yolluyor.
+Kapatıldı, iki yönde birden.
 
-Boşluğun sebebi şu: `Reply-To` hiç saklanmıyor. Kapatmak için bir kolon ve
-zarf ayrıştırıcısında bir satır gerekiyor; burada tahmin etmek yerine kendi
-işi olarak yapılacak. Kodda yorumla işaretli.
+**Gelen tarafta** başlık `messages.reply_to` kolonunda saklanıyor ve yanıt
+oraya gidiyor. Bir incelik var: RFC 3501, mesajda `Reply-To` yoksa sunucunun
+ENVELOPE'ta `From` adreslerini döndürmesini şart koşuyor. Olduğu gibi saklamak
+her mesajın bir `Reply-To` iddia etmesi demek olurdu; `imapx.replyToFrom` bu
+varsayılanı geri alıyor, böylece kolon "başlık farklı bir adres söylüyordu"
+anlamına geliyor.
+
+`Reply-To`, `From`'a eklenmiyor, onun **yerine geçiyor** — "tümünü yanıtla"da
+da. İkisine birden göndermek listeye bir kopya, gönderen kişiye ayrıca özel bir
+kopya bırakırdı; `Reply-To`'nun önlemek için konduğu sonuç tam olarak bu.
+
+Migration'dan önce senkronlanan satırlarda kolon boş ve bu iki farklı şey
+demek; ikisi de `From`'a düşüyor, yani eski satır her zaman yaptığı şeyi
+yapmaya devam ediyor. Yeniden senkron dolduruyor.
+
+**Giden tarafta** kimliğin `reply_to` alanı artık mesaja yazılıyor. Alan 004'ten
+beri saklanıyor, okunuyordu ve hiçbir yere yazılmıyordu — ölü veriydi.
+
+Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
+taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
+yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
 
 ### Composer neden önce düz metin
 

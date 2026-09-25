@@ -204,6 +204,7 @@ func (cl *client) FetchHeaders(_ context.Context, r UIDRange) ([]model.Message, 
 			m.From = firstAddress(env.From)
 			m.To = addressesFrom(env.To)
 			m.Cc = addressesFrom(env.Cc)
+			m.ReplyTo = replyToFrom(env)
 			// The Date: header is attacker-controlled and often malformed, so
 			// INTERNALDATE wins whenever it is unusable or implausible.
 			m.Date = reconcileDate(env.Date, buf.InternalDate)

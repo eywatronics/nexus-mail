@@ -33,6 +33,7 @@ func TestUpsertMessagesRoundTripsEveryField(t *testing.T) {
 		From:           model.Address{Name: "Ali", Addr: "ali@example.com"},
 		To:             []model.Address{{Name: "Me", Addr: "me@example.com"}},
 		Cc:             []model.Address{{Addr: "cc@example.com"}},
+		ReplyTo:        []model.Address{{Name: "Liste", Addr: "liste@example.com"}},
 		Date:           time.Unix(1700000000, 0),
 		InternalDate:   time.Unix(1700000001, 0),
 		Size:           2048,
@@ -77,6 +78,9 @@ func TestUpsertMessagesRoundTripsEveryField(t *testing.T) {
 	}
 	if len(m.Cc) != 1 || m.Cc[0].Addr != "cc@example.com" {
 		t.Errorf("Cc = %+v, want one address cc@example.com", m.Cc)
+	}
+	if len(m.ReplyTo) != 1 || m.ReplyTo[0] != want.ReplyTo[0] {
+		t.Errorf("ReplyTo = %+v, want %+v", m.ReplyTo, want.ReplyTo)
 	}
 	if !m.Date.Equal(want.Date) {
 		t.Errorf("Date = %v, want %v", m.Date, want.Date)

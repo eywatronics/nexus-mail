@@ -294,6 +294,13 @@ type Message struct {
 	From        Address
 	To          []Address
 	Cc          []Address
+	// ReplyTo is the Reply-To header, empty when the author did not set one.
+	//
+	// Kept beside From rather than folded into it on ingest, because the two
+	// answer different questions: From is who wrote this, ReplyTo is where
+	// they want the answer. A reader looking at a mailing list message needs
+	// to be able to see both.
+	ReplyTo []Address
 	// Date comes from the Date: header, reconciled against InternalDate on
 	// ingest: an unparseable or implausible header is replaced by the server's
 	// delivery time. Sorting and display use InternalDate regardless.

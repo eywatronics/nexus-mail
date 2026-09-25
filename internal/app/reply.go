@@ -43,14 +43,7 @@ func (s *MailService) ReplyDraft(messageID int64, all bool) (ReplyDraftDTO, erro
 		return ReplyDraftDTO{}, err
 	}
 
-	// From, and not Reply-To, because Reply-To is not captured yet.
-	//
-	// That is a real gap and it shows on mailing lists: a list that sets
-	// Reply-To expects answers to go to the list, and this sends them to
-	// whoever happened to post. Closing it needs the header stored, which
-	// needs a column and a line in the envelope parser — its own piece of
-	// work rather than a guess made here.
-	to := []model.Address{msg.From}
+	to := replyTargets(msg)
 
 	var cc []model.Address
 	if all {
@@ -82,6 +75,31 @@ func (s *MailService) ReplyDraft(messageID int64, all bool) (ReplyDraftDTO, erro
 		References: mailmime.ReplyReferences(msg.References, msg.MessageID),
 		Quoted:     mailmime.Quote(msg.From.String(), msg.Date, body),
 	}, nil
+}
+
+// replyTargets is where an answer goes: Reply-To when the author set one,
+// otherwise the sender.
+//
+// The header exists to be obeyed, and the case it matters in is the one this
+// client got wrong until now — a mailing list sets Reply-To so that answers
+// reach the list, and sending them to whoever happened to post takes the
+// conversation off the list silently. The same header is how a no-reply
+// address points somewhere real, and how somebody writing on behalf of a
+// colleague routes the answer to them.
+//
+// It replaces the sender rather than joining them, including on reply-all.
+// Sending to both would put a copy on the list and a private copy on the
+// person who posted, which is the outcome Reply-To was set to avoid. A reader
+// who wants the author as well can add them, and can see who to add: the
+// quote below their reply names them.
+//
+// Empty for every message synced before the column existed, which lands on
+// From — what those messages already did.
+func replyTargets(msg model.Message) []model.Address {
+	if len(msg.ReplyTo) > 0 {
+		return withoutAddresses(msg.ReplyTo)
+	}
+	return []model.Address{msg.From}
 }
 
 // ForwardDraft builds the draft for passing a message on.
@@ -127,6 +145,11 @@ func forwardedHeader(msg model.Message) string {
 	}
 	if len(msg.Cc) > 0 {
 		b.WriteString("Cc: " + formatAddresses(msg.Cc) + "\n")
+	}
+	// Only when it says something From: does not. It is stored precisely
+	// because it differs, so the line appears exactly when it is news.
+	if len(msg.ReplyTo) > 0 {
+		b.WriteString("Reply-To: " + formatAddresses(msg.ReplyTo) + "\n")
 	}
 	return b.String()
 }

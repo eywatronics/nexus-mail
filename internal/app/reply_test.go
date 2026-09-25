@@ -13,6 +13,13 @@ import (
 // replyFixture gives a service holding one message with a full set of
 // recipients, and the account's own identities.
 func replyFixture(t *testing.T) (*MailService, int64) {
+	return replyFixtureWith(t, nil)
+}
+
+// replyFixtureWith is the same message with a Reply-To on it, which is the
+// mailing-list case: the list posts under the member's name and asks for
+// answers to come back to the list.
+func replyFixtureWith(t *testing.T, replyTo []model.Address) (*MailService, int64) {
 	t.Helper()
 
 	svc, _, db := newTestService(t, bodyBackend{html: "<p>özgün gövde</p>"})
@@ -52,6 +59,7 @@ func replyFixture(t *testing.T) (*MailService, int64) {
 			{Name: "Biri", Addr: "biri@example.com"},
 		},
 		Cc:           []model.Address{{Addr: "baskasi@example.com"}},
+		ReplyTo:      replyTo,
 		Date:         time.Date(2026, 9, 25, 9, 0, 0, 0, time.UTC),
 		InternalDate: time.Date(2026, 9, 25, 9, 0, 0, 0, time.UTC),
 	}}); err != nil {
@@ -270,5 +278,81 @@ func TestReplyingToSomethingThatIsNotThereIsReported(t *testing.T) {
 	}
 	if _, err := svc.ForwardDraft(9999); err == nil {
 		t.Error("ForwardDraft() succeeded for a message that does not exist")
+	}
+}
+
+// The header exists to be obeyed. A list sets Reply-To so that answers reach
+// the list, and answering the person who happened to post takes the
+// conversation off it without anybody noticing.
+func TestAReplyGoesWhereTheAuthorAskedRatherThanWhereItCameFrom(t *testing.T) {
+	svc, id := replyFixtureWith(t, []model.Address{
+		{Name: "Liste", Addr: "liste@example.com"},
+	})
+
+	got, err := svc.ReplyDraft(id, false)
+	if err != nil {
+		t.Fatalf("ReplyDraft() error: %v", err)
+	}
+
+	if !strings.Contains(got.To, "liste@example.com") {
+		t.Errorf("To = %q, want the list", got.To)
+	}
+	if strings.Contains(got.To, "yazan@example.com") {
+		t.Errorf("To = %q; the sender was asked not to be written to", got.To)
+	}
+}
+
+// And the sender does not reappear on the Cc line of a reply-all. Sending to
+// both puts a copy on the list and a private copy on the person who posted,
+// which is the outcome Reply-To was set to avoid.
+func TestReplyAllDoesNotPutTheSenderBackWhenReplyToRedirected(t *testing.T) {
+	svc, id := replyFixtureWith(t, []model.Address{
+		{Name: "Liste", Addr: "liste@example.com"},
+	})
+
+	got, err := svc.ReplyDraft(id, true)
+	if err != nil {
+		t.Fatalf("ReplyDraft() error: %v", err)
+	}
+
+	if strings.Contains(got.To+got.Cc, "yazan@example.com") {
+		t.Errorf("the sender is on To=%q Cc=%q", got.To, got.Cc)
+	}
+	// The other people on the thread are still there; redirecting the answer
+	// is not the same as dropping everybody else.
+	if !strings.Contains(got.Cc, "biri@example.com") {
+		t.Errorf("Cc = %q, want the other recipients", got.Cc)
+	}
+	// And the reader is still not writing to themselves.
+	if strings.Contains(got.Cc, "ben@example.com") {
+		t.Errorf("Cc = %q includes the reader", got.Cc)
+	}
+}
+
+// A forward is judged on its headers, and Reply-To is stored only when it
+// differs from the sender — so the line appears exactly when it is news.
+func TestAForwardShowsAReplyToThatDiffersFromTheSender(t *testing.T) {
+	svc, id := replyFixtureWith(t, []model.Address{
+		{Name: "Liste", Addr: "liste@example.com"},
+	})
+
+	got, err := svc.ForwardDraft(id)
+	if err != nil {
+		t.Fatalf("ForwardDraft() error: %v", err)
+	}
+	if !strings.Contains(got.Quoted, "Reply-To: ") {
+		t.Errorf("the forwarded header block has no Reply-To line:\n%s", got.Quoted)
+	}
+}
+
+func TestAForwardOfAnOrdinaryMessageHasNoReplyToLine(t *testing.T) {
+	svc, id := replyFixture(t)
+
+	got, err := svc.ForwardDraft(id)
+	if err != nil {
+		t.Fatalf("ForwardDraft() error: %v", err)
+	}
+	if strings.Contains(got.Quoted, "Reply-To:") {
+		t.Errorf("a Reply-To line appeared with nothing to report:\n%s", got.Quoted)
 	}
 }
