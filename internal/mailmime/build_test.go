@@ -438,3 +438,32 @@ func TestTheTextPartDeclaresUTF8(t *testing.T) {
 		t.Errorf("the first part is %q, want text/plain", ct)
 	}
 }
+
+// Reply-To is a header, not a recipient: the receiving client honours it when
+// the reader presses Reply, and nothing is delivered there.
+func TestReplyToIsWrittenAsAHeaderAndNotDeliveredTo(t *testing.T) {
+	d := simple()
+	d.ReplyTo = []Address{{Name: "Destek", Address: "destek@example.com"}}
+
+	raw := build(t, d)
+
+	addrs, err := read(t, raw).Header.AddressList("Reply-To")
+	if err != nil {
+		t.Fatalf("reading Reply-To: %v", err)
+	}
+	if len(addrs) != 1 || addrs[0].Address != "destek@example.com" {
+		t.Fatalf("Reply-To = %v", addrs)
+	}
+
+	for _, r := range d.Recipients() {
+		if r == "destek@example.com" {
+			t.Error("the Reply-To address was put in the envelope; it is not a recipient")
+		}
+	}
+}
+
+func TestAMessageWithNoReplyToHasNoSuchHeader(t *testing.T) {
+	if raw := bytes.ToLower(build(t, simple())); bytes.Contains(raw, []byte("reply-to:")) {
+		t.Errorf("an empty Reply-To was written out:\n%s", raw)
+	}
+}

@@ -44,6 +44,14 @@ type Draft struct {
 	// Recipients, and the test that holds this down.
 	Bcc []Address
 
+	// ReplyTo is where the sender wants answers, when that is not the address
+	// they are writing from. Empty for the ordinary case.
+	//
+	// It is not a recipient: nothing is delivered here. It is a request the
+	// receiving client honours when the reader presses Reply, which is why it
+	// is a header and not part of the envelope.
+	ReplyTo []Address
+
 	Subject string
 	// Text is the plain-text body and is always written. A message with an
 	// HTML part and no text alternative is one that reads as a blank page in
@@ -232,6 +240,9 @@ func buildHeader(d Draft) (gomail.Header, error) {
 	}
 	if len(d.Cc) > 0 {
 		h.SetAddressList("Cc", pointers(d.Cc))
+	}
+	if len(d.ReplyTo) > 0 {
+		h.SetAddressList("Reply-To", pointers(d.ReplyTo))
 	}
 	// No Bcc. Deliberately, and see Recipients.
 

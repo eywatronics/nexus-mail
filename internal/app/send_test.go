@@ -297,3 +297,61 @@ func decodeQuotedPrintable(t *testing.T, raw []byte) string {
 	}
 	return text
 }
+
+// The identity carries the reply address, not the composer.
+//
+// Where answers should go is a property of the address being written from: a
+// support alias whose replies belong in a shared mailbox wants that on every
+// message, not on the ones the writer remembered to set it on. The column has
+// existed since identities did and nothing ever wrote it out.
+func TestTheIdentitysReplyToReachesTheMessage(t *testing.T) {
+	svc, account := sendFixture(t)
+	ctx := context.Background()
+
+	alias, err := svc.store.InsertIdentity(ctx, model.Identity{
+		AccountID: account, Email: "destek@example.com", DisplayName: "Destek",
+		ReplyTo: "Destek Ekibi <ekip@example.com>",
+	})
+	if err != nil {
+		t.Fatalf("InsertIdentity() error: %v", err)
+	}
+
+	if _, err := svc.SendMessage(DraftDTO{
+		AccountID: account, IdentityID: alias,
+		To: "r@example.com", Subject: "Konu", Text: "metin",
+	}); err != nil {
+		t.Fatalf("SendMessage() error: %v", err)
+	}
+
+	op, raw := queued(t, svc, account)
+	if !bytes.Contains(raw, []byte("Reply-To:")) ||
+		!bytes.Contains(raw, []byte("ekip@example.com")) {
+		t.Errorf("the identity's reply address is not on the message:\n%s", raw)
+	}
+	// And it is still only the one recipient: a reply address is not somebody
+	// this message gets delivered to.
+	if len(op.EnvelopeTo) != 1 || op.EnvelopeTo[0] != "r@example.com" {
+		t.Errorf("the envelope goes to %v", op.EnvelopeTo)
+	}
+}
+
+// An identity whose reply address is nonsense is refused at the composer
+// rather than producing a message with a broken header.
+func TestAnUnparseableIdentityReplyToIsRefused(t *testing.T) {
+	svc, account := sendFixture(t)
+	ctx := context.Background()
+
+	broken, err := svc.store.InsertIdentity(ctx, model.Identity{
+		AccountID: account, Email: "x@example.com", ReplyTo: "bu bir adres degil",
+	})
+	if err != nil {
+		t.Fatalf("InsertIdentity() error: %v", err)
+	}
+
+	if _, err := svc.SendMessage(DraftDTO{
+		AccountID: account, IdentityID: broken,
+		To: "r@example.com", Subject: "Konu", Text: "metin",
+	}); err == nil {
+		t.Error("SendMessage() accepted an identity with an unparseable reply address")
+	}
+}

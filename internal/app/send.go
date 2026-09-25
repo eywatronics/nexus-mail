@@ -140,6 +140,14 @@ func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
 	if err != nil {
 		return mailmime.Draft{}, err
 	}
+	// The identity's, not the window's. Where answers should go is a property
+	// of the address being written from — a support alias whose replies belong
+	// in a shared mailbox wants that on every message, not on the ones the
+	// writer remembered to set it on.
+	replyTo, err := parseAddressList("Reply-To", identity.ReplyTo)
+	if err != nil {
+		return mailmime.Draft{}, err
+	}
 
 	text := withSignature(d.Text, identity.SignatureText)
 	html := d.HTML
@@ -152,6 +160,7 @@ func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
 		To:         to,
 		Cc:         cc,
 		Bcc:        bcc,
+		ReplyTo:    replyTo,
 		Subject:    d.Subject,
 		Text:       text,
 		HTML:       html,
