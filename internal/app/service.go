@@ -431,6 +431,38 @@ func (s *MailService) locateFolder(ctx context.Context, folderID int64) (model.F
 		fmt.Errorf("app: folder %d vanished between lookups", folderID)
 }
 
+// providerFor turns an account into something that can prove who it is.
+//
+// One function for both protocols. Reading mail and sending it are the same
+// credential, and two copies of this switch is how an account ends up able to
+// do one and not the other — which is exactly what happened: submission had
+// its own path that took a password and refused every OAuth account outright.
+func providerFor(acct model.Account, secrets auth.SecretStore, cfg Config) (
+	auth.CredentialProvider, error) {
+
+	switch acct.AuthKind {
+	case model.AuthPassword:
+		return auth.NewPasswordProvider(acct.Email, acct.SecretRef, secrets), nil
+	case model.AuthOAuth:
+		oauthCfg := auth.OAuthConfig{
+			ClientID: cfg.GoogleClientID,
+			Scopes:   auth.GoogleScopes(),
+			Endpoint: auth.GoogleEndpoint(),
+		}
+		if acct.Provider == model.ProviderMicrosoft {
+			oauthCfg = auth.OAuthConfig{
+				ClientID: cfg.MicrosoftClientID,
+				Scopes:   auth.MicrosoftScopes(),
+				Endpoint: auth.MicrosoftEndpoint(),
+			}
+		}
+		return auth.NewOAuthProvider(acct.Email, acct.SecretRef, secrets, oauthCfg), nil
+	default:
+		return nil, fmt.Errorf("app: unknown auth kind %q for account %d",
+			acct.AuthKind, acct.ID)
+	}
+}
+
 // DialerFor builds the sync engine's dialer: it resolves an account to a
 // credential provider and opens an IMAP connection.
 //
@@ -443,26 +475,9 @@ func DialerFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Di
 			return nil, err
 		}
 
-		var provider auth.CredentialProvider
-		switch acct.AuthKind {
-		case model.AuthPassword:
-			provider = auth.NewPasswordProvider(acct.Email, acct.SecretRef, secrets)
-		case model.AuthOAuth:
-			oauthCfg := auth.OAuthConfig{
-				ClientID: cfg.GoogleClientID,
-				Scopes:   auth.GoogleScopes(),
-				Endpoint: auth.GoogleEndpoint(),
-			}
-			if acct.Provider == model.ProviderMicrosoft {
-				oauthCfg = auth.OAuthConfig{
-					ClientID: cfg.MicrosoftClientID,
-					Scopes:   auth.MicrosoftScopes(),
-					Endpoint: auth.MicrosoftEndpoint(),
-				}
-			}
-			provider = auth.NewOAuthProvider(acct.Email, acct.SecretRef, secrets, oauthCfg)
-		default:
-			return nil, fmt.Errorf("app: unknown auth kind %q for account %d", acct.AuthKind, accountID)
+		provider, err := providerFor(acct, secrets, cfg)
+		if err != nil {
+			return nil, err
 		}
 
 		// Encryption is chosen between implicit TLS and STARTTLS, never
@@ -494,17 +509,9 @@ func SenderFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Se
 				"app: account %d has no submission server configured", accountID)
 		}
 
-		// Only a password for now. OAuth submission needs XOAUTH2, which
-		// go-sasl does not ship and imapx implements by hand for IMAP; sharing
-		// that implementation is its own piece of work and belongs with the
-		// rest of M6 rather than smuggled in here.
-		if acct.AuthKind != model.AuthPassword {
-			return nil, fmt.Errorf(
-				"app: sending from an OAuth account is not supported yet (account %d)", accountID)
-		}
-		secret, err := secrets.Get(acct.SecretRef)
+		provider, err := providerFor(acct, secrets, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("app: reading the password to send with: %w", err)
+			return nil, err
 		}
 
 		// Port 465 is implicit TLS and 587 is STARTTLS. Chosen from the port
@@ -521,6 +528,6 @@ func SenderFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Se
 			Port:     acct.SMTPPort,
 			Security: security,
 			Username: acct.Email,
-		}, secret)
+		}, provider)
 	}
 }

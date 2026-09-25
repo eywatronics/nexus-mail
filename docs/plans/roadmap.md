@@ -365,6 +365,35 @@ Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
 taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
 yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
 
+### OAuth hesapları artık gönderebiliyor
+
+Bu eksik bir özellik değil, **bozuk bir yoldu**: Gmail veya Outlook hesabı
+eklenebiliyor, mail okunabiliyordu, ama gönderme açıkça "desteklenmiyor" diye
+hata veriyordu.
+
+Sebep mimari bir asimetriydi. `imapx.Dial` bir `auth.CredentialProvider`
+alıyordu — üç kimlik yolunu tek bir dikişte toplayan, IMAP'in Gmail mi Exchange
+mi konuştuğunu asla öğrenmemesini sağlayan arayüz. `smtpx.Dial` ise ham bir
+parola alıyordu, dolayısıyla token'la giren bir hesabın gönderecek hiçbir şeyi
+yoktu. `XOAUTH2` istemcisi `internal/auth` içinde zaten duruyordu.
+
+İki değişiklik: `smtpx.Dial` artık aynı arayüzü alıyor, ve hesabı sağlayıcıya
+çeviren `switch` tek bir `providerFor` fonksiyonunda. İki kopya olması, bir
+hesabın okuyup gönderememesinin sebebiydi.
+
+Mekanizma seçimi yalnızca parola varken sunucunun kararı: aynı parola PLAIN ya
+da LOGIN olarak sunulabilir, hangisinin açık olduğuna sunucu karar verir.
+Basılmış bir token'ın böyle bir serbestliği yok — yalnızca XOAUTH2 olarak
+sunulabilir, seçilecek bir şey yok.
+
+**Parola, taşıyabilecek bir mekanizma bulunmadan anahtarlıktan çıkmıyor.**
+Önce okumak, hiçbir zaman kabul etmeyecek bir sunucuyla konuşmak için parolayı
+bu sürece almak demekti.
+
+Sahte sunucu XOAUTH2'yi gerçekten çözüyor — `user=...auth=Bearer
+...` biçimi kontrol ediliyor. Baştan kabul etseydi, yanlış biçim
+gönderen bir istemci bu testi geçip Gmail'de patlardı.
+
 ### Ek dosyalar
 
 `mailmime` ekleri baştan beri kurabiliyordu ve hiçbir yerden çağrılmıyordu.
