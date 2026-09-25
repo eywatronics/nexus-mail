@@ -2,6 +2,7 @@ import { CircleNotch, DownloadSimple, Paperclip } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { listAttachments, revealAttachment, type Attachment } from '../lib/api'
 import { ICON, RADIUS, SURFACE, TEXT } from '../lib/ui'
+import { formatSize } from '../lib/format'
 
 /**
  * The files a message carries.
@@ -90,17 +91,4 @@ export function AttachmentList({ messageId }: { messageId: number }) {
       ))}
     </div>
   )
-}
-
-/**
- * Sizes in the units people read them in.
- *
- * This is the server's encoded size, which runs about a third larger than the
- * file that comes out of it. Close enough for "is this worth downloading on
- * this connection", which is the only question the number answers here.
- */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

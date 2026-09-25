@@ -365,6 +365,36 @@ Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
 taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
 yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
 
+### Ek dosyalar
+
+`mailmime` ekleri baştan beri kurabiliyordu ve hiçbir yerden çağrılmıyordu.
+Şimdi çağrılıyor.
+
+**Pencereye bayt değil yol geçiyor.** Sekiz megabaytlık bir PDF'i IPC mesajına
+serileştirmek pencereyi görülecek kadar bloklar — mail gövdelerinin HTTP'den
+servis edilmesiyle aynı gerekçe.
+
+Bunun bedeli, arka ucun bir dosya yolunu okuması. O yüzden yalnızca **kendi
+dosya diyaloğunun verdiği** yollar okunuyor; başka bir yol "dosya bulunamadı"
+değil, "bunu diyalogda kimse seçmedi" diye reddediliyor. Bugün buna ulaşacak
+bir yol yok — mail HTML'i betiksiz bir sandbox iframe'inde çalışıyor — ama
+"pencere arka uçtan istediği dosyayı okumasını isteyebilir" bir deliğin şekli,
+ve liste bir map'e mal oluyor.
+
+Diyalog `main.go`'da kalıyor: `internal/app` bir arayüz görüyor, Wails'i
+görmüyor. `SetFilePicker` bir metod değil paket fonksiyonu, çünkü Wails her
+dışa açık metodu pencereye bağlar — metod olsaydı "dosya diyaloğunu değiştir"
+pencerenin API'sinde olurdu. Binding üreticisi de bunu uyarı olarak söyledi.
+
+Dosyalar **gönderme anında** okunuyor, seçildiklerinde değil: öğle arasında
+açık bırakılmış bir composer üç fotoğrafı üç saat bellekte tutmasın, ve giden
+şey Gönder'e basıldığındaki dosya olsun.
+
+Toplam 40 MB sınırı bir protokol sınırı değil — SMTP'de öyle bir şey yok ve
+sunucunun kendi `SIZE`'ı zaten `smtpx`'te işlem başlamadan kontrol ediliyor.
+Bu sınır bu sürecin belleğiyle ilgili: mesaj base64'üyle birlikte burada
+kuruluyor.
+
 ### Composer neden önce düz metin
 
 Zengin editör ve alıcı "pill" arayüzü listede duruyor ve yapılacak. Ama doğru

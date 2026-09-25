@@ -311,7 +311,34 @@ export interface Draft {
   html: string
   inReplyTo: string
   references: string[]
+  /**
+   * Files to attach, by path.
+   *
+   * Paths rather than contents: an eight-megabyte PDF serialised into an IPC
+   * message would block this window for long enough to be seen. The backend
+   * accepts only paths its own file dialog handed out, so this cannot be used
+   * to ask it to read something the person did not choose.
+   */
+  attachmentPaths: string[]
 }
+
+/** A file chosen in the dialog, described but not read. */
+export interface OutgoingAttachment {
+  path: string
+  name: string
+  size: number
+  /** Guessed from the extension; empty when there is nothing to guess from. */
+  mimeType: string
+}
+
+/**
+ * Opens the operating system's file dialog.
+ *
+ * Resolves to an empty list when the person closes it: cancelling is an
+ * answer, not a failure.
+ */
+export const pickAttachments = () =>
+  MailService.PickAttachments() as Promise<OutgoingAttachment[]>
 
 /** What the window is told about a message on its way. */
 export interface Queued {
