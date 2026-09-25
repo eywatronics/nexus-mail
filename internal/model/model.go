@@ -407,6 +407,37 @@ const (
 // UIDValidity is the generation of the mailbox this was queued against. The
 // worker compares it before sending: a mailbox the server has recreated has a
 // new UID space, and the same number now names a different message.
+// Draft is a message somebody is still writing.
+//
+// The address lines are strings, as typed, not parsed lists. Parsing lives in
+// one place — the send path — and a draft that had been parsed and put back
+// together would come back subtly different from what the person wrote. A
+// half-typed address would not survive the round trip at all, and half-typed
+// is the normal state of a draft.
+type Draft struct {
+	ID        int64
+	AccountID int64
+	// IdentityID zero means the account's default, resolved when the message
+	// is sent rather than frozen here: an identity deleted in between should
+	// fall back, not fail.
+	IdentityID int64
+
+	To      string
+	Cc      string
+	Bcc     string
+	Subject string
+	Body    string
+
+	InReplyTo  string
+	References []string
+
+	// AttachmentPaths are files by path. A draft is not a place to copy a
+	// twenty-megabyte PDF, and the paths are checked again at send time.
+	AttachmentPaths []string
+
+	UpdatedAt time.Time
+}
+
 type Operation struct {
 	ID          int64
 	AccountID   int64

@@ -7,6 +7,7 @@ import { Layout } from './components/Layout'
 import { MessageList } from './components/MessageList'
 import { MessageView } from './components/MessageView'
 import { ChangeFailureNotice } from './components/ChangeFailureNotice'
+import { DraftStrip } from './components/DraftStrip'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
 import { UndoNotice } from './components/UndoNotice'
@@ -198,6 +199,7 @@ export default function App() {
     return (
       <Composer
         accountId={composing.accountId}
+        draft={composing.draft}
         reply={composing.reply}
         onClose={closeComposer}
       />
@@ -262,6 +264,7 @@ export default function App() {
         <div className="flex h-full flex-col">
           <ChangeFailureNotice />
           <SearchBox />
+          <DraftStrip />
           <div className="min-h-0 flex-1">
             <MessageList onLoadMore={loadMore} />
           </div>

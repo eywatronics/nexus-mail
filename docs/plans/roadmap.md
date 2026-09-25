@@ -365,6 +365,43 @@ Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
 taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
 yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
 
+### Taslaklar
+
+Şimdiye kadar composer, içindekinin **tek kopyasını** tutuyordu. Pencereyi
+kapatmak ya da bir çökme mesajı da götürüyordu — bir mail istemcisinin
+yapabileceği en kötü şey, çünkü içindeki tek şey kullanıcının kendi yazdığı ve
+başka hiçbir yerden kurtarılamayacak olan şey.
+
+Yazma duraklamasında (2 sn) yerel `drafts` tablosuna yazılıyor. Her tuş vuruşu
+bir IMAP APPEND olamaz, ve yalnızca çevrimiçiyken taslak kaydedebilen bir
+istemci trende yazılan mesajı kaybeder — ki uzun mesajlar tam olarak orada
+yazılır. **Sunucunun Taslaklar kutusuna yüklemek bir sonraki adım** ve bu
+tablodan tek ihtiyacı, son yüklemenin ürettiği UID'yi hatırlayacak bir kolon.
+
+**Adres satırları yazıldığı gibi saklanıyor**, ayrıştırılmadan. Ayrıştırma tek
+yerde; ayrıştırılıp yeniden kurulmuş bir taslak yazılandan farklı geri gelirdi
+ve yarım yazılmış bir adres hiç hayatta kalmazdı — yarım yazılmış olmak ise
+taslağın normal hâli.
+
+**Nerede göründüğü.** Taslak, Taslaklar klasörüne ait; başka adlı ikinci bir
+yer, kimsenin hangisinde olduğunu bilemeyeceği ikinci bir Taslaklar olurdu. Ama
+bunlar henüz sunucuya ulaşmadı: UID'leri, bayrakları ve klasörün sıralamasında
+bir yerleri yok. Listeye satır olarak koymak, okuyucunun seçebildiği ama hiçbir
+şey yapamadığı bir satır demek olurdu. Şerit bunun dürüst biçimi: aynı klasör,
+gözle görülür biçimde henüz ona dahil değil. Yükleme geldiğinde alttaki listede
+belirecekler ve şeridin gösterecek bir şeyi kalmayacak.
+
+**Ekler ve izin listesi.** Taslak yeniden açıldığında ek yollarının izin
+listesine geri alınması listede bir delik değil, listenin amacı: bu yollar
+uygulamanın kendi veritabanından geliyor ve taslak yazılırken dosya
+diyaloğunda seçilmişlerdi. Listenin dışarıda tuttuğu şey pencerenin uydurduğu
+bir yol, ve bir taslak satırı pencere değil. Aradan silinmiş bir dosya taslağı
+açılamaz yapmıyor — içindeki kelimeler dosyadan değerli — ama adı söyleniyor;
+sessizce bir eksik dönen bir taslak, hakkında olduğu şey olmadan gönderilen bir
+mesajdır.
+
+Boş composer kaydedilmiyor: açıp vazgeçip kapatmak arkada bir şey bırakmamalı.
+
 ### OAuth hesapları artık gönderebiliyor
 
 Bu eksik bir özellik değil, **bozuk bir yoldu**: Gmail veya Outlook hesabı

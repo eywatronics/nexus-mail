@@ -1,16 +1,18 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Composer } from './Composer'
-import type { Identity, OutgoingAttachment } from '../lib/api'
+import type { DraftRecord, Identity, OutgoingAttachment } from '../lib/api'
 
 const identities = vi.fn()
 const sendMessage = vi.fn()
 const pickAttachments = vi.fn()
+const saveDraft = vi.fn()
 
 vi.mock('../lib/api', () => ({
   identities: (accountId: number) => identities(accountId),
   sendMessage: (draft: unknown) => sendMessage(draft),
   pickAttachments: () => pickAttachments(),
+  saveDraft: (draft: unknown) => saveDraft(draft),
 }))
 
 const identity = (over: Partial<Identity> = {}): Identity => ({
@@ -30,6 +32,9 @@ beforeEach(() => {
   sendMessage.mockResolvedValue({ operationId: 1, recipients: 1 })
   pickAttachments.mockReset()
   pickAttachments.mockResolvedValue([])
+  saveDraft.mockReset()
+  saveDraft.mockResolvedValue(7)
+  vi.useRealTimers()
 })
 
 const file = (over: Partial<OutgoingAttachment> = {}): OutgoingAttachment => ({
@@ -378,5 +383,140 @@ describe('attaching files', () => {
     fireEvent.click(getByTestId('composer-attach'))
 
     expect((await findByTestId('composer-error')).textContent).toContain('is a folder')
+  })
+})
+
+describe('not losing what was typed', () => {
+  const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
+    id: 7,
+    accountId: 1,
+    identityId: 0,
+    to: 'ali@example.com, bir yar',
+    cc: '',
+    bcc: '',
+    subject: 'Yarim konu',
+    body: 'burada kalmis',
+    inReplyTo: '',
+    references: [],
+    attachmentPaths: [],
+    updatedAtUnix: 1_700_000_000,
+    ...over,
+  })
+
+  // Two seconds of nothing counts as having stopped typing.
+  it('saves after a pause, not on every keystroke', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'b' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'bi' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'bir' } })
+    expect(saveDraft).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenCalledTimes(1)
+    expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ body: 'bir' }))
+  })
+
+  // One row, not one per pause. The id has to come back into the next save.
+  it('writes into the same draft on the second pause', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'ilk' } })
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ id: 0 }))
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'ikinci' } })
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ id: 7 }))
+  })
+
+  // Opening a composer, thinking better of it and closing it should leave
+  // nothing behind. A Drafts folder full of blank messages is one nobody reads.
+  it('does not save an empty composer', async () => {
+    vi.useFakeTimers()
+    open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(saveDraft).not.toHaveBeenCalled()
+  })
+
+  // The pause is not enough on its own: typing a sentence and closing the
+  // window straight away would clear the pending timer and lose it, which is
+  // the exact thing this mechanism exists to prevent.
+  it('saves on the way out, even before the pause is up', async () => {
+    const { getByTestId, unmount } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'aceleyle' } })
+    unmount()
+
+    await waitFor(() =>
+      expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ body: 'aceleyle' })),
+    )
+  })
+
+  // And a composer that was never typed into leaves nothing behind on the way
+  // out either.
+  it('saves nothing on the way out of an empty composer', async () => {
+    const { unmount } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    unmount()
+
+    expect(saveDraft).not.toHaveBeenCalled()
+  })
+
+  it('comes back with everything as it was typed', async () => {
+    const { getByTestId } = open({ draft: record() })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect((getByTestId('composer-to') as HTMLInputElement).value).toBe(
+      'ali@example.com, bir yar',
+    )
+    expect((getByTestId('composer-subject') as HTMLInputElement).value).toBe('Yarim konu')
+    expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe('burada kalmis')
+  })
+
+  // A blind copy the writer cannot see is a message going somewhere they did
+  // not check, which is as true on reopening as it is on reply-all.
+  it('shows the copy lines when the draft has them', async () => {
+    const { getByTestId } = open({ draft: record({ bcc: 'gizli@example.com' }) })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect((getByTestId('composer-bcc') as HTMLInputElement).value).toBe('gizli@example.com')
+  })
+
+  it('tells the backend which draft the sent message came from', async () => {
+    const { getByTestId } = open({ draft: record() })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ draftId: 7 })),
+    )
+  })
+
+  // A composer that claims to be saved when it is not is worse than one that
+  // says nothing: that claim is what people close the window on.
+  it('says nothing about saving until a save has happened', async () => {
+    vi.useFakeTimers()
+    saveDraft.mockRejectedValue(new Error('disk full'))
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByTestId('composer-saved').textContent).toBe('')
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'metin' } })
+    await vi.advanceTimersByTimeAsync(2100)
+
+    expect(getByTestId('composer-saved').textContent).toBe('')
+    // And it is not shouted about either: the person is mid-sentence.
+    expect(getByTestId('composer-body')).toBeTruthy()
   })
 })
