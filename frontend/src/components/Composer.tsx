@@ -1,7 +1,14 @@
-import { PaperPlaneRight, X } from '@phosphor-icons/react'
+import { Paperclip, PaperPlaneRight, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
-import { identities as readIdentities, sendMessage, type Identity } from '../lib/api'
-import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, SURFACE, TEXT } from '../lib/ui'
+import {
+  identities as readIdentities,
+  pickAttachments,
+  sendMessage,
+  type Identity,
+  type OutgoingAttachment,
+} from '../lib/api'
+import { formatSize } from '../lib/format'
+import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
 
 /**
  * Writing a message.
@@ -56,6 +63,10 @@ export function Composer({
   // a thread expects; the quote is there to be referred to, not read first.
   const [body, setBody] = useState(reply?.quoted ? `\n\n${reply.quoted}` : '')
 
+  // Files, by path. The bytes stay on disk until Send, so a composer left
+  // open with three photographs on it costs this window three filenames.
+  const [files, setFiles] = useState<OutgoingAttachment[]>([])
+
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
@@ -86,6 +97,20 @@ export function Composer({
 
   const canSend = to.trim() !== '' || cc.trim() !== '' || bcc.trim() !== ''
 
+  const attach = async () => {
+    try {
+      const chosen = await pickAttachments()
+      // Appended, and the same file twice is the same file: choosing it again
+      // is how somebody ends up mailing two copies of one attachment.
+      setFiles((current) => {
+        const have = new Set(current.map((f) => f.path))
+        return [...current, ...chosen.filter((f) => !have.has(f.path))]
+      })
+    } catch (err: unknown) {
+      setError(messageOf(err))
+    }
+  }
+
   const send = async () => {
     if (!canSend || sending) return
     setSending(true)
@@ -103,6 +128,7 @@ export function Composer({
         html: '',
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
+        attachmentPaths: files.map((f) => f.path),
       })
       onClose()
     } catch (err: unknown) {
@@ -119,6 +145,17 @@ export function Composer({
         <h1 className={`flex-1 text-base font-semibold tracking-tight ${TEXT.primary}`}>
           {reply ? (reply.to === '' ? 'Forward' : 'Reply') : 'New message'}
         </h1>
+
+        <button
+          type="button"
+          data-testid="composer-attach"
+          aria-label="Attach files"
+          title="Attach files"
+          onClick={() => void attach()}
+          className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+        >
+          <Paperclip size={ICON.size} weight={ICON.weight} aria-hidden />
+        </button>
 
         <button
           type="button"
@@ -204,6 +241,33 @@ export function Composer({
           <Line id="composer-subject" value={subject} onChange={setSubject} />
         </Row>
       </div>
+
+      {files.length > 0 && (
+        <ul
+          data-testid="composer-attachments"
+          className={`flex flex-wrap gap-2 border-b px-6 py-2 ${SURFACE.divider}`}
+        >
+          {files.map((file) => (
+            <li
+              key={file.path}
+              className={`inline-flex items-center gap-1.5 border py-1 pl-2 pr-1 text-xs ${RADIUS} ${SURFACE.divider} ${TEXT.primary}`}
+            >
+              <Paperclip size={ICON.size} weight={ICON.weight} aria-hidden />
+              <span className="max-w-56 truncate">{file.name}</span>
+              <span className={`font-mono ${TEXT.muted}`}>{formatSize(file.size)}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${file.name}`}
+                title={`Remove ${file.name}`}
+                onClick={() => setFiles((current) => current.filter((f) => f.path !== file.path))}
+                className={`${BUTTON_GHOST} p-0.5`}
+              >
+                <X size={ICON.size} weight={ICON.weight} aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <textarea
         ref={bodyField}

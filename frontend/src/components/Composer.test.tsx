@@ -1,14 +1,16 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Composer } from './Composer'
-import type { Identity } from '../lib/api'
+import type { Identity, OutgoingAttachment } from '../lib/api'
 
 const identities = vi.fn()
 const sendMessage = vi.fn()
+const pickAttachments = vi.fn()
 
 vi.mock('../lib/api', () => ({
   identities: (accountId: number) => identities(accountId),
   sendMessage: (draft: unknown) => sendMessage(draft),
+  pickAttachments: () => pickAttachments(),
 }))
 
 const identity = (over: Partial<Identity> = {}): Identity => ({
@@ -26,6 +28,16 @@ beforeEach(() => {
   identities.mockResolvedValue([identity()])
   sendMessage.mockReset()
   sendMessage.mockResolvedValue({ operationId: 1, recipients: 1 })
+  pickAttachments.mockReset()
+  pickAttachments.mockResolvedValue([])
+})
+
+const file = (over: Partial<OutgoingAttachment> = {}): OutgoingAttachment => ({
+  path: '/tmp/rapor.pdf',
+  name: 'rapor.pdf',
+  size: 2048,
+  mimeType: 'application/pdf',
+  ...over,
 })
 
 function open(props: Partial<Parameters<typeof Composer>[0]> = {}) {
@@ -284,5 +296,87 @@ describe('quoting', () => {
     await waitFor(() => expect(identities).toHaveBeenCalled())
 
     expect(getByText('Forward')).toBeTruthy()
+  })
+})
+
+describe('attaching files', () => {
+  // Paths, not bytes. An eight-megabyte PDF serialised into an IPC message
+  // would block this window for long enough to be seen.
+  it('sends the paths of what was chosen', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ attachmentPaths: ['/tmp/rapor.pdf'] }),
+      ),
+    )
+  })
+
+  it('shows nothing until something is attached', async () => {
+    const { queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(queryByTestId('composer-attachments')).toBeNull()
+  })
+
+  // Choosing the same file twice is how somebody ends up mailing two copies of
+  // one attachment.
+  it('does not attach the same file twice', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findAllByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findAllByText('rapor.pdf')
+    fireEvent.click(getByTestId('composer-attach'))
+
+    await waitFor(async () => expect(await findAllByText('rapor.pdf')).toHaveLength(1))
+  })
+
+  it('can take a file back off', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, getByLabelText, queryByTestId, findByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+
+    fireEvent.click(getByLabelText('Remove rapor.pdf'))
+
+    await waitFor(() => expect(queryByTestId('composer-attachments')).toBeNull())
+  })
+
+  // Cancelling is an answer, not a failure, and an error message every time
+  // somebody changes their mind would make the button unusable.
+  it('says nothing when the dialog is closed', async () => {
+    pickAttachments.mockResolvedValue([])
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+
+    await waitFor(() => expect(pickAttachments).toHaveBeenCalled())
+    expect(queryByTestId('composer-error')).toBeNull()
+    expect(queryByTestId('composer-attachments')).toBeNull()
+  })
+
+  // A file that cannot be read is worth saying out loud: the alternative is a
+  // paperclip button that sometimes does nothing.
+  it('reports a dialog that failed', async () => {
+    pickAttachments.mockRejectedValue(new Error('is a folder'))
+    const { getByTestId, findByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+
+    expect((await findByTestId('composer-error')).textContent).toContain('is a folder')
   })
 })

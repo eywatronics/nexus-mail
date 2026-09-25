@@ -311,6 +311,12 @@ func run(debug bool) error {
 		URL:              "/",
 	})
 
+	// The file dialog needs a window to hang off, so it is handed over here
+	// rather than at construction. internal/app knows it as an interface and
+	// imports nothing from the toolkit: that is what lets everything below the
+	// window be tested without one.
+	app.SetFilePicker(service, filePicker{app: wailsApp, window: window})
+
 	// Closing the window hides it; the app keeps running.
 	//
 	// This is what makes live sync mean anything. A mail client that stops
@@ -409,4 +415,29 @@ func mailContentMiddleware(bodies http.Handler) application.Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// filePicker is the operating system's own file dialog.
+//
+// Attached to the window so that it appears over the application rather than
+// somewhere else on the desktop, and so that the window is blocked while it is
+// open — a second dialog on top of the first is how somebody ends up attaching
+// the file they meant to replace.
+type filePicker struct {
+	app    *application.App
+	window application.Window
+}
+
+// PickFiles returns nothing and no error when the person closes the dialog.
+// Cancelling is an answer, not a failure.
+func (p filePicker) PickFiles(title string) ([]string, error) {
+	dialog := p.app.Dialog.OpenFile().
+		SetTitle(title).
+		CanChooseFiles(true).
+		// Folders cannot be attached, and offering to choose one only leads to
+		// an error message a moment later.
+		CanChooseDirectories(false).
+		AttachToWindow(p.window)
+
+	return dialog.PromptForMultipleSelection()
 }

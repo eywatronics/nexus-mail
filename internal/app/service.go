@@ -57,6 +57,17 @@ type MailService struct {
 	// dereferencing.
 	outbox *store.Outbox
 
+	// picker opens the operating system's file dialog, and attachable is every
+	// path it has handed back. SendMessage will read no path that is not in
+	// there, so that these two methods together are "attach what you chose"
+	// rather than "read any file on the machine".
+	//
+	// Their own lock: picking happens on the window's goroutine and the set is
+	// read again when the message is built, which is a different one.
+	attachMu   sync.RWMutex
+	picker     FilePicker
+	attachable map[string]bool
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.

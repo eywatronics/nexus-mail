@@ -33,6 +33,10 @@ type DraftDTO struct {
 	// InReplyTo and References thread the message under what it answers.
 	InReplyTo  string   `json:"inReplyTo"`
 	References []string `json:"references"`
+
+	// AttachmentPaths are files the person chose in the dialog, by path. Only
+	// paths PickAttachments handed out are accepted; see readAttachments.
+	AttachmentPaths []string `json:"attachmentPaths"`
 }
 
 // QueuedDTO is what the window is told about a message on its way.
@@ -63,7 +67,15 @@ func (s *MailService) SendMessage(d DraftDTO) (QueuedDTO, error) {
 		return QueuedDTO{}, err
 	}
 
-	draft, err := draftFromDTO(d, identity)
+	// Read before the draft is assembled, so a file that has gone missing
+	// since it was chosen stops the send rather than producing a message with
+	// a paperclip the reader cannot open.
+	attachments, err := s.readAttachments(d.AttachmentPaths)
+	if err != nil {
+		return QueuedDTO{}, err
+	}
+
+	draft, err := draftFromDTO(d, identity, attachments)
 	if err != nil {
 		return QueuedDTO{}, err
 	}
@@ -127,7 +139,8 @@ func (s *MailService) identityFor(ctx context.Context, d DraftDTO) (model.Identi
 }
 
 // draftFromDTO turns what the window sent into what the builder takes.
-func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
+func draftFromDTO(d DraftDTO, identity model.Identity,
+	attachments []mailmime.Attachment) (mailmime.Draft, error) {
 	to, err := parseAddressList("To", d.To)
 	if err != nil {
 		return mailmime.Draft{}, err
@@ -156,16 +169,17 @@ func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
 	}
 
 	return mailmime.Draft{
-		From:       mailmime.Address{Name: identity.DisplayName, Address: identity.Email},
-		To:         to,
-		Cc:         cc,
-		Bcc:        bcc,
-		ReplyTo:    replyTo,
-		Subject:    d.Subject,
-		Text:       text,
-		HTML:       html,
-		InReplyTo:  d.InReplyTo,
-		References: d.References,
+		From:        mailmime.Address{Name: identity.DisplayName, Address: identity.Email},
+		To:          to,
+		Cc:          cc,
+		Bcc:         bcc,
+		ReplyTo:     replyTo,
+		Attachments: attachments,
+		Subject:     d.Subject,
+		Text:        text,
+		HTML:        html,
+		InReplyTo:   d.InReplyTo,
+		References:  d.References,
 	}, nil
 }
 
