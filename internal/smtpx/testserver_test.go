@@ -1,6 +1,7 @@
 package smtpx
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -32,13 +33,15 @@ type recorded struct {
 	utf8     bool
 	bodyType string
 	size     int64
+	// mechanism is how the client signed in, for the tests that care which.
+	mechanism string
 }
 
 func (r *recorded) snapshot() recorded {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return recorded{from: r.from, to: append([]string(nil), r.to...), body: r.body,
-		utf8: r.utf8, bodyType: r.bodyType, size: r.size}
+		utf8: r.utf8, bodyType: r.bodyType, size: r.size, mechanism: r.mechanism}
 }
 
 // serverOptions is what a test wants to vary about the server it talks to.
@@ -47,6 +50,9 @@ type serverOptions struct {
 	password string
 	// authMechs overrides what the server advertises. Nil means the default.
 	authMechs []string
+	// username and token are what an XOAUTH2 exchange must carry.
+	username string
+	token    string
 	// maxSize is advertised as SIZE. Zero advertises none.
 	maxSize int64
 	// rejectRecipient, when non-empty, is refused at RCPT.
@@ -87,9 +93,34 @@ func (s *testSession) Auth(mech string) (sasl.Server, error) {
 			s.authenticated = true
 			return nil
 		}), nil
+	case "XOAUTH2":
+		// go-sasl ships no XOAUTH2 server, so the wire format is checked here:
+		// user=<name>\x01auth=Bearer <token>\x01\x01. Checked rather than
+		// waved through, because a client that sends the wrong shape would
+		// otherwise pass this test and fail against Gmail.
+		return xoauth2Server{session: s}, nil
 	default:
 		return nil, smtp.ErrAuthUnknownMechanism
 	}
+}
+
+// xoauth2Server accepts the one exchange XOAUTH2 has: everything is in the
+// initial response, and a correct token means there is nothing to say back.
+type xoauth2Server struct {
+	session *testSession
+}
+
+func (x xoauth2Server) Next(response []byte) (challenge []byte, done bool, err error) {
+	want := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01",
+		x.session.backend.opts.username, x.session.backend.opts.token)
+	if string(response) != want {
+		return nil, false, smtp.ErrAuthFailed
+	}
+	x.session.authenticated = true
+	x.session.backend.got.mu.Lock()
+	x.session.backend.got.mechanism = "XOAUTH2"
+	x.session.backend.got.mu.Unlock()
+	return nil, true, nil
 }
 
 func (s *testSession) Mail(from string, opts *smtp.MailOptions) error {
