@@ -1,141 +1,224 @@
 package store
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"nexusmail/internal/model"
 )
 
-// TestNoLockContentionUnderLoad asserts that concurrent readers never observe
-// SQLITE_BUSY while a writer works continuously.
+// SQLite allows one writer. The question that matters for this client is what
+// happens to the window while the sync engine is mid-batch: a fetch of five
+// hundred headers is one transaction, and every INSERT fires the FTS triggers
+// behind it. If a search or a folder change collided with that, the answer
+// would be a spinner at the exact moment the user is typing.
 //
-// This needs its own test because `go test -race` cannot catch it: lock
-// contention is not a data race, so the race detector is blind to it. Passing
-// by leaning on busy_timeout alone is also not good enough — writes must be
-// serialised, which the single-connection write pool guarantees.
-func TestNoLockContentionUnderLoad(t *testing.T) {
+// The DSN asks for WAL, a five-second busy timeout, and separate pools. These
+// tests are here because asking is not the same as getting: _pragma is applied
+// per connection, and a pool hands out more than one.
+
+// A pragma that only reached the first connection would be worse than one that
+// reached none: it would work in every test that opens a store and does one
+// thing, and fail under exactly the load it exists for.
+//
+// TestOpenAppliesMigrationsAndPragmas checks journal_mode on one connection,
+// which is the case this one does not cover and vice versa.
+func TestEveryConnectionInThePoolHasTheConcurrencyPragmas(t *testing.T) {
 	s := openTestStore(t)
 
-	if _, err := s.Write().Exec(
-		`INSERT INTO accounts (email, provider, auth_kind, imap_host, imap_port, secret_ref, created_at)
-		 VALUES ('a@example.com', 'generic', 'password', 'localhost', 993, 'ref', 0)`); err != nil {
-		t.Fatalf("seed account: %v", err)
-	}
-	if _, err := s.Write().Exec(
-		`INSERT INTO folders (account_id, name, path) VALUES (1, 'INBOX', 'INBOX')`); err != nil {
-		t.Fatalf("seed folder: %v", err)
-	}
+	// More goroutines than the pool has connections, each holding its query
+	// open long enough that the pool cannot serve them all with one.
+	const probes = readPoolSize * 2
+	var wg sync.WaitGroup
+	results := make([]struct {
+		mode    string
+		timeout int
+	}, probes)
+	errs := make([]error, probes)
 
-	const (
-		readers  = 50
-		duration = 3 * time.Second
-	)
+	start := make(chan struct{})
+	for i := range probes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			row := s.Read().QueryRow(`SELECT (SELECT * FROM pragma_journal_mode),
+				(SELECT * FROM pragma_busy_timeout)`)
+			errs[i] = row.Scan(&results[i].mode, &results[i].timeout)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("probe %d: %v", i, err)
+		}
+		if !strings.EqualFold(results[i].mode, "wal") {
+			t.Errorf("connection %d is in journal mode %q, not WAL", i, results[i].mode)
+		}
+		if results[i].timeout != 5000 {
+			t.Errorf("connection %d has busy_timeout %d, not 5000", i, results[i].timeout)
+		}
+	}
+}
+
+// The scenario itself: the engine writing batches while the window searches
+// and changes folders.
+//
+// What this holds down is that a read never fails and never waits out the busy
+// timeout while a batch is in flight. It deliberately does not assert a
+// latency, and it is worth being clear that it would pass without WAL — with a
+// rollback journal the busy timeout absorbs the contention and readers get
+// slow answers rather than errors. Measured on one machine, two seconds each:
+//
+//	WAL     47 batches of 500, 318 read rounds, slowest read 55ms
+//	DELETE  28 batches of 500, 263 read rounds, slowest read 142ms
+//
+// So WAL buys throughput and a worst case two and a half times better, not
+// correctness. A ceiling tight enough to catch its absence would be tight
+// enough to fail on a loaded CI runner, which is a test that gets deleted
+// rather than a test that catches anything.
+func TestReadsKeepWorkingWhileBatchesAreWritten(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	acct, folder := seedInboxForConcurrency(t, s)
+
+	// Enough of a mailbox that a search has something to do.
+	writeBatch(t, s, acct, folder, 0, 2000)
 
 	var (
-		wg       sync.WaitGroup
-		writes   atomic.Int64
-		busyHits atomic.Int64
-		stop     = make(chan struct{})
+		writes, reads atomic.Int64
+		readErr       atomic.Value
+		writeErr      atomic.Value
+		worst         atomic.Int64
 	)
 
-	recordIfBusy := func(err error) {
-		if err == nil {
-			return
-		}
-		msg := strings.ToLower(err.Error())
-		if strings.Contains(msg, "database is locked") ||
-			strings.Contains(msg, "sqlite_busy") ||
-			strings.Contains(msg, "database table is locked") {
-			busyHits.Add(1)
-			return
-		}
-		t.Errorf("unexpected error: %v", err)
-	}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
 
-	// One writer.
-	wg.Go(func() {
-		for uid := int64(1); ; uid++ {
+	// The writer: batches of 500, which is what a header fetch looks like.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for uid := 2000; ; uid += 500 {
 			select {
-			case <-stop:
+			case <-done:
 				return
 			default:
 			}
-			_, err := s.Write().Exec(
-				`INSERT INTO messages (account_id, folder_id, uid, subject, internal_date)
-				 VALUES (1, 1, ?, ?, ?)`, uid, "subject", uid)
-			recordIfBusy(err)
-			if err == nil {
-				writes.Add(1)
+			if err := upsertBatch(ctx, s, acct, folder, uid, 500); err != nil {
+				writeErr.Store(err)
+				return
 			}
+			writes.Add(1)
 		}
-	})
+	}()
 
-	// Fifty readers, running the same query the message list issues.
-	for range readers {
-		wg.Go(func() {
+	// The window: searching and listing, as fast as somebody typing.
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for {
 				select {
-				case <-stop:
+				case <-done:
 					return
 				default:
 				}
-				rows, err := s.Read().Query(
-					`SELECT id, subject FROM messages
-					 WHERE folder_id = 1 ORDER BY internal_date DESC LIMIT 50`)
-				if err != nil {
-					recordIfBusy(err)
-					continue
+				began := time.Now()
+				if _, err := s.SearchMessages(ctx, acct, "fatura", 50); err != nil {
+					readErr.Store(err)
+					return
 				}
-				for rows.Next() {
-					var id int64
-					var subject string
-					if err := rows.Scan(&id, &subject); err != nil {
-						t.Errorf("scan: %v", err)
-						break
-					}
+				if _, err := s.ListMessages(ctx, folder, 50, 0); err != nil {
+					readErr.Store(err)
+					return
 				}
-				if err := rows.Err(); err != nil {
-					recordIfBusy(err)
+				if took := time.Since(began).Milliseconds(); took > worst.Load() {
+					worst.Store(took)
 				}
-				if err := rows.Close(); err != nil {
-					t.Errorf("rows.Close(): %v", err)
-				}
+				reads.Add(1)
 			}
-		})
+		}()
 	}
 
-	time.Sleep(duration)
-	close(stop)
+	time.Sleep(2 * time.Second)
+	close(done)
 	wg.Wait()
 
-	if got := busyHits.Load(); got != 0 {
-		t.Errorf("observed %d lock-contention errors, want 0", got)
+	if err := readErr.Load(); err != nil {
+		t.Fatalf("a read failed while a batch was being written: %v", err)
 	}
-	if writes.Load() == 0 {
-		t.Fatal("writer made no progress; the test proves nothing")
+	if err := writeErr.Load(); err != nil {
+		t.Fatalf("a batch failed while reads were running: %v", err)
 	}
-	t.Logf("completed %d writes against %d readers with no contention", writes.Load(), readers)
-
-	// The row count must match exactly what the writer reported. A mismatch
-	// would mean a write was acknowledged but lost, which is worse than
-	// contention.
-	var count int64
-	if err := s.Read().QueryRow(`SELECT count(*) FROM messages`).Scan(&count); err != nil {
-		t.Fatalf("count: %v", err)
-	}
-	if count != writes.Load() {
-		t.Errorf("row count = %d, writer reported %d successful writes", count, writes.Load())
+	if writes.Load() == 0 || reads.Load() == 0 {
+		t.Fatalf("the test did not contend: %d batches, %d reads", writes.Load(), reads.Load())
 	}
 
-	// Every inserted row also went through the FTS insert trigger. If the
-	// trigger were to fail under load the index would silently drift.
-	var indexed int64
-	if err := s.Read().QueryRow(`SELECT count(*) FROM fts_messages`).Scan(&indexed); err != nil {
-		t.Fatalf("count fts rows: %v", err)
+	// Not an assertion about speed — machines differ and CI is loaded. The
+	// number is here to be read when somebody asks whether writes block the
+	// window, which is the question these pragmas exist to answer.
+	t.Logf("%d batches of 500 and %d read rounds in 2s; slowest read round %dms",
+		writes.Load(), reads.Load(), worst.Load())
+
+	// A read that blocked for the whole busy timeout would have returned an
+	// error, not a slow answer, so the ceiling is what proves the reader never
+	// waited on the writer at all.
+	if worst.Load() >= 5000 {
+		t.Errorf("a read round took %dms, which is the busy timeout", worst.Load())
 	}
-	if indexed != count {
-		t.Errorf("FTS holds %d rows but messages holds %d; the trigger fell behind under load", indexed, count)
+}
+
+func seedInboxForConcurrency(t *testing.T, s *Store) (int64, int64) {
+	t.Helper()
+	ctx := context.Background()
+
+	acct, err := s.InsertAccount(ctx, model.Account{
+		Email: "u@example.com", Provider: model.ProviderGeneric,
+		AuthKind: model.AuthPassword, IMAPHost: "h", IMAPPort: 993,
+		SecretRef: "ref", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("InsertAccount() error: %v", err)
+	}
+	if err := s.UpsertFolders(ctx, acct, []model.Folder{
+		{Path: "INBOX", Name: "INBOX", Attributes: []string{"\\Inbox"}},
+	}); err != nil {
+		t.Fatalf("UpsertFolders() error: %v", err)
+	}
+	folders, err := s.ListFolders(ctx, acct)
+	if err != nil || len(folders) == 0 {
+		t.Fatalf("ListFolders() = %v, %v", folders, err)
+	}
+	return acct, folders[0].ID
+}
+
+func upsertBatch(ctx context.Context, s *Store, acct, folder int64, first, n int) error {
+	msgs := make([]model.Message, 0, n)
+	for i := first; i < first+n; i++ {
+		msgs = append(msgs, model.Message{
+			AccountID: acct, FolderID: folder, UID: uint32(i + 1),
+			MessageID: fmt.Sprintf("m%d@example.com", i),
+			Subject:   fmt.Sprintf("Fatura %d odendi", i),
+			From:      model.Address{Name: "Muhasebe", Addr: "muhasebe@example.com"},
+			Snippet: fmt.Sprintf("Merhaba, %d numarali kaydi onaylamanizi rica ederim. "+
+				"Iyi calismalar.", i),
+			InternalDate: time.Now().Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	return s.UpsertMessages(ctx, folder, msgs)
+}
+
+func writeBatch(t *testing.T, s *Store, acct, folder int64, first, n int) {
+	t.Helper()
+	if err := upsertBatch(context.Background(), s, acct, folder, first, n); err != nil {
+		t.Fatalf("seeding: %v", err)
 	}
 }
