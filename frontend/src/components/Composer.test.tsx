@@ -7,6 +7,7 @@ const identities = vi.fn()
 const sendMessage = vi.fn()
 const pickAttachments = vi.fn()
 const pickInlineImage = vi.fn()
+const openComposerWindow = vi.fn()
 const saveDraft = vi.fn()
 const suggestRecipients = vi.fn()
 
@@ -15,6 +16,7 @@ vi.mock('../lib/api', () => ({
   sendMessage: (draft: unknown) => sendMessage(draft),
   pickAttachments: () => pickAttachments(),
   pickInlineImage: () => pickInlineImage(),
+  openComposerWindow: (draft: unknown) => openComposerWindow(draft),
   saveDraft: (draft: unknown) => saveDraft(draft),
   suggestRecipients: (...args: unknown[]) => suggestRecipients(...args),
 }))
@@ -40,6 +42,8 @@ beforeEach(() => {
   pickInlineImage.mockResolvedValue({
     path: '', cid: '', name: '', mimeType: '', url: '',
   })
+  openComposerWindow.mockReset()
+  openComposerWindow.mockResolvedValue('window-1')
   saveDraft.mockReset()
   saveDraft.mockResolvedValue(7)
   suggestRecipients.mockReset()
@@ -123,6 +127,41 @@ describe('writing a message', () => {
         expect.objectContaining({ to: 'Bir Kişi <a@example.com>, b@example.com' }),
       ),
     )
+  })
+
+  it('moves itself into a separate window with what is on screen', async () => {
+    const { getByTestId, onClose } = open({ canDetach: true })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-subject'), { target: { value: 'Konu' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'gövde' } })
+    fireEvent.click(getByTestId('composer-detach'))
+
+    await waitFor(() =>
+      expect(openComposerWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: 1,
+          to: 'r@example.com',
+          subject: 'Konu',
+          body: 'gövde',
+        }),
+      ),
+    )
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('says why it could not move instead of losing the draft', async () => {
+    openComposerWindow.mockRejectedValueOnce(new Error('no window system'))
+    const { getByTestId, onClose } = open({ canDetach: true })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-detach'))
+
+    await waitFor(() =>
+      expect(getByTestId('composer-error').textContent).toContain('no window system'),
+    )
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('closes once the message is queued', async () => {

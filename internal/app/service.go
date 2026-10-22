@@ -80,6 +80,11 @@ type MailService struct {
 	pendingMailto *mailto.Draft
 	mailtoErr     error
 
+	// Composer requests waiting for their own window to ask for them. The key
+	// is the window's one-time id, not an account or a draft.
+	windowMu       sync.Mutex
+	composerWindow map[string]DraftRecordDTO
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.

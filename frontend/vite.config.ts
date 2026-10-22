@@ -11,6 +11,14 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [react(), tailwindcss(), wails("./bindings")],
+  build: {
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        composer: "composer.html",
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     globals: true,

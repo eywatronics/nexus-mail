@@ -18,7 +18,7 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Bitti |
 | **M5** | Okuma deneyimini tamamla | Bitti |
-| **M6** | Gönderme | Sürüyor |
+| **M6** | Gönderme | Bitti |
 | **M7** | Kişiler | Yeni |
 | **M7b** | GNOME Online Accounts: Linux'ta hesap eklemeden hesap eklemek | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
@@ -336,7 +336,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
 - ~~Compose ekranı~~ — **bitti** (düz metin)
 - ~~Yanıtla / tümünü yanıtla / ilet~~ — **bitti**; yönlendir (redirect) yok
-- Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
+- ~~Ayrı işletim sistemi penceresi~~ — **bitti**: besteci *Open in a separate
+  window* ile kendi penceresine taşınıyor; varsayılan hâlâ ana pencere
 - ~~Zengin metin editörü (`contenteditable`) ve düz metin kipi~~ — **bitti**:
   biçimli yazı HTML olarak saklanıyor, düz metin varsayılan kalıyor
 - ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
@@ -614,6 +615,25 @@ sorgu hesabın kendi altyapısına gidiyor, bir üçüncü tarafın veritabanın
 Beş saniye sınır var ve arama her tuşta değil, düğmeye basınca yapılıyor: yazım
 hatası DNS sorgusuna dönüşmemeli. SMTP alanları da bulunan değerlerle doluyor;
 gönderme sunucusu yayınlanmamışsa boş bırakılıyor ve elle girilebiliyor.
+
+### Ayrı besteci penceresi
+
+Besteci başlığındaki *Open in a separate window* düğmesi, ekrandaki taslağı
+(`to`, `cc`, `bcc`, konu, gövde, HTML, ekler, gömülü resimler, threading
+başlıkları) `OpenComposerWindow` ile arka uca veriyor. Arka uç taslağı rastgele
+bir pencere kimliğiyle bellekte tutuyor ve Wails'ten `composer.html?id=...`
+adresini yükleyen ikinci bir pencere açmasını istiyor. URL'de yalnızca kimlik
+var: gövde pencere başlığına, çökme raporuna veya kabuk geçmişine düşmüyor.
+
+Yeni pencere `TakeComposerWindow` ile taslağı **bir kez** alıyor; yeniden
+yükleme "bu pencere sona erdi" diyor, aynı taslağın ikinci kopyasını açmıyor.
+Kapatma `Window.Close()` ile o pencereyi kapatıyor; ana pencere açık kalıyor.
+Besteci bileşeni aynı: ayrı pencerede `canDetach` kapalı, çünkü zaten ayrı
+olan bir besteciyi tekrar taşımak onu kaybetmenin yolu.
+
+Varsayılan hâlâ ana pencerede tam ekran. Ayrı pencere isteğe bağlı, çünkü tek
+pencereli akış M6'nın kabul ettiği davranış ve tarayıcı önizlemesinde ikinci
+pencere yok. Varsayılanı değiştirmek ayrı bir ürün kararı; altyapı artık hazır.
 
 ### Composer neden önce düz metinle başladı
 

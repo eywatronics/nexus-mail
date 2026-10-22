@@ -263,6 +263,7 @@ export default function App() {
         accountId={composing.accountId}
         draft={composing.draft}
         reply={composing.reply}
+        canDetach
         onClose={closeComposer}
       />
     )

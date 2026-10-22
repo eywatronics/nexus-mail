@@ -1,9 +1,10 @@
-import { Paperclip, PaperPlaneRight, X } from '@phosphor-icons/react'
+import { ArrowSquareOut, Paperclip, PaperPlaneRight, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import {
   identities as readIdentities,
   pickAttachments,
   pickInlineImage,
+  openComposerWindow,
   saveDraft,
   sendMessage,
   type DraftRecord,
@@ -45,6 +46,7 @@ export function Composer({
   onClose,
   draft,
   reply,
+  canDetach = false,
 }: {
   accountId: number
   onClose: () => void
@@ -62,6 +64,11 @@ export function Composer({
     references: string[]
     quoted: string
   }
+  /**
+   * Offered only in the main window. Moving a composer that is already in its
+   * own window into another one is a way to lose it, not a feature.
+   */
+  canDetach?: boolean
 }) {
   const [from, setFrom] = useState<Identity[]>([])
   const [identityId, setIdentityId] = useState(0)
@@ -102,6 +109,7 @@ export function Composer({
   const [files, setFiles] = useState<OutgoingAttachment[]>(draft?.attachments ?? [])
 
   const [sending, setSending] = useState(false)
+  const [detaching, setDetaching] = useState(false)
   const [confirmingNoAttachment, setConfirmingNoAttachment] = useState(false)
   // A reopened draft whose attachment has gone says so from the moment it
   // opens. Not an error — the message is fine and the person may not care
@@ -253,6 +261,43 @@ export function Composer({
     }
   }
 
+  const detach = async () => {
+    if (detaching) return
+    setDetaching(true)
+    setError('')
+    try {
+      await openComposerWindow({
+        id: draftId.current,
+        accountId,
+        identityId,
+        to,
+        cc,
+        bcc,
+        subject,
+        body,
+        html: rich ? sanitizeComposeHTML(cidHTML(html)) : '',
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
+        attachmentPaths: files.map((f) => f.path),
+        inlineImages: rich ? usedInlineImages : [],
+        attachments: files,
+        missingAttachments: [],
+        updatedAtUnix: 0,
+      })
+      // The draft now belongs to the new window. Letting this component's
+      // unmount save would write a second copy of a never-saved draft before
+      // the other window had a chance to open it.
+      sent.current = true
+      onClose()
+    } catch (err: unknown) {
+      setError(messageOf(err))
+    } finally {
+      setDetaching(false)
+    }
+  }
+
   const deliver = async () => {
     if (!canSend || sending) return
     setSending(true)
@@ -321,6 +366,20 @@ export function Composer({
         <p data-testid="composer-saved" className={`flex-1 text-xs ${TEXT.muted}`}>
           {savedAt !== null && 'Draft saved'}
         </p>
+
+        {canDetach && (
+          <button
+            type="button"
+            data-testid="composer-detach"
+            aria-label="Open in a separate window"
+            title="Open in a separate window"
+            disabled={detaching}
+            onClick={() => void detach()}
+            className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+          >
+            <ArrowSquareOut size={ICON.size} weight={ICON.weight} aria-hidden />
+          </button>
+        )}
 
         <button
           type="button"

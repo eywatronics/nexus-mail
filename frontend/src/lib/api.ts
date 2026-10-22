@@ -188,6 +188,23 @@ export interface MailtoDraft {
 export const pendingMailto = () =>
   MailService.PendingMailto() as Promise<MailtoDraft>
 
+/**
+ * Moves a composer into its own operating-system window.
+ *
+ * The draft is handed to the backend first; the window fetches it by a
+ * one-time id. Nothing but that id travels in the URL.
+ */
+export const openComposerWindow = (draft: DraftRecord) =>
+  MailService.OpenComposerWindow({
+    ...draft,
+    attachments: draft.attachments ?? [],
+    missingAttachments: draft.missingAttachments ?? [],
+  }) as Promise<string>
+
+/** Fetches the draft a composer window was opened for, once. */
+export const takeComposerWindow = (id: string) =>
+  MailService.TakeComposerWindow(id) as Promise<DraftRecord>
+
 /** One address the composer can offer, collected from mail already on disk. */
 export interface Recipient {
   name: string

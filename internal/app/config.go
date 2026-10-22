@@ -50,6 +50,11 @@ type Config struct {
 	// it until the window is ready to ask for it.
 	Mailto string
 
+	// OpenComposerWindow is how the service asks the host to put a composer in
+	// its own operating-system window. Injected so internal/app never imports
+	// Wails, and nil in a build that has no window system.
+	OpenComposerWindow func(id string) error
+
 	// OAuth client IDs come from config.json. They are identifiers rather than
 	// secrets: a desktop app is a public OAuth client and cannot keep a secret
 	// on the user's machine. The refresh token is the sensitive part, and that

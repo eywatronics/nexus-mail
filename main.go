@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -205,6 +206,22 @@ func run(debug bool) error {
 		if wailsApp != nil {
 			wailsApp.Event.Emit(name, data)
 		}
+	}
+	cfg.OpenComposerWindow = func(id string) error {
+		if wailsApp == nil {
+			return errors.New("app: the window system is not ready")
+		}
+		window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:      "composer-" + id,
+			Title:     "Nexus Mail",
+			URL:       "/composer.html?id=" + url.QueryEscape(id),
+			Width:     980,
+			Height:    760,
+			MinWidth:  640,
+			MinHeight: 420,
+		})
+		window.Show()
+		return nil
 	}
 
 	// The same cycle again, and the same way out of it: the body handler is
@@ -450,13 +467,20 @@ type filePicker struct {
 // PickFiles returns nothing and no error when the person closes the dialog.
 // Cancelling is an answer, not a failure.
 func (p filePicker) PickFiles(title string) ([]string, error) {
+	// The dialog belongs to the window the person is looking at, not always
+	// the main one: a composer can have its own window, and a file dialog
+	// attached to a hidden window looks like a dialog that never opened.
+	window := p.window
+	if current := p.app.Window.Current(); current != nil {
+		window = current
+	}
 	dialog := p.app.Dialog.OpenFile().
 		SetTitle(title).
 		CanChooseFiles(true).
 		// Folders cannot be attached, and offering to choose one only leads to
 		// an error message a moment later.
 		CanChooseDirectories(false).
-		AttachToWindow(p.window)
+		AttachToWindow(window)
 
 	return dialog.PromptForMultipleSelection()
 }
