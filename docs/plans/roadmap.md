@@ -322,8 +322,11 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
 - ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
 - Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
-- Ek ekleme, gömülü resim (`cid:`), **ek hatırlatıcı**
-- Taslak otomatik kaydetme
+- ~~Ek ekleme~~ — **bitti**
+- Gömülü resim (`cid:`)
+- ~~Ek hatırlatıcı~~ — **bitti**: gövde ek sözü verip dosya taşımıyorsa
+  göndermeden önce bir kez soruluyor
+- ~~Taslak otomatik kaydetme~~ — **bitti**
 - ~~**Outbox**~~ — **bitti**: ham MIME diske, kuyrukta referans, SMTP ile
   boşaltma, kalıcı/geçici hata ayrımı
 - ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
@@ -506,6 +509,17 @@ Toplam 40 MB sınırı bir protokol sınırı değil — SMTP'de öyle bir şey 
 sunucunun kendi `SIZE`'ı zaten `smtpx`'te işlem başlamadan kontrol ediliyor.
 Bu sınır bu sürecin belleğiyle ilgili: mesaj base64'üyle birlikte burada
 kuruluyor.
+
+### Ek hatırlatıcı
+
+Gönder'e basıldığında gövde "ekte/attached" gibi bir söz verip hiç dosya
+yoksa bir kez soruluyor. Amaç dosya denetlemek değil, bir saniye sonra fark
+edilecek hatayı bir saniye önce göstermek.
+
+Tarama yalnızca yazılan kısmı kapsıyor: yanıtta alıntının altında duran özgün
+mesaj kendi ekinden söz ediyorsa her yanıt aynı soruyu sormaz. Türkçe de
+taranıyor; `\b` sayesinde "ek" sözcüğü "ekmek" ve "ekran"ı yakalamıyor. Onay
+kırmızı değil uyarı tonunda: bu bir yıkım değil, ikinci bir bakış.
 
 ### Composer neden önce düz metin
 

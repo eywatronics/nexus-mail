@@ -386,6 +386,86 @@ describe('attaching files', () => {
   })
 })
 
+describe('the attachment reminder', () => {
+  const write = (getByTestId: (id: string) => HTMLElement) => {
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-body'), {
+      target: { value: 'Please find the attached report.' },
+    })
+  }
+
+  it('asks before sending a message that promises a file and carries none', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+
+    expect(getByTestId('confirm-dialog')).toBeTruthy()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('sends once the writer says the message is complete', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+    fireEvent.click(getByTestId('confirm-accept'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+  })
+
+  it('goes back to the message when the writer keeps editing', async () => {
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+    fireEvent.click(getByTestId('confirm-cancel'))
+
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  // With a file already attached there is nothing to warn about, however the
+  // body reads.
+  it('says nothing when something is attached', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findByText, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+  })
+
+  // A reply carries the original below the cursor. If the original mentions
+  // its own attachment, every answer to it would otherwise ask the question.
+  it('does not read the quoted original as a promise', async () => {
+    const { getByTestId, queryByTestId } = open({
+      reply: {
+        subject: 'Re: rapor',
+        to: 'r@example.com',
+        cc: '',
+        inReplyTo: '<x@example.com>',
+        references: ['<x@example.com>'],
+        quoted: 'Please see the attached file.',
+      },
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+  })
+})
+
 describe('not losing what was typed', () => {
   const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
     id: 7,

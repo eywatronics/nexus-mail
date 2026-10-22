@@ -9,8 +9,10 @@ import {
   type Identity,
   type OutgoingAttachment,
 } from '../lib/api'
+import { mentionsAttachment, textBeforeQuote } from '../lib/attachmentReminder'
 import { formatSize } from '../lib/format'
 import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
+import { ConfirmDialog } from './ConfirmDialog'
 
 /**
  * How long a pause counts as "stopped typing".
@@ -85,6 +87,7 @@ export function Composer({
   const [files, setFiles] = useState<OutgoingAttachment[]>(draft?.attachments ?? [])
 
   const [sending, setSending] = useState(false)
+  const [confirmingNoAttachment, setConfirmingNoAttachment] = useState(false)
   // A reopened draft whose attachment has gone says so from the moment it
   // opens. Not an error — the message is fine and the person may not care
   // about the file — but not a silence either.
@@ -214,7 +217,7 @@ export function Composer({
     }
   }
 
-  const send = async () => {
+  const deliver = async () => {
     if (!canSend || sending) return
     setSending(true)
     setError('')
@@ -244,6 +247,24 @@ export function Composer({
       setError(messageOf(err))
       setSending(false)
     }
+  }
+
+  const send = () => {
+    if (!canSend || sending) return
+
+    // A message that says "attached" and carries nothing is the kind of
+    // mistake the writer notices one second too late. The check looks only at
+    // what they wrote above the quote: an original that mentions its own
+    // attachment would otherwise question every answer.
+    const promisesAttachment =
+      files.length === 0 &&
+      mentionsAttachment(textBeforeQuote(body, reply?.quoted))
+
+    if (promisesAttachment) {
+      setConfirmingNoAttachment(true)
+      return
+    }
+    void deliver()
   }
 
   return (
@@ -392,6 +413,21 @@ export function Composer({
         spellCheck
         className={`min-h-0 flex-1 resize-none bg-transparent px-6 py-4 text-sm leading-relaxed outline-none ${TEXT.primary}`}
       />
+
+      {confirmingNoAttachment && (
+        <ConfirmDialog
+          title="Send without the attachment?"
+          body="Your message mentions an attachment, but no file is attached."
+          confirmLabel="Send without it"
+          cancelLabel="Keep editing"
+          tone="warn"
+          onCancel={() => setConfirmingNoAttachment(false)}
+          onConfirm={() => {
+            setConfirmingNoAttachment(false)
+            void deliver()
+          }}
+        />
+      )}
     </div>
   )
 }
