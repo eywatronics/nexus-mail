@@ -439,7 +439,18 @@ type Draft struct {
 	// twenty-megabyte PDF, and the paths are checked again at send time.
 	AttachmentPaths []string
 
+	// InlineImages are the images the formatted body refers to by cid:.
+	InlineImages []InlineImage
+
 	UpdatedAt time.Time
+}
+
+// InlineImage is one image embedded in a draft's HTML.
+type InlineImage struct {
+	Path     string
+	CID      string
+	Name     string
+	MIMEType string
 }
 
 type Operation struct {

@@ -25,12 +25,15 @@ const ALLOWED = new Set([
   'OL',
   'LI',
   'BLOCKQUOTE',
+  'IMG',
 ])
 
 // Never unwrapped: their text is not content, and their children can execute.
-const DISCARD = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'IMG', 'LINK', 'META'])
+const DISCARD = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META'])
 
 const BLOCKS = new Set(['P', 'DIV', 'LI', 'BLOCKQUOTE', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
+
+const CONTENT_ID = /^[A-Za-z0-9._@-]{1,200}$/
 
 export function safeLinkHref(href: string): string | null {
   const value = href.trim()
@@ -56,6 +59,43 @@ export function sanitizeComposeHTML(html: string): string {
   return doc.body.innerHTML
 }
 
+// An image is allowed only if it is one the composer itself registered: the
+// address is either the local preview URL or the cid: it becomes on the wire,
+// and the data-cid it carries has to agree with it. A remote image pasted from
+// a page is still dropped.
+function allowedImage(src: string, cid: string): boolean {
+  if (!CONTENT_ID.test(cid)) return false
+  return src === `cid:${cid}` || src === `/compose-image/${cid}`
+}
+
+/** The HTML that goes on the wire: preview addresses become cid: references. */
+export function cidHTML(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const img of Array.from(doc.body.querySelectorAll('img[data-cid]'))) {
+    const cid = img.getAttribute('data-cid') ?? ''
+    if (!CONTENT_ID.test(cid)) {
+      img.remove()
+      continue
+    }
+    img.setAttribute('src', `cid:${cid}`)
+  }
+  return doc.body.innerHTML
+}
+
+/** The HTML the editor shows: cid: references point at their previews. */
+export function previewHTML(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const img of Array.from(doc.body.querySelectorAll('img[data-cid]'))) {
+    const cid = img.getAttribute('data-cid') ?? ''
+    if (!CONTENT_ID.test(cid)) {
+      img.remove()
+      continue
+    }
+    img.setAttribute('src', `/compose-image/${cid}`)
+  }
+  return doc.body.innerHTML
+}
+
 function clean(parent: Node) {
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) continue
@@ -74,6 +114,23 @@ function clean(parent: Node) {
 
     if (!ALLOWED.has(element.tagName)) {
       element.replaceWith(...Array.from(element.childNodes))
+      continue
+    }
+
+    if (element.tagName === 'IMG') {
+      const src = element.getAttribute('src') ?? ''
+      const cid = element.getAttribute('data-cid') ?? ''
+      const alt = element.getAttribute('alt') ?? ''
+      if (!allowedImage(src, cid)) {
+        element.remove()
+        continue
+      }
+      for (const attribute of Array.from(element.attributes)) {
+        element.removeAttribute(attribute.name)
+      }
+      element.setAttribute('src', src)
+      element.setAttribute('data-cid', cid)
+      element.setAttribute('alt', alt)
       continue
     }
 

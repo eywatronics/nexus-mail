@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"nexusmail/internal/store"
@@ -38,6 +39,43 @@ func TestADraftSurvivesAndComesBackAsItWasTyped(t *testing.T) {
 	}
 	if got.HTML != "<p>burada <b>kalmis</b></p>" {
 		t.Errorf("HTML = %q; the formatting was lost on the way through the draft", got.HTML)
+	}
+}
+
+func TestADraftRemembersItsInlineImages(t *testing.T) {
+	svc, account := sendFixture(t)
+	svc.inline = NewInlineImages()
+
+	path := filepath.Join(t.TempDir(), "grafik.png")
+	if err := os.WriteFile(path, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("writing the image: %v", err)
+	}
+	cid := "nx-1@nexus-mail"
+
+	id, err := svc.SaveDraft(DraftRecordDTO{
+		AccountID: account,
+		HTML:      `<p><img src="cid:` + cid + `"></p>`,
+		InlineImages: []InlineImageDTO{{
+			Path: path, CID: cid, Name: "grafik.png", MIMEType: "image/png",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SaveDraft() error: %v", err)
+	}
+
+	got, err := svc.Draft(id)
+	if err != nil {
+		t.Fatalf("Draft() error: %v", err)
+	}
+	if len(got.InlineImages) != 1 {
+		t.Fatalf("got %d inline images, want 1", len(got.InlineImages))
+	}
+	img := got.InlineImages[0]
+	if img.Path != path || img.CID != cid || img.Name != "grafik.png" {
+		t.Errorf("got %+v", img)
+	}
+	if img.URL != "/compose-image/"+cid {
+		t.Errorf("URL = %q; reopening the draft should restore the preview", img.URL)
 	}
 }
 

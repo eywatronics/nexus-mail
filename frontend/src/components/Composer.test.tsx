@@ -6,6 +6,7 @@ import type { DraftRecord, Identity, OutgoingAttachment } from '../lib/api'
 const identities = vi.fn()
 const sendMessage = vi.fn()
 const pickAttachments = vi.fn()
+const pickInlineImage = vi.fn()
 const saveDraft = vi.fn()
 const suggestRecipients = vi.fn()
 
@@ -13,6 +14,7 @@ vi.mock('../lib/api', () => ({
   identities: (accountId: number) => identities(accountId),
   sendMessage: (draft: unknown) => sendMessage(draft),
   pickAttachments: () => pickAttachments(),
+  pickInlineImage: () => pickInlineImage(),
   saveDraft: (draft: unknown) => saveDraft(draft),
   suggestRecipients: (...args: unknown[]) => suggestRecipients(...args),
 }))
@@ -34,10 +36,18 @@ beforeEach(() => {
   sendMessage.mockResolvedValue({ operationId: 1, recipients: 1 })
   pickAttachments.mockReset()
   pickAttachments.mockResolvedValue([])
+  pickInlineImage.mockReset()
+  pickInlineImage.mockResolvedValue({
+    path: '', cid: '', name: '', mimeType: '', url: '',
+  })
   saveDraft.mockReset()
   saveDraft.mockResolvedValue(7)
   suggestRecipients.mockReset()
   suggestRecipients.mockResolvedValue([])
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: vi.fn(),
+  })
   vi.useRealTimers()
 })
 
@@ -62,6 +72,7 @@ const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
   inReplyTo: '',
   references: [],
   attachmentPaths: [],
+  inlineImages: [],
   updatedAtUnix: 1_700_000_000,
   ...over,
 })
@@ -194,6 +205,27 @@ describe('formatted text', () => {
     expect(queryByTestId('composer-body')).toBeNull()
   })
 
+  it('reopens an embedded image as a preview', async () => {
+    const image = {
+      path: '/tmp/grafik.png',
+      cid: 'nx-1@nexus-mail',
+      name: 'grafik.png',
+      mimeType: 'image/png',
+      url: '/compose-image/nx-1@nexus-mail',
+    }
+    const { getByTestId } = open({
+      draft: record({
+        html: `<p><img src="cid:${image.cid}" data-cid="${image.cid}" alt="grafik.png"></p>`,
+        inlineImages: [image],
+      }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    const img = getByTestId('rich-editor').querySelector('img')
+    expect(img?.getAttribute('src')).toBe(image.url)
+    expect(img?.getAttribute('data-cid')).toBe(image.cid)
+  })
+
   // A plain-text writer gets a plain-text message: no HTML part with markup
   // they did not ask for.
   it('sends no HTML from plain mode', async () => {
@@ -207,6 +239,40 @@ describe('formatted text', () => {
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({ html: '', text: 'düz metin' }),
+      ),
+    )
+  })
+
+  it('sends an embedded image as a cid part', async () => {
+    const image = {
+      path: '/tmp/grafik.png',
+      cid: 'nx-1@nexus-mail',
+      name: 'grafik.png',
+      mimeType: 'image/png',
+      url: '/compose-image/nx-1@nexus-mail',
+    }
+    pickInlineImage.mockResolvedValue(image)
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-format'))
+    fireEvent.click(getByTestId('rich-image'))
+    await waitFor(() => expect(pickInlineImage).toHaveBeenCalled())
+
+    // The editor's own insertion is covered where execCommand is mocked; here
+    // the line it would produce is what matters.
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = `<p><img src="${image.url}" alt="${image.name}" data-cid="${image.cid}"></p>`
+    fireEvent.input(editor)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining(`cid:${image.cid}`),
+          inlineImages: [expect.objectContaining({ path: image.path, cid: image.cid })],
+        }),
       ),
     )
   })

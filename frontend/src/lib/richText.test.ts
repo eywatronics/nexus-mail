@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cidHTML,
   escapeHTML,
   htmlToText,
   normalizeLinkHref,
+  previewHTML,
   sanitizeComposeHTML,
   textToHTML,
 } from './richText'
@@ -45,6 +47,25 @@ describe('sanitizeComposeHTML', () => {
       '<p>ab</p>',
     )
   })
+
+  it('keeps an inline image the composer registered', () => {
+    const cid = 'nx-abc@nexus-mail'
+    expect(
+      sanitizeComposeHTML(
+        `<p><img src="/compose-image/${cid}" alt="grafik.png" data-cid="${cid}" onerror="x()"></p>`,
+      ),
+    ).toBe(
+      `<p><img src="/compose-image/${cid}" data-cid="${cid}" alt="grafik.png"></p>`,
+    )
+  })
+
+  it('drops an inline image whose address and identifier disagree', () => {
+    expect(
+      sanitizeComposeHTML(
+        '<p><img src="/compose-image/one" data-cid="two" alt="x"></p>',
+      ),
+    ).toBe('<p></p>')
+  })
 })
 
 describe('htmlToText', () => {
@@ -85,6 +106,24 @@ describe('textToHTML', () => {
   it('round-trips through htmlToText', () => {
     const text = 'bir\niki\n\nüç'
     expect(htmlToText(textToHTML(text))).toBe(text)
+  })
+})
+
+describe('inline image addresses', () => {
+  const cid = 'nx-abc@nexus-mail'
+  const preview = `<p><img src="/compose-image/${cid}" data-cid="${cid}" alt="grafik.png"></p>`
+  const wire = `<p><img src="cid:${cid}" data-cid="${cid}" alt="grafik.png"></p>`
+
+  it('turns the preview address into a cid reference for sending', () => {
+    expect(cidHTML(preview)).toBe(wire)
+  })
+
+  it('turns a saved cid reference back into a preview for the editor', () => {
+    expect(previewHTML(wire)).toBe(preview)
+  })
+
+  it('round-trips through both', () => {
+    expect(previewHTML(cidHTML(preview))).toBe(preview)
   })
 })
 

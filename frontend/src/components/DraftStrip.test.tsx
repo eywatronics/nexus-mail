@@ -37,6 +37,7 @@ const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
   inReplyTo: '',
   references: [],
   attachmentPaths: [],
+  inlineImages: [],
   updatedAtUnix: 1_700_000_000,
   ...over,
 })

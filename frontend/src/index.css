@@ -128,6 +128,13 @@ body {
   text-underline-offset: 2px;
 }
 
+.rich-editor img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.35rem 0;
+  border-radius: var(--radius-ui);
+}
+
 .dark .rich-editor a {
   color: var(--color-accent-dark);
 }

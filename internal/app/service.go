@@ -68,6 +68,11 @@ type MailService struct {
 	picker     FilePicker
 	attachable map[string]bool
 
+	// inline serves the previews of images the composer is embedding. Nil in a
+	// build with no HTTP middleware, which PickInlineImage reports rather than
+	// dereferencing.
+	inline *InlineImages
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.

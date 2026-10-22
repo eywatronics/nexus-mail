@@ -37,6 +37,11 @@ type DraftRecordDTO struct {
 	// AttachmentPaths is what a save carries: the files by path.
 	AttachmentPaths []string `json:"attachmentPaths"`
 
+	// InlineImages are the images the HTML refers to by cid:. Carried both
+	// ways: the composer needs the preview URL on a read and the paths back on
+	// a save.
+	InlineImages []InlineImageDTO `json:"inlineImages"`
+
 	// Attachments is what a read carries: the same files, described, so the
 	// composer can show their names and sizes without reading them. Empty on
 	// the way in.
@@ -73,6 +78,7 @@ func (s *MailService) SaveDraft(d DraftRecordDTO) (int64, error) {
 		InReplyTo:       d.InReplyTo,
 		References:      d.References,
 		AttachmentPaths: d.AttachmentPaths,
+		InlineImages:    inlineImagesToModel(d.InlineImages),
 	})
 }
 
@@ -121,6 +127,21 @@ func (s *MailService) Draft(id int64) (DraftRecordDTO, error) {
 			MIMEType: mimeTypeOf(p),
 		})
 	}
+
+	for i := range dto.InlineImages {
+		img := &dto.InlineImages[i]
+		if _, err := os.Stat(img.Path); err != nil {
+			dto.MissingAttachments = append(dto.MissingAttachments, img.Name)
+			continue
+		}
+		// Re-admit the file and restore its preview URL. Both are needed
+		// before the composer can show the image that the saved HTML refers
+		// to by cid:.
+		s.allowAttachment(img.Path)
+		if s.inline != nil {
+			img.URL = s.inline.Register(img.CID, img.Path)
+		}
+	}
 	return dto, nil
 }
 
@@ -128,6 +149,26 @@ func (s *MailService) Draft(id int64) (DraftRecordDTO, error) {
 // when the person says they meant it.
 func (s *MailService) DiscardDraft(id int64) error {
 	return s.store.DeleteDraft(context.Background(), id)
+}
+
+func inlineImagesToDTO(list []model.InlineImage) []InlineImageDTO {
+	out := make([]InlineImageDTO, 0, len(list))
+	for _, img := range list {
+		out = append(out, InlineImageDTO{
+			Path: img.Path, CID: img.CID, Name: img.Name, MIMEType: img.MIMEType,
+		})
+	}
+	return out
+}
+
+func inlineImagesToModel(list []InlineImageDTO) []model.InlineImage {
+	out := make([]model.InlineImage, 0, len(list))
+	for _, img := range list {
+		out = append(out, model.InlineImage{
+			Path: img.Path, CID: img.CID, Name: img.Name, MIMEType: img.MIMEType,
+		})
+	}
+	return out
 }
 
 func draftToDTO(d model.Draft) DraftRecordDTO {
@@ -144,6 +185,7 @@ func draftToDTO(d model.Draft) DraftRecordDTO {
 		InReplyTo:       d.InReplyTo,
 		References:      d.References,
 		AttachmentPaths: d.AttachmentPaths,
+		InlineImages:    inlineImagesToDTO(d.InlineImages),
 		UpdatedAtUnix:   d.UpdatedAt.Unix(),
 	}
 }

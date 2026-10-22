@@ -265,6 +265,8 @@ func run(debug bool) error {
 	engine.SetRetention(cfg.Retention)
 	engine.SetSender(app.SenderFor(db, secrets, cfg), outbox)
 	service := app.NewMailService(db, secrets, engine, cfg)
+	inline := app.NewInlineImages()
+	app.SetInlineImages(service, inline)
 
 	// Files nothing refers to accumulate two ways: a crash between writing one
 	// and recording its row, and a message the user cancelled. Swept at start
@@ -289,7 +291,7 @@ func run(debug bool) error {
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
-			Middleware: mailContentMiddleware(bodies),
+			Middleware: mailContentMiddleware(bodies, inline),
 		},
 		Mac: application.MacOptions{
 			// The window is hidden rather than closed, so this would not fire
@@ -397,19 +399,24 @@ func run(debug bool) error {
 	return nil
 }
 
-// mailContentMiddleware routes message bodies and proxied images to the body
-// handler, leaving everything else to the embedded frontend.
+// mailContentMiddleware routes message bodies, proxied images and composer
+// image previews to their handlers, leaving everything else to the embedded
+// frontend.
 //
 // Serving bodies here rather than over the Wails bridge keeps an
 // eight-megabyte newsletter out of an IPC message, and lets the response carry
 // a real Content-Security-Policy header — which srcdoc cannot.
-func mailContentMiddleware(bodies http.Handler) application.Middleware {
+func mailContentMiddleware(bodies http.Handler, inline http.Handler) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, "/mail-body/") ||
 				strings.HasPrefix(r.URL.Path, "/mail-asset/") ||
 				strings.HasPrefix(r.URL.Path, "/mail-source/") {
 				bodies.ServeHTTP(w, r)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/compose-image/") {
+				inline.ServeHTTP(w, r)
 				return
 			}
 			next.ServeHTTP(w, r)

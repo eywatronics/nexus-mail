@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RichTextEditor } from './RichTextEditor'
 
@@ -13,8 +13,14 @@ beforeEach(() => {
   })
 })
 
-const show = (initialHTML = '', onChange = vi.fn()) => {
-  const view = render(<RichTextEditor initialHTML={initialHTML} onChange={onChange} />)
+const show = (initialHTML = '', onChange = vi.fn(), onPickImage?: () => Promise<any>) => {
+  const view = render(
+    <RichTextEditor
+      initialHTML={initialHTML}
+      onChange={onChange}
+      onPickImage={onPickImage}
+    />,
+  )
   return { ...view, onChange, editor: view.getByTestId('rich-editor') }
 }
 
@@ -87,8 +93,44 @@ describe('the toolbar', () => {
   })
 })
 
-describe('pasting', () => {
-  it('sanitises pasted HTML before inserting it', () => {
+describe('images', () => {
+  const image = {
+    cid: 'nx-1@nexus-mail',
+    name: 'grafik.png',
+    url: '/compose-image/nx-1@nexus-mail',
+  }
+
+  it('inserts the image the picker returned', async () => {
+    const onPickImage = vi.fn().mockResolvedValue(image)
+    const { getByTestId } = show('', vi.fn(), onPickImage)
+
+    fireEvent.click(getByTestId('rich-image'))
+
+    await waitFor(() =>
+      expect(execCommand).toHaveBeenCalledWith(
+        'insertHTML',
+        false,
+        `<img src="${image.url}" alt="${image.name}" data-cid="${image.cid}">`,
+      ),
+    )
+  })
+
+  it('inserts nothing when the dialog is cancelled', async () => {
+    const onPickImage = vi.fn().mockResolvedValue(null)
+    const { getByTestId } = show('', vi.fn(), onPickImage)
+
+    fireEvent.click(getByTestId('rich-image'))
+    await waitFor(() => expect(onPickImage).toHaveBeenCalled())
+
+    expect(execCommand).not.toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('<img'),
+    )
+  })
+})
+
+describe('pasting', () => {  it('sanitises pasted HTML before inserting it', () => {
     const { editor } = show()
 
     fireEvent.paste(editor, {

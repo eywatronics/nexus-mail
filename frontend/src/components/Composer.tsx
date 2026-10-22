@@ -3,15 +3,17 @@ import { useEffect, useRef, useState } from 'react'
 import {
   identities as readIdentities,
   pickAttachments,
+  pickInlineImage,
   saveDraft,
   sendMessage,
   type DraftRecord,
   type Identity,
+  type InlineImage,
   type OutgoingAttachment,
 } from '../lib/api'
 import { mentionsAttachment, textBeforeQuote } from '../lib/attachmentReminder'
 import { formatSize } from '../lib/format'
-import { textToHTML, sanitizeComposeHTML } from '../lib/richText'
+import { cidHTML, previewHTML, sanitizeComposeHTML, textToHTML } from '../lib/richText'
 import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RecipientField } from './RecipientField'
@@ -88,9 +90,12 @@ export function Composer({
   // reopens in it; everything else starts as plain text, which is what the
   // composer did before this existed and what a reply's quoted original is.
   const [html, setHtml] = useState(
-    draft?.html ? sanitizeComposeHTML(draft.html) : '',
+    draft?.html ? previewHTML(sanitizeComposeHTML(draft.html)) : '',
   )
   const [rich, setRich] = useState((draft?.html ?? '') !== '')
+  const [inlineImages, setInlineImages] = useState<InlineImage[]>(
+    draft?.inlineImages ?? [],
+  )
 
   // Files, by path. The bytes stay on disk until Send, so a composer left
   // open with three photographs on it costs this window three filenames.
@@ -144,10 +149,13 @@ export function Composer({
 
   // Everything a save would write. Named so the effect below can depend on it
   // without listing nine things and getting one of them wrong.
-  const contents = { identityId, to, cc, bcc, subject, body, html, files }
+  const contents = { identityId, to, cc, bcc, subject, body, html, inlineImages, files }
+  // An image removed from the body must not travel as an unreferenced part.
+  const usedInlineImages = inlineImages.filter((img) => html.includes(img.cid))
   const empty =
     to.trim() === '' && cc.trim() === '' && bcc.trim() === '' &&
-    subject.trim() === '' && body.trim() === '' && files.length === 0
+    subject.trim() === '' && body.trim() === '' &&
+    usedInlineImages.length === 0 && files.length === 0
 
   // Saved on a pause rather than on every keystroke: two seconds is short
   // enough that almost nothing is lost and long enough that typing a sentence
@@ -170,7 +178,8 @@ export function Composer({
         body: contents.body,
         // Plain mode drops formatting from the saved draft rather than leaving
         // HTML the writer can no longer see or edit.
-        html: rich ? contents.html : '',
+        html: rich ? sanitizeComposeHTML(cidHTML(contents.html)) : '',
+        inlineImages: rich ? usedInlineImages : [],
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
         attachmentPaths: contents.files.map((f) => f.path),
@@ -196,7 +205,10 @@ export function Composer({
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, empty, identityId, to, cc, bcc, subject, body, html, rich, files])
+  }, [
+    accountId, empty, identityId, to, cc, bcc, subject, body, html, rich,
+    inlineImages, files,
+  ])
 
   // The pause is not enough on its own. Typing a sentence and closing the
   // window straight away would clear the pending timer and lose it, which is
@@ -227,6 +239,18 @@ export function Composer({
     }
   }
 
+  const embedImage = async () => {
+    try {
+      const image = await pickInlineImage()
+      if (image.cid === '') return null
+      setInlineImages((current) => [...current, image])
+      return { cid: image.cid, name: image.name, url: image.url }
+    } catch (err: unknown) {
+      setError(messageOf(err))
+      return null
+    }
+  }
+
   const deliver = async () => {
     if (!canSend || sending) return
     setSending(true)
@@ -243,10 +267,11 @@ export function Composer({
         text: body,
         // The editor sanitises as it goes; this is the last line before the
         // bridge, where a draft or a future caller could otherwise bypass it.
-        html: rich ? sanitizeComposeHTML(html) : '',
+        html: rich ? sanitizeComposeHTML(cidHTML(html)) : '',
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
         attachmentPaths: files.map((f) => f.path),
+        inlineImages: rich ? usedInlineImages : [],
         draftId: draftId.current,
       })
       // Before onClose, so the autosave timer that may still be pending does
@@ -439,7 +464,11 @@ export function Composer({
             setHtml(nextHTML)
             setBody(nextText)
           }}
-          onPlain={() => setRich(false)}
+          onPlain={() => {
+            setInlineImages([])
+            setRich(false)
+          }}
+          onPickImage={embedImage}
           autoFocus
         />
       ) : (

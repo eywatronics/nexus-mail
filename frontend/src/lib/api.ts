@@ -355,6 +355,8 @@ export interface Draft {
    * to ask it to read something the person did not choose.
    */
   attachmentPaths: string[]
+  /** Images the formatted body refers to by cid:. */
+  inlineImages: InlineImage[]
   /**
    * The saved draft this message came from, zero when it never was one.
    * Cleared once the message is queued.
@@ -380,6 +382,24 @@ export interface OutgoingAttachment {
 export const pickAttachments = () =>
   MailService.PickAttachments() as Promise<OutgoingAttachment[]>
 
+/** One image embedded in a formatted message. */
+export interface InlineImage {
+  path: string
+  cid: string
+  name: string
+  mimeType: string
+  /** Local preview address while the image is still being composed. */
+  url: string
+}
+
+/**
+ * Opens the file dialog for one image to embed.
+ *
+ * Resolves to an empty DTO when the dialog is cancelled; the composer inserts
+ * nothing in that case.
+ */
+export const pickInlineImage = () => MailService.PickInlineImage() as Promise<InlineImage>
+
 /**
  * A draft, on its way to or from the composer.
  *
@@ -402,6 +422,8 @@ export interface DraftRecord {
   references: string[]
   /** What a save carries: the files by path. */
   attachmentPaths: string[]
+  /** Images the formatted body refers to by cid:. */
+  inlineImages: InlineImage[]
   /**
    * What a read of one draft carries: the same files, described, so the
    * composer can show names and sizes without reading them.

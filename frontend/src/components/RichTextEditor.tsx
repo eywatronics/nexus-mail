@@ -1,4 +1,5 @@
 import {
+  ImageSquare,
   LinkSimple,
   ListBullets,
   ListNumbers,
@@ -33,6 +34,8 @@ interface RichTextEditorProps {
   autoFocus?: boolean
   /** Switches the composer back to a plain textarea. */
   onPlain?: () => void
+  /** Picks an image to embed; null when the dialog was cancelled. */
+  onPickImage?: () => Promise<{ cid: string; name: string; url: string } | null>
 }
 
 /**
@@ -48,6 +51,7 @@ export function RichTextEditor({
   onChange,
   autoFocus = false,
   onPlain,
+  onPickImage,
 }: RichTextEditorProps) {
   const editor = useRef<HTMLDivElement>(null)
   const savedRange = useRef<Range | null>(null)
@@ -133,6 +137,33 @@ export function RichTextEditor({
     emit()
   }
 
+  const insertImage = async () => {
+    if (!onPickImage) return
+    const selection = window.getSelection()
+    const saved =
+      selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null
+
+    const picked = await onPickImage()
+    if (!picked) return
+
+    const element = editor.current
+    if (!element) return
+    element.focus()
+
+    const current = window.getSelection()
+    if (saved && current) {
+      current.removeAllRanges()
+      current.addRange(saved)
+    }
+
+    document.execCommand(
+      'insertHTML',
+      false,
+      `<img src="${escapeHTML(picked.url)}" alt="${escapeHTML(picked.name)}" data-cid="${escapeHTML(picked.cid)}">`,
+    )
+    emit()
+  }
+
   const paste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     const html = event.clipboardData.getData('text/html')
     const text = event.clipboardData.getData('text/plain')
@@ -179,6 +210,15 @@ export function RichTextEditor({
         <ToolbarButton label="Link" testId="rich-link" onClick={openLink}>
           <LinkSimple size={ICON.size} weight={ICON.weight} aria-hidden />
         </ToolbarButton>
+        {onPickImage && (
+          <ToolbarButton
+            label="Insert image"
+            testId="rich-image"
+            onClick={() => void insertImage()}
+          >
+            <ImageSquare size={ICON.size} weight={ICON.weight} aria-hidden />
+          </ToolbarButton>
+        )}
 
         {onPlain && (
           <button

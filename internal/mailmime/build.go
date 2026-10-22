@@ -33,6 +33,10 @@ type Attachment struct {
 	// one: it tells the reader's client to open the file with the wrong thing.
 	MIMEType string
 	Content  []byte
+	// ContentID marks an inline image. The HTML refers to it as cid:<id>;
+	// the part carries <id> in Content-ID and an inline disposition. Empty
+	// for an ordinary attachment.
+	ContentID string
 }
 
 // Draft is a message as the writer left it.
@@ -62,6 +66,9 @@ type Draft struct {
 	HTML string
 
 	Attachments []Attachment
+	// Inline are images referenced by cid: in HTML. They travel inside the
+	// multipart/related body, not beside it as ordinary attachments.
+	Inline []Attachment
 
 	// InReplyTo is the Message-ID of the message being answered, without
 	// angle brackets. Empty for a new message.
@@ -122,6 +129,17 @@ func Build(d Draft) ([]byte, error) {
 			return nil, fmt.Errorf("mailmime: an attachment needs a filename")
 		}
 	}
+	for _, img := range d.Inline {
+		if img.Filename == "" || img.ContentID == "" {
+			return nil, fmt.Errorf("mailmime: an inline image needs a filename and a content id")
+		}
+		if strings.ContainsAny(img.ContentID, "<>\r\n") {
+			return nil, fmt.Errorf("mailmime: %q is not a usable content id", img.ContentID)
+		}
+	}
+	if len(d.Inline) > 0 && d.HTML == "" {
+		return nil, fmt.Errorf("mailmime: an inline image needs an HTML body")
+	}
 
 	header, err := buildHeader(d)
 	if err != nil {
@@ -131,6 +149,8 @@ func Build(d Draft) ([]byte, error) {
 	switch {
 	case len(d.Attachments) > 0:
 		return buildMixed(d, header)
+	case len(d.Inline) > 0:
+		return buildRelated(d, header)
 	case d.HTML != "":
 		return buildAlternative(d, header)
 	default:
@@ -185,17 +205,33 @@ func buildMixed(d Draft, header gomail.Header) ([]byte, error) {
 	}
 
 	if d.HTML != "" {
-		var inner message.Header
-		inner.Set("Content-Type", "multipart/alternative")
-		alt, err := w.CreatePart(inner)
-		if err != nil {
-			return nil, fmt.Errorf("mailmime: starting the body: %w", err)
-		}
-		if err := writeAlternativeParts(alt, d); err != nil {
-			return nil, err
-		}
-		if err := alt.Close(); err != nil {
-			return nil, fmt.Errorf("mailmime: finishing the body: %w", err)
+		if len(d.Inline) > 0 {
+			var related message.Header
+			related.Set("Content-Type",
+				mime.FormatMediaType("multipart/related", map[string]string{"type": "multipart/alternative"}))
+			body, err := w.CreatePart(related)
+			if err != nil {
+				return nil, fmt.Errorf("mailmime: starting the related body: %w", err)
+			}
+			if err := writeRelatedParts(body, d); err != nil {
+				return nil, err
+			}
+			if err := body.Close(); err != nil {
+				return nil, fmt.Errorf("mailmime: finishing the related body: %w", err)
+			}
+		} else {
+			var inner message.Header
+			inner.Set("Content-Type", "multipart/alternative")
+			alt, err := w.CreatePart(inner)
+			if err != nil {
+				return nil, fmt.Errorf("mailmime: starting the body: %w", err)
+			}
+			if err := writeAlternativeParts(alt, d); err != nil {
+				return nil, err
+			}
+			if err := alt.Close(); err != nil {
+				return nil, fmt.Errorf("mailmime: finishing the body: %w", err)
+			}
 		}
 	} else if err := writePart(w, "text/plain", d.Text); err != nil {
 		return nil, err
@@ -210,6 +246,52 @@ func buildMixed(d Draft, header gomail.Header) ([]byte, error) {
 		return nil, fmt.Errorf("mailmime: finishing the message: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// buildRelated is text, HTML and the images the HTML refers to, with no
+// ordinary attachments. multipart/related keeps the images with the body they
+// belong to; a recipient's client resolves cid: against this part only.
+func buildRelated(d Draft, header gomail.Header) ([]byte, error) {
+	header.Set("Content-Type",
+		mime.FormatMediaType("multipart/related", map[string]string{"type": "multipart/alternative"}))
+
+	var buf bytes.Buffer
+	w, err := message.CreateWriter(&buf, header.Header)
+	if err != nil {
+		return nil, fmt.Errorf("mailmime: starting the message: %w", err)
+	}
+	if err := writeRelatedParts(w, d); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("mailmime: finishing the message: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// writeRelatedParts writes the alternative body and then the images it
+// references. The alternative is first because a related reader takes its
+// root part; the cid: URLs in the HTML resolve against the images after it.
+func writeRelatedParts(w *message.Writer, d Draft) error {
+	var altHeader message.Header
+	altHeader.Set("Content-Type", "multipart/alternative")
+	alt, err := w.CreatePart(altHeader)
+	if err != nil {
+		return fmt.Errorf("mailmime: starting the alternative body: %w", err)
+	}
+	if err := writeAlternativeParts(alt, d); err != nil {
+		return err
+	}
+	if err := alt.Close(); err != nil {
+		return fmt.Errorf("mailmime: finishing the alternative body: %w", err)
+	}
+
+	for _, img := range d.Inline {
+		if err := writeInline(w, img); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeAlternativeParts writes plain text then HTML.
@@ -335,6 +417,35 @@ func writeAttachment(w *message.Writer, att Attachment) error {
 	}
 	if err := part.Close(); err != nil {
 		return fmt.Errorf("mailmime: finishing the attachment: %w", err)
+	}
+	return nil
+}
+
+func writeInline(w *message.Writer, att Attachment) error {
+	mimeType := att.MIMEType
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	var h message.Header
+	h.Set("Content-Type", mimeType)
+	h.Set("Content-Transfer-Encoding", "base64")
+	// Angle brackets are part of the Content-ID syntax, not of the identifier
+	// the HTML refers to; cid:<id> resolves to the value between them.
+	h.Set("Content-ID", "<"+att.ContentID+">")
+	h.Set("Content-Disposition",
+		mime.FormatMediaType("inline", map[string]string{"filename": att.Filename}))
+
+	part, err := w.CreatePart(h)
+	if err != nil {
+		return fmt.Errorf("mailmime: starting the inline image: %w", err)
+	}
+	if _, err := part.Write(att.Content); err != nil {
+		_ = part.Close()
+		return fmt.Errorf("mailmime: writing the inline image: %w", err)
+	}
+	if err := part.Close(); err != nil {
+		return fmt.Errorf("mailmime: finishing the inline image: %w", err)
 	}
 	return nil
 }

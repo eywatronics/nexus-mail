@@ -138,30 +138,8 @@ func (s *MailService) readAttachments(paths []string) ([]mailmime.Attachment, er
 	if len(paths) == 0 {
 		return nil, nil
 	}
-
-	// Every check first, then the reading. Measuring as the files came in
-	// would mean the one that breaks the cap had already been read into this
-	// process to be measured — which is the thing the cap exists to prevent.
-	var total int64
-	for _, p := range paths {
-		if !s.mayAttach(p) {
-			// Not "no such file": the file may well exist. This is a path
-			// nobody chose in a dialog, and the difference matters to whoever
-			// reads the error.
-			return nil, fmt.Errorf("app: %s was not chosen in the file dialog",
-				filepath.Base(p))
-		}
-
-		info, err := os.Stat(p)
-		if err != nil {
-			return nil, fmt.Errorf("app: %s could not be read", filepath.Base(p))
-		}
-		total += info.Size()
-	}
-	if total > maxAttachmentBytes {
-		return nil, fmt.Errorf(
-			"app: the attachments come to more than %d MB, which is more than "+
-				"this message can carry", maxAttachmentBytes>>20)
+	if err := s.checkAttachmentSize(paths); err != nil {
+		return nil, err
 	}
 
 	out := make([]mailmime.Attachment, 0, len(paths))
@@ -174,6 +152,89 @@ func (s *MailService) readAttachments(paths []string) ([]mailmime.Attachment, er
 			Filename: filepath.Base(p),
 			MIMEType: mimeTypeOf(p),
 			Content:  content,
+		})
+	}
+	return out, nil
+}
+
+// checkAttachmentSize is the one place that decides whether a set of paths may
+// be read at all: every one was chosen in the dialog, every one exists, and
+// the total is within what one message may carry. Inline images share the
+// budget with ordinary attachments.
+func (s *MailService) checkAttachmentSize(paths []string) error {
+	var total int64
+	for _, p := range paths {
+		if !s.mayAttach(p) {
+			// Not "no such file": the file may well exist. This is a path
+			// nobody chose in a dialog, and the difference matters to whoever
+			// reads the error.
+			return fmt.Errorf("app: %s was not chosen in the file dialog",
+				filepath.Base(p))
+		}
+
+		info, err := os.Stat(p)
+		if err != nil {
+			return fmt.Errorf("app: %s could not be read", filepath.Base(p))
+		}
+		total += info.Size()
+	}
+	if total > maxAttachmentBytes {
+		return fmt.Errorf(
+			"app: the attachments come to more than %d MB, which is more than "+
+				"this message can carry", maxAttachmentBytes>>20)
+	}
+	return nil
+}
+
+// readInlineImages reads the files the HTML refers to by cid:.
+//
+// The identifier is validated rather than trusted: it becomes a MIME header
+// and a cid: URL, and a value with a newline or a bracket in it is a broken
+// message at best.
+func (s *MailService) readInlineImages(items []InlineImageDTO) ([]mailmime.Attachment, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]bool, len(items))
+	paths := make([]string, 0, len(items))
+	for _, img := range items {
+		if !contentIDPattern.MatchString(img.CID) {
+			return nil, fmt.Errorf("app: %q is not a usable image identifier", img.CID)
+		}
+		if seen[img.CID] {
+			return nil, fmt.Errorf("app: two images use the same identifier %q", img.CID)
+		}
+		seen[img.CID] = true
+		paths = append(paths, img.Path)
+	}
+	if err := s.checkAttachmentSize(paths); err != nil {
+		return nil, err
+	}
+
+	out := make([]mailmime.Attachment, 0, len(items))
+	for _, img := range items {
+		content, err := os.ReadFile(img.Path)
+		if err != nil {
+			return nil, fmt.Errorf("app: %s could not be read", filepath.Base(img.Path))
+		}
+		name := img.Name
+		if name == "" {
+			name = filepath.Base(img.Path)
+		}
+		mimeType := img.MIMEType
+		if mimeType == "" {
+			mimeType = mimeTypeOf(img.Path)
+		}
+		if !strings.HasPrefix(mimeType, "image/") || mimeType == "image/svg+xml" {
+			return nil, fmt.Errorf("app: %s is not an image that can be embedded",
+				filepath.Base(img.Path))
+		}
+		out = append(out, mailmime.Attachment{
+			Filename:  name,
+			MIMEType:  mimeType,
+			ContentID: img.CID,
+			Content:   content,
 		})
 	}
 	return out, nil

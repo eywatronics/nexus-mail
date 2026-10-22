@@ -12,7 +12,8 @@ import (
 )
 
 const draftColumns = `id, account_id, identity_id, to_line, cc_line, bcc_line,
-	subject, body, body_html, in_reply_to, refs, attachment_paths, updated_at`
+	subject, body, body_html, in_reply_to, refs, attachment_paths, inline_images,
+	updated_at`
 
 // SaveDraft writes a draft, creating it the first time and replacing it after.
 //
@@ -27,16 +28,20 @@ func (s *Store) SaveDraft(ctx context.Context, d model.Draft) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("store: encode draft attachments: %w", err)
 	}
+	inline, err := json.Marshal(d.InlineImages)
+	if err != nil {
+		return 0, fmt.Errorf("store: encode draft inline images: %w", err)
+	}
 
 	now := time.Now().Unix()
 	if d.ID == 0 {
 		res, err := s.write.ExecContext(ctx,
 			`INSERT INTO drafts
 			   (account_id, identity_id, to_line, cc_line, bcc_line, subject, body,
-			    body_html, in_reply_to, refs, attachment_paths, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			    body_html, in_reply_to, refs, attachment_paths, inline_images, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			d.AccountID, d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.HTML,
-			d.InReplyTo, string(refs), string(paths), now)
+			d.InReplyTo, string(refs), string(paths), string(inline), now)
 		if err != nil {
 			return 0, fmt.Errorf("store: insert draft: %w", err)
 		}
@@ -46,10 +51,10 @@ func (s *Store) SaveDraft(ctx context.Context, d model.Draft) (int64, error) {
 	res, err := s.write.ExecContext(ctx,
 		`UPDATE drafts SET identity_id = ?, to_line = ?, cc_line = ?, bcc_line = ?,
 		   subject = ?, body = ?, body_html = ?, in_reply_to = ?, refs = ?,
-		   attachment_paths = ?, updated_at = ?
+		   attachment_paths = ?, inline_images = ?, updated_at = ?
 		 WHERE id = ? AND account_id = ?`,
 		d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.HTML, d.InReplyTo,
-		string(refs), string(paths), now, d.ID, d.AccountID)
+		string(refs), string(paths), string(inline), now, d.ID, d.AccountID)
 	if err != nil {
 		return 0, fmt.Errorf("store: update draft %d: %w", d.ID, err)
 	}
@@ -112,18 +117,22 @@ func (s *Store) DeleteDraft(ctx context.Context, id int64) error {
 
 func scanDraft(row scanner) (model.Draft, error) {
 	var (
-		d           model.Draft
-		refs, paths string
-		updated     int64
+		d                   model.Draft
+		refs, paths, inline string
+		updated             int64
 	)
 	if err := row.Scan(&d.ID, &d.AccountID, &d.IdentityID, &d.To, &d.Cc, &d.Bcc,
-		&d.Subject, &d.Body, &d.HTML, &d.InReplyTo, &refs, &paths, &updated); err != nil {
+		&d.Subject, &d.Body, &d.HTML, &d.InReplyTo, &refs, &paths, &inline,
+		&updated); err != nil {
 		return model.Draft{}, err
 	}
 	if err := unmarshalIfSet(refs, &d.References); err != nil {
 		return model.Draft{}, err
 	}
 	if err := unmarshalIfSet(paths, &d.AttachmentPaths); err != nil {
+		return model.Draft{}, err
+	}
+	if err := unmarshalIfSet(inline, &d.InlineImages); err != nil {
 		return model.Draft{}, err
 	}
 	d.UpdatedAt = time.Unix(updated, 0)

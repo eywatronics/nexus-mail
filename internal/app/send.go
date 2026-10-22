@@ -38,6 +38,10 @@ type DraftDTO struct {
 	// paths PickAttachments handed out are accepted; see readAttachments.
 	AttachmentPaths []string `json:"attachmentPaths"`
 
+	// InlineImages are the images the HTML refers to by cid:. Their paths go
+	// through the same allowlist as ordinary attachments.
+	InlineImages []InlineImageDTO `json:"inlineImages"`
+
 	// DraftID is the saved draft this message came from, zero when it never
 	// was one. Cleared once the message is queued: a draft left behind after
 	// the message went out is a message the user will send a second time.
@@ -75,12 +79,23 @@ func (s *MailService) SendMessage(d DraftDTO) (QueuedDTO, error) {
 	// Read before the draft is assembled, so a file that has gone missing
 	// since it was chosen stops the send rather than producing a message with
 	// a paperclip the reader cannot open.
+	inlinePaths := make([]string, 0, len(d.InlineImages))
+	for _, img := range d.InlineImages {
+		inlinePaths = append(inlinePaths, img.Path)
+	}
+	if err := s.checkAttachmentSize(append(append([]string{}, d.AttachmentPaths...), inlinePaths...)); err != nil {
+		return QueuedDTO{}, err
+	}
 	attachments, err := s.readAttachments(d.AttachmentPaths)
 	if err != nil {
 		return QueuedDTO{}, err
 	}
+	inline, err := s.readInlineImages(d.InlineImages)
+	if err != nil {
+		return QueuedDTO{}, err
+	}
 
-	draft, err := draftFromDTO(d, identity, attachments)
+	draft, err := draftFromDTO(d, identity, attachments, inline)
 	if err != nil {
 		return QueuedDTO{}, err
 	}
@@ -156,7 +171,7 @@ func (s *MailService) identityFor(ctx context.Context, d DraftDTO) (model.Identi
 
 // draftFromDTO turns what the window sent into what the builder takes.
 func draftFromDTO(d DraftDTO, identity model.Identity,
-	attachments []mailmime.Attachment) (mailmime.Draft, error) {
+	attachments, inline []mailmime.Attachment) (mailmime.Draft, error) {
 	to, err := parseAddressList("To", d.To)
 	if err != nil {
 		return mailmime.Draft{}, err
@@ -191,6 +206,7 @@ func draftFromDTO(d DraftDTO, identity model.Identity,
 		Bcc:         bcc,
 		ReplyTo:     replyTo,
 		Attachments: attachments,
+		Inline:      inline,
 		Subject:     d.Subject,
 		Text:        text,
 		HTML:        html,

@@ -325,7 +325,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Alıcı "pill" arayüzü + otomatik tamamlama~~ — **bitti**: öneriler bu
   hesaba yazmış insanlardan, yerel veritabanından
 - ~~Ek ekleme~~ — **bitti**
-- Gömülü resim (`cid:`)
+- ~~Gömülü resim (`cid:`)~~ — **bitti**: editörde önizleme, gönderimde
+  `multipart/related` ve `Content-ID`
 - ~~Ek hatırlatıcı~~ — **bitti**: gövde ek sözü verip dosya taşımıyorsa
   göndermeden önce bir kez soruluyor
 - ~~Taslak otomatik kaydetme~~ — **bitti**
@@ -555,7 +556,28 @@ gelen bir `<script>` editöre hiç girmiyor.
 Biçimli gövde taslakta `body_html` sütununda duruyor (migration 007); düz metin
 taslaklarında boş kalıyor. Gönderirken yanına `htmlToText` ile üretilen düz
 metin alternatifi konuyor; düz metin kipinden gönderilen mesajda HTML parçası
-yok. Gömülü resim (`cid:`) bu temelden sonra, ayrı bir iş.
+yok. Gömülü resim (`cid:`) bu temelden sonra geldi.
+
+### Gömülü resim
+
+Editördeki *Insert image* dosya seçiciden bir görsel alıyor ve gövdeye
+`<img src="cid:...">` olarak yerleştiriyor. Editörün gösterdiği adres
+`/compose-image/<cid>`: Wails'in varlık sunucusuna eklenen küçük bir handler,
+yalnızca kayıtlı cid'leri okuyor. Yol haritada değil, kayıt tablosunda; rastgele
+bir cid bilmeyen bir istek 404 alıyor. Bu, dosya yolunu WebView'e sızdırmadan
+önizleme vermenin en küçük yolu.
+
+Gönderirken önizleme adresi `cid:`e çevriliyor ve resim `multipart/related`
+içinde, HTML'in yanında gidiyor; sıradan ek varsa related, `multipart/mixed`
+içine yuvalanıyor. Görselin `Content-ID`'si HTML'deki cid ile aynı; cid
+backend'de desen ve tekillik açısından doğrulanıyor. SVG reddediliyor: içinde
+script taşıyabilen bir belge ve her okuyucu göstermiyor. Görsel başına 5 MB,
+toplamda eklerle aynı 40 MB sınırı var.
+
+Taslak `inline_images` sütununda yol, cid, ad ve MIME türünü saklıyor
+(migration 008). Yeniden açıldığında handler cid'i yeniden kaydediyor ve HTML
+`cid:`den önizleme adresine çevriliyor; dosya taşınmışsa adı eksik ekler
+listesinde görünüyor.
 
 ### Sunucuyu DNS'ten bulmak
 
