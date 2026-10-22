@@ -167,3 +167,23 @@ describe('the app password route', () => {
     expect(queryByTestId('app-password-microsoft')).toBeNull()
   })
 })
+
+describe('settings before an account exists', () => {
+  // The client ID the sign-in pane asks for lives in Settings, and Settings
+  // used to be reachable only after an account had been added. On a fresh
+  // install that made the Microsoft path a dead end.
+  it('offers the screen that holds the client ID', () => {
+    const onOpenSettings = vi.fn()
+    const { getByTestId } = render(
+      <AddAccount onDone={() => {}} onOpenSettings={onOpenSettings} />,
+    )
+
+    fireEvent.click(getByTestId('open-oauth-settings'))
+    expect(onOpenSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no dead link when the shell has no settings screen', () => {
+    const { queryByTestId } = render(<AddAccount onDone={() => {}} />)
+    expect(queryByTestId('open-oauth-settings')).toBeNull()
+  })
+})

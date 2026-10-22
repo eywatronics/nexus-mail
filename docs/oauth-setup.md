@@ -4,7 +4,9 @@ Nexus Mail açık kaynak olduğu için kendi OAuth kimlik bilgileriyle gelmez.
 İstemcinizi bir kez kaydedersiniz — birkaç dakika sürer ve posta kutunuza
 erişimin sizin kontrolünüzde kalmasını sağlar.
 
-Client ID'ler veri dizinindeki `config.json` dosyasına yazılır:
+Client ID'ler uygulamanın **Settings** ekranından girilir. O ekran hesap
+ekleme ekranından da açılabilir; yazdıkları veri dizinindeki `config.json`
+dosyasına gider:
 
 | Platform | Yol |
 |---|---|

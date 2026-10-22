@@ -26,7 +26,18 @@ const THEME_OPTIONS = [
  * use has converged on; a Save button adds a state to get wrong ("did that
  * take?") in exchange for nothing.
  */
-export function Settings({ onClose }: { onClose: () => void }) {
+export function Settings({
+  onClose,
+  backLabel = 'Back to mail',
+}: {
+  onClose: () => void
+  /**
+   * Where the way out leads. The screen is also reachable before there is any
+   * mail, from account setup, and "Back to mail" would name a place that does
+   * not exist yet.
+   */
+  backLabel?: string
+}) {
   const [stored, setStored] = useState<AppSettings | null>(null)
   const [error, setError] = useState('')
 
@@ -68,7 +79,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
             className={`${BUTTON_SECONDARY} inline-flex items-center gap-1.5 py-1.5`}
           >
             <ArrowLeft size={ICON.size} weight={ICON.weight} aria-hidden />
-            Back to mail
+            {backLabel}
           </button>
         </div>
 
@@ -212,7 +223,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
                   secret on your machine, so registering your own is what keeps access to your
                   mailbox under your control. The setup takes a few minutes and is described in
                   docs/oauth-setup.md. An on-premises server needs none of this.{' '}
-                  <span className={TEXT.muted}>Changes here take effect after a restart.</span>
+                  <span className={TEXT.muted}>
+                    Accounts already added pick changes up after a restart; a new sign-in uses
+                    them at once.
+                  </span>
                 </p>
 
                 <Setting label="Google client id" htmlFor="googleClientId">

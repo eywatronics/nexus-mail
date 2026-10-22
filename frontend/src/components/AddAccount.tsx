@@ -87,9 +87,15 @@ const PROMISES: Array<{ icon: Icon; title: string; body: string }> = [
 interface AddAccountProps {
   onDone: () => void
   onCancel?: () => void
+  /**
+   * Opens the settings screen over this one. Optional because the rest of the
+   * form works without it; without it, the OAuth pane has no way to offer the
+   * one setting a fresh install is missing.
+   */
+  onOpenSettings?: () => void
 }
 
-export function AddAccount({ onDone, onCancel }: AddAccountProps) {
+export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps) {
   const [mode, setMode] = useState<Mode>('microsoft')
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -395,9 +401,25 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                 </p>
                 <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
                   {mode === 'google'
-                    ? 'Sign-in needs a client ID from your own Google Cloud project. This build does not ship one.'
-                    : 'Sign-in needs a client ID from your own Microsoft Entra app registration. This build does not ship one.'}
+                    ? 'Sign-in needs a client ID from your own Google Cloud project. You can add it in Settings.'
+                    : 'Sign-in needs a client ID from your own Microsoft Entra app registration. You can add it in Settings.'}
                 </p>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    data-testid="open-oauth-settings"
+                    onClick={onOpenSettings}
+                    className={`${LINK} self-start`}
+                  >
+                    Open Settings
+                    <ArrowRight
+                      size={ICON.size}
+                      weight={ICON.weight}
+                      aria-hidden
+                      className="shrink-0"
+                    />
+                  </button>
+                )}
                 {mode === 'google' && (
                   <div className={`mt-1 border-t pt-3 ${SURFACE.divider}`}>
                     <p className={`text-xs leading-relaxed ${TEXT.secondary}`}>

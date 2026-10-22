@@ -171,13 +171,28 @@ export default function App() {
 
   if (adding || accounts.length === 0) {
     return (
-      <AddAccount
-        onDone={() => {
-          setAdding(false)
-          refreshAccounts().catch(() => {})
-        }}
-        onCancel={accounts.length > 0 ? () => setAdding(false) : undefined}
-      />
+      <>
+        {/* Kept mounted while settings is open: the form may already hold an
+            address and a server name, and a round trip through settings is not
+            a reason to make somebody type them again. Hidden rather than
+            covered so its fields leave the tab order with it. */}
+        <div className={showingSettings ? 'hidden' : 'h-full'}>
+          <AddAccount
+            onDone={() => {
+              setAdding(false)
+              refreshAccounts().catch(() => {})
+            }}
+            onCancel={accounts.length > 0 ? () => setAdding(false) : undefined}
+            onOpenSettings={() => setShowingSettings(true)}
+          />
+        </div>
+        {showingSettings && (
+          <Settings
+            onClose={() => setShowingSettings(false)}
+            backLabel="Back to account setup"
+          />
+        )}
+      </>
     )
   }
 
