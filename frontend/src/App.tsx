@@ -19,7 +19,9 @@ import {
   listMessages,
   openFolder,
   pendingChanges,
+  pendingMailto,
   searchMessages,
+  type MailtoDraft,
 } from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
 import { useMessageShortcuts } from './lib/keyboard'
@@ -59,6 +61,51 @@ export default function App() {
   const searching = useMailStore((s) => s.searching)
   const startSearch = useMailStore((s) => s.startSearch)
   const setSearchResults = useMailStore((s) => s.setSearchResults)
+
+  // A mailto: link this launch carried. Taken once, then opened when there is
+  // an account to send from; waiting for the account is the difference between
+  // a first-run link being remembered and being silently dropped.
+  const [mailto, setMailto] = useState<MailtoDraft | null>(null)
+  useEffect(() => {
+    pendingMailto()
+      .then((draft) => {
+        if (
+          draft.to !== '' || draft.cc !== '' || draft.bcc !== '' ||
+          draft.subject !== '' || draft.body !== ''
+        ) {
+          setMailto(draft)
+        }
+      })
+      .catch(() => {
+        // A malformed link is not a reason to fail to draw the window. The
+        // backend has already rejected it; nothing was opened.
+      })
+  }, [])
+
+  useEffect(() => {
+    if (mailto === null || accounts.length === 0 || adding || composing) return
+    const account = accounts[0]
+    openComposer({
+      accountId: account.id,
+      draft: {
+        id: 0,
+        accountId: account.id,
+        identityId: 0,
+        to: mailto.to,
+        cc: mailto.cc,
+        bcc: mailto.bcc,
+        subject: mailto.subject,
+        body: mailto.body,
+        html: '',
+        inReplyTo: mailto.inReplyTo,
+        references: [],
+        attachmentPaths: [],
+        inlineImages: [],
+        updatedAtUnix: 0,
+      },
+    })
+    setMailto(null)
+  }, [mailto, accounts, adding, composing, openComposer])
 
   useMessageShortcuts()
   // Applied from the shell rather than from the theme control, which can be

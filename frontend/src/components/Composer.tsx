@@ -180,8 +180,10 @@ export function Composer({
         // HTML the writer can no longer see or edit.
         html: rich ? sanitizeComposeHTML(cidHTML(contents.html)) : '',
         inlineImages: rich ? usedInlineImages : [],
-        inReplyTo: reply?.inReplyTo ?? '',
-        references: reply?.references ?? [],
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
         attachmentPaths: contents.files.map((f) => f.path),
         attachments: null,
         missingAttachments: null,
@@ -268,8 +270,10 @@ export function Composer({
         // The editor sanitises as it goes; this is the last line before the
         // bridge, where a draft or a future caller could otherwise bypass it.
         html: rich ? sanitizeComposeHTML(cidHTML(html)) : '',
-        inReplyTo: reply?.inReplyTo ?? '',
-        references: reply?.references ?? [],
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
         attachmentPaths: files.map((f) => f.path),
         inlineImages: rich ? usedInlineImages : [],
         draftId: draftId.current,

@@ -75,6 +75,24 @@ yapılsaydı **zararlı** olurdu: gönderme M6'da, yani bir `mailto:` bağlantı
 tıklayan kişi Nexus Mail'i açar ve hiçbir şey olmaz. Outlook'u varsayılan
 bırakmaktan kötü bir sonuç.
 
+### `mailto:` işleyicisi
+
+Uygulama açılış argümanlarında bir `mailto:` arıyor ve RFC 6068'in alıcı,
+cc, bcc, konu, gövde ve `in-reply-to` alanlarını ayrıştırıyor. Parser
+`internal/mailto` içinde; URL ve gövde boyutu sınırlı, başlık alanlarında satır
+sonu reddediliyor, adres listeleri `net/mail` ile doğrulanıyor. Gövdedeki satır
+sonu serbest, çünkü paragraf gerçek bir satır sonudur.
+
+Pencere hazır olduğunda bağlantıyı **bir kez** `PendingMailto` ile alıyor.
+Hesap yoksa besteci açılmıyor; hesap eklendiğinde ilk hesapla açılıyor. Böylece
+ilk kurulumda gelen bir bağlantı sessizce kaybolmuyor.
+
+**İşletim sistemi kaydı bu turda değil.** Windows 10'dan beri bir uygulama
+kendini varsayılan yapamıyor: aday olarak kaydolup kullanıcıyı Ayarlar'a
+götürmek gerekiyor. Linux'ta `.desktop` içindeki `MimeType=x-scheme-handler/mailto`
+ve `xdg-mime`, macOS'ta `Info.plist` URL şeması istiyor. Bunlar paketleme işi;
+kod tarafı artık gelen bağlantıyı besteciye bağlıyor.
+
 Bir de işin Windows tarafı sanıldığı gibi değil: Windows 10'dan beri bir
 uygulama kendini programatik olarak varsayılan **yapamıyor**. Yapılabilecek
 olan, uygulamayı aday olarak kaydedip Ayarlar sayfasını açmak. Yani madde
@@ -312,8 +330,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Giden mesajı kurma (`internal/mailmime`)~~ — **bitti**: yapı, başlıklar,
   ekler, quoted-printable
 - ~~Hesap başına çoklu kimlik~~ — **bitti** (migration 004, `identities`)
-- **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
-  olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
+- ~~**Varsayılan posta istemcisi (`mailto:`)**~~ — kod tarafı bitti: açılış
+  argümanı ayrıştırılıp besteciye bağlanıyor; işletim sistemi kaydı paketleme
 - ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
 - ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
 - ~~Compose ekranı~~ — **bitti** (düz metin)
@@ -339,7 +357,7 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Uygulama parolası yolunun anlatılması~~ — **bitti**: Gmail'de OAuth
   ekranından parola formuna tek adımda geçiş; Microsoft adresleri parolanın
   kapandığını söyleyip girişe yönlendiriliyor
-- `mailto:` işleyicisi
+- ~~`mailto:` işleyicisi~~ — **bitti** (açılış argümanı; OS kaydı paketleme)
 
 ### Uygulama parolası: Gmail'de kısayol, Microsoft'ta kapalı kapı
 

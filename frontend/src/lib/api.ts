@@ -168,6 +168,26 @@ export interface DiscoveredServer {
 export const discoverServer = (email: string) =>
   MailService.DiscoverServer(email) as Promise<DiscoveredServer>
 
+/** A mailto: link this launch was asked to open. */
+export interface MailtoDraft {
+  to: string
+  cc: string
+  bcc: string
+  subject: string
+  body: string
+  inReplyTo: string
+}
+
+/**
+ * Takes the mailto: link the process was launched with, once.
+ *
+ * Called by the shell when it can open a composer rather than emitted at
+ * startup: an event sent before the window subscribed is lost, and a mailto
+ * handler that opens nothing is the one failure it must not have.
+ */
+export const pendingMailto = () =>
+  MailService.PendingMailto() as Promise<MailtoDraft>
+
 /** One address the composer can offer, collected from mail already on disk. */
 export interface Recipient {
   name: string

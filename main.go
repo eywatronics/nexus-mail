@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -264,6 +265,17 @@ func run(debug bool) error {
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
 	engine.SetSender(app.SenderFor(db, secrets, cfg), outbox)
+
+	// A mailto: link arrives as an argument on launch. It is not parsed here:
+	// the service does that once, and the window asks for it when its event
+	// listeners exist.
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(strings.ToLower(arg), "mailto:") {
+			cfg.Mailto = arg
+			break
+		}
+	}
+
 	service := app.NewMailService(db, secrets, engine, cfg)
 	inline := app.NewInlineImages()
 	app.SetInlineImages(service, inline)

@@ -739,6 +739,29 @@ describe('not losing what was typed', () => {
     expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe('burada kalmis')
   })
 
+  // A draft opened from a mailto: link, or one picked up from the list, still
+  // knows what it answers. Losing the headers would start a new thread.
+  it('sends the threading headers a draft carried', async () => {
+    const { getByTestId } = open({
+      draft: record({
+        inReplyTo: '<parent@example.com>',
+        references: ['<root@example.com>', '<parent@example.com>'],
+      }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inReplyTo: '<parent@example.com>',
+          references: ['<root@example.com>', '<parent@example.com>'],
+        }),
+      ),
+    )
+  })
+
   // A blind copy the writer cannot see is a message going somewhere they did
   // not check, which is as true on reopening as it is on reply-all.
   it('shows the copy lines when the draft has them', async () => {

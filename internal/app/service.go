@@ -14,6 +14,7 @@ import (
 
 	"nexusmail/internal/auth"
 	"nexusmail/internal/imapx"
+	"nexusmail/internal/mailto"
 	"nexusmail/internal/model"
 	"nexusmail/internal/smtpx"
 	"nexusmail/internal/store"
@@ -73,6 +74,12 @@ type MailService struct {
 	// dereferencing.
 	inline *InlineImages
 
+	// A mailto: link the launch carried. Parsed once and handed to the window
+	// on its first ask; see PendingMailto.
+	mailtoMu      sync.Mutex
+	pendingMailto *mailto.Draft
+	mailtoErr     error
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.
@@ -90,12 +97,15 @@ func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engi
 	if cfg.Emit == nil {
 		cfg.Emit = func(string, any) {}
 	}
+	pendingMailto, mailtoErr := parsePendingMailto(cfg.Mailto)
 	return &MailService{
 		store: s, secrets: secrets, engine: eng, cfg: cfg,
 		outbox:                  cfg.Outbox,
 		liveRetention:           cfg.Retention,
 		liveNotificationPreview: cfg.NotificationPreview,
 		liveUndoWindow:          cfg.UndoWindow,
+		pendingMailto:           pendingMailto,
+		mailtoErr:               mailtoErr,
 	}
 }
 
