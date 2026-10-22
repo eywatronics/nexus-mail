@@ -11,9 +11,11 @@ import {
 } from '../lib/api'
 import { mentionsAttachment, textBeforeQuote } from '../lib/attachmentReminder'
 import { formatSize } from '../lib/format'
+import { textToHTML, sanitizeComposeHTML } from '../lib/richText'
 import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RecipientField } from './RecipientField'
+import { RichTextEditor } from './RichTextEditor'
 
 /**
  * How long a pause counts as "stopped typing".
@@ -82,6 +84,13 @@ export function Composer({
   const [body, setBody] = useState(
     draft ? draft.body : reply?.quoted ? `\n\n${reply.quoted}` : '',
   )
+  // Formatted text is opt-in for now. A draft written in the rich editor
+  // reopens in it; everything else starts as plain text, which is what the
+  // composer did before this existed and what a reply's quoted original is.
+  const [html, setHtml] = useState(
+    draft?.html ? sanitizeComposeHTML(draft.html) : '',
+  )
+  const [rich, setRich] = useState((draft?.html ?? '') !== '')
 
   // Files, by path. The bytes stay on disk until Send, so a composer left
   // open with three photographs on it costs this window three filenames.
@@ -135,7 +144,7 @@ export function Composer({
 
   // Everything a save would write. Named so the effect below can depend on it
   // without listing nine things and getting one of them wrong.
-  const contents = { identityId, to, cc, bcc, subject, body, files }
+  const contents = { identityId, to, cc, bcc, subject, body, html, files }
   const empty =
     to.trim() === '' && cc.trim() === '' && bcc.trim() === '' &&
     subject.trim() === '' && body.trim() === '' && files.length === 0
@@ -159,6 +168,9 @@ export function Composer({
         bcc: contents.bcc,
         subject: contents.subject,
         body: contents.body,
+        // Plain mode drops formatting from the saved draft rather than leaving
+        // HTML the writer can no longer see or edit.
+        html: rich ? contents.html : '',
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
         attachmentPaths: contents.files.map((f) => f.path),
@@ -184,7 +196,7 @@ export function Composer({
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, empty, identityId, to, cc, bcc, subject, body, files])
+  }, [accountId, empty, identityId, to, cc, bcc, subject, body, html, rich, files])
 
   // The pause is not enough on its own. Typing a sentence and closing the
   // window straight away would clear the pending timer and lose it, which is
@@ -229,7 +241,9 @@ export function Composer({
         bcc,
         subject,
         text: body,
-        html: '',
+        // The editor sanitises as it goes; this is the last line before the
+        // bridge, where a draft or a future caller could otherwise bypass it.
+        html: rich ? sanitizeComposeHTML(html) : '',
         inReplyTo: reply?.inReplyTo ?? '',
         references: reply?.references ?? [],
         attachmentPaths: files.map((f) => f.path),
@@ -418,15 +432,44 @@ export function Composer({
         </ul>
       )}
 
-      <textarea
-        ref={bodyField}
-        data-testid="composer-body"
-        aria-label="Message"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        spellCheck
-        className={`min-h-0 flex-1 resize-none bg-transparent px-6 py-4 text-sm leading-relaxed outline-none ${TEXT.primary}`}
-      />
+      {rich ? (
+        <RichTextEditor
+          initialHTML={html}
+          onChange={(nextHTML, nextText) => {
+            setHtml(nextHTML)
+            setBody(nextText)
+          }}
+          onPlain={() => setRich(false)}
+          autoFocus
+        />
+      ) : (
+        <>
+          <div
+            className={`flex items-center justify-end border-b px-6 py-1 ${SURFACE.divider}`}
+          >
+            <button
+              type="button"
+              data-testid="composer-format"
+              onClick={() => {
+                setHtml(textToHTML(body))
+                setRich(true)
+              }}
+              className={`${BUTTON_GHOST} text-xs`}
+            >
+              Formatted text
+            </button>
+          </div>
+          <textarea
+            ref={bodyField}
+            data-testid="composer-body"
+            aria-label="Message"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            spellCheck
+            className={`min-h-0 flex-1 resize-none bg-transparent px-6 py-4 text-sm leading-relaxed outline-none ${TEXT.primary}`}
+          />
+        </>
+      )}
 
       {confirmingNoAttachment && (
         <ConfirmDialog

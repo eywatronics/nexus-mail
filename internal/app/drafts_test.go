@@ -20,6 +20,7 @@ func TestADraftSurvivesAndComesBackAsItWasTyped(t *testing.T) {
 		To:      "ali@example.com, bir yar",
 		Subject: "Yarim konu",
 		Body:    "burada kalmis",
+		HTML:    "<p>burada <b>kalmis</b></p>",
 	})
 	if err != nil {
 		t.Fatalf("SaveDraft() error: %v", err)
@@ -34,6 +35,9 @@ func TestADraftSurvivesAndComesBackAsItWasTyped(t *testing.T) {
 	}
 	if got.Body != "burada kalmis" {
 		t.Errorf("Body = %q", got.Body)
+	}
+	if got.HTML != "<p>burada <b>kalmis</b></p>" {
+		t.Errorf("HTML = %q; the formatting was lost on the way through the draft", got.HTML)
 	}
 }
 

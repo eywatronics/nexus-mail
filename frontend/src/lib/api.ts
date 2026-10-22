@@ -376,6 +376,8 @@ export interface DraftRecord {
   bcc: string
   subject: string
   body: string
+  /** The formatted body when there is one; empty for a plain-text draft. */
+  html: string
   inReplyTo: string
   references: string[]
   /** What a save carries: the files by path. */

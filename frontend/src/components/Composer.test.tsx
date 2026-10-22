@@ -49,6 +49,23 @@ const file = (over: Partial<OutgoingAttachment> = {}): OutgoingAttachment => ({
   ...over,
 })
 
+const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
+  id: 7,
+  accountId: 1,
+  identityId: 0,
+  to: 'ali@example.com, bir yar',
+  cc: '',
+  bcc: '',
+  subject: 'Yarim konu',
+  body: 'burada kalmis',
+  html: '',
+  inReplyTo: '',
+  references: [],
+  attachmentPaths: [],
+  updatedAtUnix: 1_700_000_000,
+  ...over,
+})
+
 function open(props: Partial<Parameters<typeof Composer>[0]> = {}) {
   const onClose = vi.fn()
   return {
@@ -105,6 +122,93 @@ describe('writing a message', () => {
     fireEvent.click(getByTestId('composer-send'))
 
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+})
+
+describe('formatted text', () => {
+  it('switches to the rich editor and back', async () => {
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), {
+      target: { value: 'bir\n\niki' },
+    })
+    fireEvent.click(getByTestId('composer-format'))
+
+    expect(getByTestId('rich-editor').innerHTML).toBe('<p>bir</p><p>iki</p>')
+    expect(queryByTestId('composer-body')).toBeNull()
+
+    fireEvent.click(getByTestId('composer-format'))
+
+    expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe(
+      'bir\n\niki',
+    )
+  })
+
+  it('sends HTML and its plain text alternative', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-format'))
+
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = '<p>kalın <b>metin</b></p>'
+    fireEvent.input(editor)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: '<p>kalın <b>metin</b></p>',
+          text: 'kalın metin',
+        }),
+      ),
+    )
+  })
+
+  it('saves the formatting with the draft', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-format'))
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = '<p><b>kalın</b></p>'
+    fireEvent.input(editor)
+
+    await vi.advanceTimersByTimeAsync(2100)
+
+    expect(saveDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: 'kalın', html: '<p><b>kalın</b></p>' }),
+    )
+  })
+
+  it('reopens a formatted draft in the editor', async () => {
+    const { getByTestId, queryByTestId } = open({
+      draft: record({ body: 'kalın', html: '<p><b>kalın</b></p>' }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByTestId('rich-editor').innerHTML).toBe('<p><b>kalın</b></p>')
+    expect(queryByTestId('composer-body')).toBeNull()
+  })
+
+  // A plain-text writer gets a plain-text message: no HTML part with markup
+  // they did not ask for.
+  it('sends no HTML from plain mode', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'düz metin' } })
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ html: '', text: 'düz metin' }),
+      ),
+    )
   })
 })
 
@@ -488,22 +592,6 @@ describe('the attachment reminder', () => {
 })
 
 describe('not losing what was typed', () => {
-  const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
-    id: 7,
-    accountId: 1,
-    identityId: 0,
-    to: 'ali@example.com, bir yar',
-    cc: '',
-    bcc: '',
-    subject: 'Yarim konu',
-    body: 'burada kalmis',
-    inReplyTo: '',
-    references: [],
-    attachmentPaths: [],
-    updatedAtUnix: 1_700_000_000,
-    ...over,
-  })
-
   // Two seconds of nothing counts as having stopped typing.
   it('saves after a pause, not on every keystroke', async () => {
     vi.useFakeTimers()

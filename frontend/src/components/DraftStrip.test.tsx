@@ -33,6 +33,7 @@ const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
   bcc: '',
   subject: 'Yarim konu',
   body: 'metin',
+  html: '',
   inReplyTo: '',
   references: [],
   attachmentPaths: [],

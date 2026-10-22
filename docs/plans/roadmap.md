@@ -319,7 +319,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Compose ekranı~~ — **bitti** (düz metin)
 - ~~Yanıtla / tümünü yanıtla / ilet~~ — **bitti**; yönlendir (redirect) yok
 - Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
-- Zengin metin editörü (`contenteditable`) ve düz metin kipi
+- ~~Zengin metin editörü (`contenteditable`) ve düz metin kipi~~ — **bitti**:
+  biçimli yazı HTML olarak saklanıyor, düz metin varsayılan kalıyor
 - ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
 - ~~Alıcı "pill" arayüzü + otomatik tamamlama~~ — **bitti**: öneriler bu
   hesaba yazmış insanlardan, yerel veritabanından
@@ -534,12 +535,33 @@ kullanılıyor; tırnak içindeki virgül ("Kabatepe, İsmet") ve `<...>` korunu
 Ayrıştırmanın kendisi hâlâ backend'de: pill'ler satırın görünümü, ikinci bir
 adres modeli değil. Satırın backend'e giden hâli yine yazıldığı gibi.
 
-### Composer neden önce düz metin
+### Zengin metin ve düz metin
 
-Zengin editör listede duruyor ve yapılacak. Ama doğru mesaj gönderen bir
-`textarea`, bozuk mesaj gönderen yarım bir editörden iyi: arka uç zaten HTML
-kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan tek şey `html`
-alanının dolması.
+Biçimli yazı M6'nın sonunda geldi ve **varsayılan değil**. Sebebi tarihsel
+değil: yanıtın altındaki alıntı düz metin ve mevcut taslakların hepsi düz
+metin. Yeni bir mesajı sessizce biçimli kipe açmak, yazmayı bilmediği bir
+editörle karşılaşan okuyucu demek olurdu. *Formatted text* düğmesi geçişi
+açıkça yapıyor; *Plain text* geri dönüyor ve biçimi düşürüyor.
+
+Editör `contenteditable` ve `execCommand` kullanıyor. `execCommand` kullanımdan
+kaldırılmış ama bu uygulamanın çalıştığı her WebView'de var; alternatifi kalın,
+liste ve bağlantı için elle bir Range motoru yazmak. Çıkan HTML bir izin
+listesinden geçiyor: `b/strong`, `i/em`, `u`, `p/div`, `br`, `a`, `ul/ol/li`,
+`blockquote`. Script, stil, olay özniteliği ve uzak `img` atılıyor; tanınmayan
+etiket metnine indiriliyor. Yapıştırma da aynı listeden geçtiği için panodan
+gelen bir `<script>` editöre hiç girmiyor.
+
+Biçimli gövde taslakta `body_html` sütununda duruyor (migration 007); düz metin
+taslaklarında boş kalıyor. Gönderirken yanına `htmlToText` ile üretilen düz
+metin alternatifi konuyor; düz metin kipinden gönderilen mesajda HTML parçası
+yok. Gömülü resim (`cid:`) bu temelden sonra, ayrı bir iş.
+
+### Composer neden önce düz metinle başladı
+
+Zengin editör M6'nın sonuna kadar ertelendi: doğru mesaj gönderen bir
+`textarea`, bozuk mesaj gönderen yarım bir editörden iyi. Arka uç zaten HTML
+kabul ediyordu; editör geldiğinde değişen tek şey `html` alanının dolmaya
+başlaması oldu.
 
 Cc ve Bcc istenene kadar gizli. Mesajların çoğunda ikisi de yok, ve her compose
 penceresinin tepesindeki dört boş satır, yazanla yazmaya geldiği şey arasında

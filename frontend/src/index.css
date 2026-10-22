@@ -81,6 +81,57 @@ body {
   border-radius: var(--radius-ui);
 }
 
+/* The composer's contenteditable keeps its own document structure, so the
+   styles a mail reader will apply have to exist here too. Only the tags the
+   outgoing sanitiser allows are covered. */
+.rich-editor p {
+  margin: 0 0 0.75rem;
+}
+
+.rich-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-editor ul,
+.rich-editor ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.4rem;
+}
+
+.rich-editor ul {
+  list-style: disc;
+}
+
+.rich-editor ol {
+  list-style: decimal;
+}
+
+.rich-editor li {
+  margin: 0.15rem 0;
+}
+
+.rich-editor blockquote {
+  margin: 0 0 0.75rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid rgb(0 0 0 / 0.15);
+  color: var(--color-neutral-600, #525252);
+}
+
+.dark .rich-editor blockquote {
+  border-left-color: rgb(255 255 255 / 0.2);
+  color: #d4d4d4;
+}
+
+.rich-editor a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dark .rich-editor a {
+  color: var(--color-accent-dark);
+}
+
 /* MOTION_INTENSITY is 2: hover and press feedback only, no entrance
    animations. A mail client should feel instant rather than choreographed.
    The transitions below are short enough to read as responsiveness, and they

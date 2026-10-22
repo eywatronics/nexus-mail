@@ -12,7 +12,7 @@ import (
 )
 
 const draftColumns = `id, account_id, identity_id, to_line, cc_line, bcc_line,
-	subject, body, in_reply_to, refs, attachment_paths, updated_at`
+	subject, body, body_html, in_reply_to, refs, attachment_paths, updated_at`
 
 // SaveDraft writes a draft, creating it the first time and replacing it after.
 //
@@ -33,9 +33,9 @@ func (s *Store) SaveDraft(ctx context.Context, d model.Draft) (int64, error) {
 		res, err := s.write.ExecContext(ctx,
 			`INSERT INTO drafts
 			   (account_id, identity_id, to_line, cc_line, bcc_line, subject, body,
-			    in_reply_to, refs, attachment_paths, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			d.AccountID, d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body,
+			    body_html, in_reply_to, refs, attachment_paths, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.AccountID, d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.HTML,
 			d.InReplyTo, string(refs), string(paths), now)
 		if err != nil {
 			return 0, fmt.Errorf("store: insert draft: %w", err)
@@ -45,10 +45,10 @@ func (s *Store) SaveDraft(ctx context.Context, d model.Draft) (int64, error) {
 
 	res, err := s.write.ExecContext(ctx,
 		`UPDATE drafts SET identity_id = ?, to_line = ?, cc_line = ?, bcc_line = ?,
-		   subject = ?, body = ?, in_reply_to = ?, refs = ?, attachment_paths = ?,
-		   updated_at = ?
+		   subject = ?, body = ?, body_html = ?, in_reply_to = ?, refs = ?,
+		   attachment_paths = ?, updated_at = ?
 		 WHERE id = ? AND account_id = ?`,
-		d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo,
+		d.IdentityID, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.HTML, d.InReplyTo,
 		string(refs), string(paths), now, d.ID, d.AccountID)
 	if err != nil {
 		return 0, fmt.Errorf("store: update draft %d: %w", d.ID, err)
@@ -117,7 +117,7 @@ func scanDraft(row scanner) (model.Draft, error) {
 		updated     int64
 	)
 	if err := row.Scan(&d.ID, &d.AccountID, &d.IdentityID, &d.To, &d.Cc, &d.Bcc,
-		&d.Subject, &d.Body, &d.InReplyTo, &refs, &paths, &updated); err != nil {
+		&d.Subject, &d.Body, &d.HTML, &d.InReplyTo, &refs, &paths, &updated); err != nil {
 		return model.Draft{}, err
 	}
 	if err := unmarshalIfSet(refs, &d.References); err != nil {

@@ -427,6 +427,10 @@ type Draft struct {
 	Bcc     string
 	Subject string
 	Body    string
+	// HTML is the formatted body when the composer wrote one. Empty means the
+	// draft is plain text, which is also what every draft written before this
+	// field existed is.
+	HTML string
 
 	InReplyTo  string
 	References []string

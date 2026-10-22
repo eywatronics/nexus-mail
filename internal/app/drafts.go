@@ -28,6 +28,8 @@ type DraftRecordDTO struct {
 	Bcc     string `json:"bcc"`
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
+	// HTML is the formatted body, empty for a plain-text draft.
+	HTML string `json:"html"`
 
 	InReplyTo  string   `json:"inReplyTo"`
 	References []string `json:"references"`
@@ -67,6 +69,7 @@ func (s *MailService) SaveDraft(d DraftRecordDTO) (int64, error) {
 		Bcc:             d.Bcc,
 		Subject:         d.Subject,
 		Body:            d.Body,
+		HTML:            d.HTML,
 		InReplyTo:       d.InReplyTo,
 		References:      d.References,
 		AttachmentPaths: d.AttachmentPaths,
@@ -137,6 +140,7 @@ func draftToDTO(d model.Draft) DraftRecordDTO {
 		Bcc:             d.Bcc,
 		Subject:         d.Subject,
 		Body:            d.Body,
+		HTML:            d.HTML,
 		InReplyTo:       d.InReplyTo,
 		References:      d.References,
 		AttachmentPaths: d.AttachmentPaths,
