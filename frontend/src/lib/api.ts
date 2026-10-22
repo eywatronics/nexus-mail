@@ -148,6 +148,26 @@ export const addPasswordAccount = (
 export const addOAuthAccount = (email: string, displayName: string, provider: string) =>
   MailService.AddOAuthAccount(email, displayName, provider) as Promise<Account>
 
+/** Server settings found by DNS for an address's domain. */
+export interface DiscoveredServer {
+  imapHost: string
+  imapPort: number
+  security: string
+  smtpHost: string
+  smtpPort: number
+  /** "srv" when published, "guess" when derived from conventional names. */
+  source: string
+}
+
+/**
+ * Looks up the account's servers from DNS.
+ *
+ * Explicit, not on every keystroke: a typo should not become a DNS query, and
+ * the answer is a suggestion the person can see before using.
+ */
+export const discoverServer = (email: string) =>
+  MailService.DiscoverServer(email) as Promise<DiscoveredServer>
+
 /** One address the composer can offer, collected from mail already on disk. */
 export interface Recipient {
   name: string

@@ -5,6 +5,7 @@ import {
   EyeSlash,
   HardDrives,
   Key,
+  MagnifyingGlass,
   MicrosoftOutlookLogo,
   GoogleLogo,
   Envelope,
@@ -12,7 +13,7 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { useState } from 'react'
-import { addOAuthAccount, addPasswordAccount, syncAccount } from '../lib/api'
+import { addOAuthAccount, addPasswordAccount, discoverServer, syncAccount } from '../lib/api'
 import { AppPasswordHelp } from './AppPasswordHelp'
 import {
   BUTTON_PRIMARY,
@@ -101,10 +102,14 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
   const [displayName, setDisplayName] = useState('')
   const [imapHost, setImapHost] = useState('')
   const [imapPort, setImapPort] = useState(993)
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState(587)
   const [security, setSecurity] = useState<Security>('tls')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [discovering, setDiscovering] = useState(false)
+  const [discoveryNote, setDiscoveryNote] = useState('')
   // Set only by the Gmail escape hatch. A Workspace account on a custom
   // domain looks like any other address to this window, but the reader has
   // just told us they are signing in to Google.
@@ -122,8 +127,8 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
               imapHost,
               imapPort,
               security,
-              '',
-              0,
+              smtpHost,
+              smtpHost.trim() === '' ? 0 : smtpPort,
               password,
             )
           : await addOAuthAccount(email, displayName, mode)
@@ -150,6 +155,11 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
     setAssumeGoogle(true)
     setImapHost('imap.gmail.com')
     setImapPort(993)
+    // The server fields are filled here rather than left to the backend's
+    // preset, which only fills SMTP when the IMAP host is blank. Filling one
+    // and not the other is an account that can receive but not send.
+    setSmtpHost('smtp.gmail.com')
+    setSmtpPort(587)
     setSecurity('tls')
     setError('')
   }
@@ -162,9 +172,39 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
     setAssumeGoogle(false)
     setImapHost('')
     setImapPort(993)
+    setSmtpHost('')
+    setSmtpPort(587)
     setSecurity('tls')
     setPassword('')
     setError('')
+  }
+
+  const findSettings = async () => {
+    const address = email.trim()
+    if (address === '') return
+
+    setDiscovering(true)
+    setError('')
+    setDiscoveryNote('')
+    try {
+      const found = await discoverServer(address)
+      setImapHost(found.imapHost)
+      setImapPort(found.imapPort)
+      setSecurity(found.security === 'starttls' ? 'starttls' : 'tls')
+      if (found.smtpHost !== '') {
+        setSmtpHost(found.smtpHost)
+        setSmtpPort(found.smtpPort)
+      }
+      setDiscoveryNote(
+        found.source === 'srv'
+          ? 'Found the servers from published DNS records.'
+          : 'Found conventional server names. Check them with your provider before connecting.',
+      )
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDiscovering(false)
+    }
   }
 
   return (
@@ -290,6 +330,44 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
 
             {mode === 'password' ? (
               <>
+                <div
+                  className={`flex items-center justify-between gap-3 border-t pt-3 ${SURFACE.divider}`}
+                >
+                  <span className={`text-xs ${TEXT.muted}`}>Server details</span>
+                  <button
+                    type="button"
+                    data-testid="discover-server"
+                    onClick={() => void findSettings()}
+                    disabled={discovering || email.trim() === ''}
+                    className={`${BUTTON_SECONDARY} inline-flex items-center gap-1.5 whitespace-nowrap py-1.5 text-xs`}
+                  >
+                    {discovering ? (
+                      <CircleNotch
+                        size={ICON.size}
+                        weight="bold"
+                        aria-hidden
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <MagnifyingGlass
+                        size={ICON.size}
+                        weight={ICON.weight}
+                        aria-hidden
+                      />
+                    )}
+                    {discovering ? 'Looking up' : 'Find settings'}
+                  </button>
+                </div>
+
+                {discoveryNote && (
+                  <p
+                    data-testid="discovery-note"
+                    className={`text-xs leading-relaxed ${TEXT.secondary}`}
+                  >
+                    {discoveryNote}
+                  </p>
+                )}
+
                 {/* Above the host and port because it decides the port. Asked
                     for rather than guessed from the number typed: a server on
                     a non-standard port would be guessed wrong, and guessing
@@ -367,6 +445,39 @@ export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps
                       type="number"
                       value={imapPort}
                       onChange={(e) => setImapPort(Number(e.target.value))}
+                      className={`${INPUT} tabular font-mono`}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[1fr_6rem] gap-3">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="smtp-host" className={`text-xs font-medium ${TEXT.secondary}`}>
+                      SMTP host
+                    </label>
+                    <input
+                      id="smtp-host"
+                      data-testid="smtp-host"
+                      type="text"
+                      placeholder="smtp.example.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      className={INPUT}
+                    />
+                    <p className={`text-xs ${TEXT.muted}`}>
+                      Used for sending. Leave blank if you do not know it.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="smtp-port" className={`text-xs font-medium ${TEXT.secondary}`}>
+                      Port
+                    </label>
+                    <input
+                      id="smtp-port"
+                      data-testid="smtp-port"
+                      type="number"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(Number(e.target.value))}
                       className={`${INPUT} tabular font-mono`}
                     />
                   </div>

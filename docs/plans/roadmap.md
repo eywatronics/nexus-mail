@@ -333,7 +333,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
   boşaltma, kalıcı/geçici hata ayrımı
 - ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
   UID bilinmiyor ve bir sonraki senkron buluyor
-- Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
+- ~~Otomatik yapılandırma (DNS SRV/MX, tahmin)~~ — **bitti**: hesap
+  ekranındaki *Find settings* IMAP ve SMTP'yi dolduruyor
 - ~~Uygulama parolası yolunun anlatılması~~ — **bitti**: Gmail'de OAuth
   ekranından parola formuna tek adımda geçiş; Microsoft adresleri parolanın
   kapandığını söyleyip girişe yönlendiriliyor
@@ -555,6 +556,24 @@ Biçimli gövde taslakta `body_html` sütununda duruyor (migration 007); düz me
 taslaklarında boş kalıyor. Gönderirken yanına `htmlToText` ile üretilen düz
 metin alternatifi konuyor; düz metin kipinden gönderilen mesajda HTML parçası
 yok. Gömülü resim (`cid:`) bu temelden sonra, ayrı bir iş.
+
+### Sunucuyu DNS'ten bulmak
+
+Hesap ekranında *Find settings*, adresin alan adı için IMAP ve SMTP arıyor.
+Sıra kaynağın gücüne göre: yayınlanmış SRV kaydı (`_imaps._tcp`,
+`_submissions._tcp`), yoksa MX kaydının varlığından cesaret alıp
+`imap.<alan>` / `mail.<alan>` adlarının çözülmesi, yoksa hiçbir şey. Son iki
+durumda form bunun bir **tahmin** olduğunu söylüyor; SRV ile tahmin aynı
+güvenilirlikte gösterilmiyor.
+
+**ISPDB yok.** Mozilla'nın autoconfig servisine sormak, kimin hangi sağlayıcıyı
+kurduğunu üçüncü bir tarafa söylemek olurdu; favicon servisi kullanmama
+gerekçesinin aynısı. DNS sorgusu zaten alan adını resolver'a söylüyor, ama o
+sorgu hesabın kendi altyapısına gidiyor, bir üçüncü tarafın veritabanına değil.
+
+Beş saniye sınır var ve arama her tuşta değil, düğmeye basınca yapılıyor: yazım
+hatası DNS sorgusuna dönüşmemeli. SMTP alanları da bulunan değerlerle doluyor;
+gönderme sunucusu yayınlanmamışsa boş bırakılıyor ve elle girilebiliyor.
 
 ### Composer neden önce düz metinle başladı
 

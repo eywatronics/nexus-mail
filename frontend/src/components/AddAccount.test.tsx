@@ -5,11 +5,13 @@ import { AddAccount } from './AddAccount'
 const addPasswordAccount = vi.fn()
 const addOAuthAccount = vi.fn()
 const syncAccount = vi.fn()
+const discoverServer = vi.fn()
 
 vi.mock('../lib/api', () => ({
   addPasswordAccount: (...args: unknown[]) => addPasswordAccount(...args),
   addOAuthAccount: (...args: unknown[]) => addOAuthAccount(...args),
   syncAccount: (id: number) => syncAccount(id),
+  discoverServer: (...args: unknown[]) => discoverServer(...args),
 }))
 
 // The guidance opens provider pages through the desktop shell. A test has no
@@ -22,6 +24,7 @@ beforeEach(() => {
   addOAuthAccount.mockReset()
   syncAccount.mockReset()
   syncAccount.mockResolvedValue(undefined)
+  discoverServer.mockReset()
 })
 
 const fillServerAccount = (getByTestId: (id: string) => HTMLElement) => {
@@ -113,6 +116,9 @@ describe('the app password route', () => {
     expect((getByTestId('email') as HTMLInputElement).value).toBe('someone@gmail.com')
     expect((getByTestId('imap-host') as HTMLInputElement).value).toBe('imap.gmail.com')
     expect((getByTestId('imap-port') as HTMLInputElement).value).toBe('993')
+    // One without the other is an account that can receive and not send.
+    expect((getByTestId('smtp-host') as HTMLInputElement).value).toBe('smtp.gmail.com')
+    expect((getByTestId('smtp-port') as HTMLInputElement).value).toBe('587')
     expect(getByTestId('app-password-google')).toBeTruthy()
   })
 
@@ -165,6 +171,94 @@ describe('the app password route', () => {
 
     expect(queryByTestId('app-password-google')).toBeNull()
     expect(queryByTestId('app-password-microsoft')).toBeNull()
+  })
+})
+
+describe('finding the servers', () => {
+  const found = {
+    imapHost: 'imap.example.com',
+    imapPort: 993,
+    security: 'tls',
+    smtpHost: 'smtp.example.com',
+    smtpPort: 587,
+    source: 'srv',
+  }
+
+  const start = (getByTestId: (id: string) => HTMLElement) => {
+    fireEvent.click(getByTestId('mode-password'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'ali@example.com' } })
+  }
+
+  it('fills IMAP, SMTP and ports from the lookup', async () => {
+    discoverServer.mockResolvedValue(found)
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    start(getByTestId)
+    fireEvent.click(getByTestId('discover-server'))
+
+    await waitFor(() =>
+      expect((getByTestId('imap-host') as HTMLInputElement).value).toBe(
+        'imap.example.com',
+      ),
+    )
+    expect((getByTestId('imap-port') as HTMLInputElement).value).toBe('993')
+    expect((getByTestId('smtp-host') as HTMLInputElement).value).toBe(
+      'smtp.example.com',
+    )
+    expect((getByTestId('smtp-port') as HTMLInputElement).value).toBe('587')
+    expect((getByTestId('security-tls') as HTMLInputElement).checked).toBe(true)
+    expect(getByTestId('discovery-note').textContent).toContain('published DNS')
+  })
+
+  it('carries a STARTTLS answer into the form', async () => {
+    discoverServer.mockResolvedValue({
+      ...found,
+      imapHost: 'imap.example.com',
+      imapPort: 143,
+      security: 'starttls',
+      source: 'guess',
+    })
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    start(getByTestId)
+    fireEvent.click(getByTestId('discover-server'))
+
+    await waitFor(() =>
+      expect((getByTestId('imap-port') as HTMLInputElement).value).toBe('143'),
+    )
+    expect((getByTestId('security-starttls') as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect(getByTestId('discovery-note').textContent).toContain('Check them')
+  })
+
+  it('reports a lookup that found nothing', async () => {
+    discoverServer.mockRejectedValue(new Error('no IMAP server found for example.com'))
+    const { getByTestId, getByRole } = render(<AddAccount onDone={() => {}} />)
+
+    start(getByTestId)
+    fireEvent.click(getByTestId('discover-server'))
+
+    await waitFor(() =>
+      expect(getByRole('alert').textContent).toContain('no IMAP server found'),
+    )
+  })
+
+  // Finding the servers is only useful if what was found is what gets used.
+  it('sends the SMTP settings with the account', async () => {
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    start(getByTestId)
+    fireEvent.change(getByTestId('imap-host'), { target: { value: 'imap.example.com' } })
+    fireEvent.change(getByTestId('smtp-host'), { target: { value: 'smtp.example.com' } })
+    fireEvent.change(getByTestId('smtp-port'), { target: { value: '2525' } })
+    fireEvent.change(getByTestId('password'), { target: { value: 'gizli' } })
+    fireEvent.click(getByTestId('submit-account'))
+
+    await waitFor(() => expect(addPasswordAccount).toHaveBeenCalled())
+    const args = addPasswordAccount.mock.calls[0]
+    expect(args[5]).toBe('smtp.example.com')
+    expect(args[6]).toBe(2525)
   })
 })
 
