@@ -148,6 +148,21 @@ export const addPasswordAccount = (
 export const addOAuthAccount = (email: string, displayName: string, provider: string) =>
   MailService.AddOAuthAccount(email, displayName, provider) as Promise<Account>
 
+/** One address the composer can offer, collected from mail already on disk. */
+export interface Recipient {
+  name: string
+  addr: string
+}
+
+/**
+ * Address completion for the composer.
+ *
+ * From people who have already written to this account: contacts are M7, and
+ * an address this client has never seen is one it has no business inventing.
+ */
+export const suggestRecipients = (accountId: number, query: string, limit = 8) =>
+  MailService.SuggestRecipients(accountId, query, limit) as Promise<Recipient[]>
+
 /**
  * The body is served over HTTP, not the bridge, so this is just a URL.
  *
@@ -385,16 +400,16 @@ export interface DraftRecord {
 /**
  * Writes what is in the composer and resolves to the draft's id.
  *
- * The two describe-only fields are filled in as null. One backend struct
- * serves both directions, so the generated type asks for them on the way in
- * as well; the save ignores them, and sending what the composer happens to
- * hold would be sending derived data back as though it were input.
+ * The two describe-only fields are sent empty. One backend struct serves both
+ * directions, so the generated type asks for them on the way in as well; the
+ * save ignores them, and sending what the composer happens to hold would be
+ * sending derived data back as though it were input.
  */
 export const saveDraft = (draft: DraftRecord) =>
   MailService.SaveDraft({
     ...draft,
-    attachments: null,
-    missingAttachments: null,
+    attachments: [],
+    missingAttachments: [],
   }) as Promise<number>
 
 /** An account's unfinished messages, newest first. */

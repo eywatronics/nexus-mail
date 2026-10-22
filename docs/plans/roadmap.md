@@ -321,7 +321,8 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
 - Zengin metin editörü (`contenteditable`) ve düz metin kipi
 - ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
-- Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
+- ~~Alıcı "pill" arayüzü + otomatik tamamlama~~ — **bitti**: öneriler bu
+  hesaba yazmış insanlardan, yerel veritabanından
 - ~~Ek ekleme~~ — **bitti**
 - Gömülü resim (`cid:`)
 - ~~Ek hatırlatıcı~~ — **bitti**: gövde ek sözü verip dosya taşımıyorsa
@@ -521,12 +522,24 @@ mesaj kendi ekinden söz ediyorsa her yanıt aynı soruyu sormaz. Türkçe de
 taranıyor; `\b` sayesinde "ek" sözcüğü "ekmek" ve "ekran"ı yakalamıyor. Onay
 kırmızı değil uyarı tonunda: bu bir yıkım değil, ikinci bir bakış.
 
+### Alıcı pill ve tamamlama
+
+Kişiler M7'de. Bugün öneri kaynağı bu hesaba yazmış insanlar: yerel
+`messages` tablosundaki gönderenler, adres başına en son imzayla tek satır.
+Ağa çıkılmıyor ve olmayan bir adres uydurulmuyor. Kendi adresleri ve zaten
+satırda olanlar önerilmiyor.
+
+Adres satırı pill'lere ayrılırken yalnızca virgül ve noktalı virgül sınırı
+kullanılıyor; tırnak içindeki virgül ("Kabatepe, İsmet") ve `<...>` korunuyor.
+Ayrıştırmanın kendisi hâlâ backend'de: pill'ler satırın görünümü, ikinci bir
+adres modeli değil. Satırın backend'e giden hâli yine yazıldığı gibi.
+
 ### Composer neden önce düz metin
 
-Zengin editör ve alıcı "pill" arayüzü listede duruyor ve yapılacak. Ama doğru
-mesaj gönderen bir `textarea`, bozuk mesaj gönderen yarım bir editörden iyi:
-arka uç zaten HTML kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan
-tek şey `html` alanının dolması.
+Zengin editör listede duruyor ve yapılacak. Ama doğru mesaj gönderen bir
+`textarea`, bozuk mesaj gönderen yarım bir editörden iyi: arka uç zaten HTML
+kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan tek şey `html`
+alanının dolması.
 
 Cc ve Bcc istenene kadar gizli. Mesajların çoğunda ikisi de yok, ve her compose
 penceresinin tepesindeki dört boş satır, yazanla yazmaya geldiği şey arasında

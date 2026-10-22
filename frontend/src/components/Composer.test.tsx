@@ -7,12 +7,14 @@ const identities = vi.fn()
 const sendMessage = vi.fn()
 const pickAttachments = vi.fn()
 const saveDraft = vi.fn()
+const suggestRecipients = vi.fn()
 
 vi.mock('../lib/api', () => ({
   identities: (accountId: number) => identities(accountId),
   sendMessage: (draft: unknown) => sendMessage(draft),
   pickAttachments: () => pickAttachments(),
   saveDraft: (draft: unknown) => saveDraft(draft),
+  suggestRecipients: (...args: unknown[]) => suggestRecipients(...args),
 }))
 
 const identity = (over: Partial<Identity> = {}): Identity => ({
@@ -34,6 +36,8 @@ beforeEach(() => {
   pickAttachments.mockResolvedValue([])
   saveDraft.mockReset()
   saveDraft.mockResolvedValue(7)
+  suggestRecipients.mockReset()
+  suggestRecipients.mockResolvedValue([])
   vi.useRealTimers()
 })
 
@@ -127,6 +131,23 @@ describe('addressing', () => {
     fireEvent.change(getByTestId('composer-bcc'), { target: { value: 'herkes@example.com' } })
 
     expect((getByTestId('composer-send') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // The completion source is the account's own mail, not a network service:
+  // people who have written before are the address book this build has.
+  it('completes an address from someone who wrote before', async () => {
+    suggestRecipients.mockResolvedValue([{ name: 'Alice', addr: 'alice@example.com' }])
+    const { getByTestId, getByText, findByRole } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    const to = getByTestId('composer-to')
+    fireEvent.focus(to)
+    fireEvent.change(to, { target: { value: 'ali' } })
+    fireEvent.click(await findByRole('option'))
+
+    await waitFor(() => expect(suggestRecipients).toHaveBeenCalledWith(1, 'ali', 8))
+    expect(getByText('Alice')).toBeTruthy()
+    expect((to as HTMLInputElement).value).toBe('')
   })
 
   // Most messages have neither, and four empty lines is four lines of nothing
@@ -551,13 +572,15 @@ describe('not losing what was typed', () => {
     expect(saveDraft).not.toHaveBeenCalled()
   })
 
+  // The address line reopens as a finished pill plus the unfinished tail, not
+  // as one long string: the pills are the same line the backend will receive,
+  // only laid out the way the writer left it.
   it('comes back with everything as it was typed', async () => {
-    const { getByTestId } = open({ draft: record() })
+    const { getByTestId, getByText } = open({ draft: record() })
     await waitFor(() => expect(identities).toHaveBeenCalled())
 
-    expect((getByTestId('composer-to') as HTMLInputElement).value).toBe(
-      'ali@example.com, bir yar',
-    )
+    expect(getByText('ali@example.com')).toBeTruthy()
+    expect((getByTestId('composer-to') as HTMLInputElement).value).toBe('bir yar')
     expect((getByTestId('composer-subject') as HTMLInputElement).value).toBe('Yarim konu')
     expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe('burada kalmis')
   })

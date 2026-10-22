@@ -13,6 +13,7 @@ import { mentionsAttachment, textBeforeQuote } from '../lib/attachmentReminder'
 import { formatSize } from '../lib/format'
 import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
 import { ConfirmDialog } from './ConfirmDialog'
+import { RecipientField } from './RecipientField'
 
 /**
  * How long a pause counts as "stopped typing".
@@ -107,7 +108,6 @@ export function Composer({
   // Set once the message is on its way, so the unmount save does not put back
   // a draft the send just cleared.
   const sent = useRef(false)
-  const firstField = useRef<HTMLInputElement>(null)
   const bodyField = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -122,15 +122,13 @@ export function Composer({
   }, [accountId])
 
   // A reply already knows who it is going to, so the cursor belongs in the
-  // body; a new message has an empty To line and belongs there.
+  // body; a new message has an empty To line, and the address field puts the
+  // cursor there itself.
   useEffect(() => {
-    if (reply) {
-      // The cursor goes to the top of the body, above the quote.
-      bodyField.current?.focus()
-      bodyField.current?.setSelectionRange(0, 0)
-      return
-    }
-    firstField.current?.focus()
+    if (!reply) return
+    // The cursor goes to the top of the body, above the quote.
+    bodyField.current?.focus()
+    bodyField.current?.setSelectionRange(0, 0)
   }, [reply])
 
   const canSend = to.trim() !== '' || cc.trim() !== '' || bcc.trim() !== ''
@@ -348,7 +346,13 @@ export function Composer({
         )}
 
         <Row label="To" htmlFor="composer-to">
-          <Line id="composer-to" ref={firstField} value={to} onChange={setTo} />
+          <RecipientField
+            id="composer-to"
+            accountId={accountId}
+            value={to}
+            onChange={setTo}
+            autoFocus={!reply}
+          />
           {!showCopies && (
             <button
               type="button"
@@ -364,10 +368,20 @@ export function Composer({
         {showCopies && (
           <>
             <Row label="Cc" htmlFor="composer-cc">
-              <Line id="composer-cc" value={cc} onChange={setCc} />
+              <RecipientField
+                id="composer-cc"
+                accountId={accountId}
+                value={cc}
+                onChange={setCc}
+              />
             </Row>
             <Row label="Bcc" htmlFor="composer-bcc">
-              <Line id="composer-bcc" value={bcc} onChange={setBcc} />
+              <RecipientField
+                id="composer-bcc"
+                accountId={accountId}
+                value={bcc}
+                onChange={setBcc}
+              />
             </Row>
           </>
         )}
