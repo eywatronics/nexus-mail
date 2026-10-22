@@ -12,6 +12,10 @@ vi.mock('../lib/api', () => ({
   syncAccount: (id: number) => syncAccount(id),
 }))
 
+// The guidance opens provider pages through the desktop shell. A test has no
+// shell, and the click itself is covered where the button lives.
+vi.mock('../lib/external', () => ({ openExternal: vi.fn() }))
+
 beforeEach(() => {
   addPasswordAccount.mockReset()
   addPasswordAccount.mockResolvedValue({ id: 1 })
@@ -91,5 +95,75 @@ describe('connection security', () => {
     fireEvent.click(getByTestId('mode-password'))
     expect(queryByTestId('security-none')).toBeNull()
     expect(queryByTestId('security-plain')).toBeNull()
+  })
+})
+
+describe('the app password route', () => {
+  // The whole reason this screen exists for a Gmail user without a Cloud
+  // project. It has to be one step from the sign-in they cannot finish, and it
+  // has to land on a form that can actually connect.
+  it('is one step from the Gmail sign-in and fills the server in', () => {
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    fireEvent.click(getByTestId('mode-google'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'someone@gmail.com' } })
+    fireEvent.click(getByTestId('gmail-use-app-password'))
+
+    expect((getByTestId('mode-password') as HTMLInputElement).checked).toBe(true)
+    expect((getByTestId('email') as HTMLInputElement).value).toBe('someone@gmail.com')
+    expect((getByTestId('imap-host') as HTMLInputElement).value).toBe('imap.gmail.com')
+    expect((getByTestId('imap-port') as HTMLInputElement).value).toBe('993')
+    expect(getByTestId('app-password-google')).toBeTruthy()
+  })
+
+  it('explains what Google needs once a Gmail address is typed', () => {
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    fireEvent.click(getByTestId('mode-password'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'someone@gmail.com' } })
+
+    expect(getByTestId('app-password-google')).toBeTruthy()
+  })
+
+  // A Workspace account on a company domain has no gmail.com to recognise,
+  // but it still needs the same app password and the same two Google pages.
+  it('keeps the Google instructions for a Workspace address', () => {
+    const { getByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    fireEvent.click(getByTestId('mode-google'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'ali@sirket.com' } })
+    fireEvent.click(getByTestId('gmail-use-app-password'))
+
+    expect(getByTestId('app-password-google')).toBeTruthy()
+    expect((getByTestId('imap-host') as HTMLInputElement).value).toBe('imap.gmail.com')
+  })
+
+  // Microsoft stopped accepting app passwords for IMAP. Leaving the form on
+  // the password path would be a button that cannot work, however well filled
+  // in it is.
+  it('turns a Microsoft address away from the password path', () => {
+    const { getByTestId, queryByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    fireEvent.click(getByTestId('mode-password'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'someone@outlook.com' } })
+    expect(getByTestId('app-password-microsoft')).toBeTruthy()
+
+    fireEvent.click(getByTestId('use-microsoft-signin'))
+
+    expect((getByTestId('mode-microsoft') as HTMLInputElement).checked).toBe(true)
+    expect((getByTestId('email') as HTMLInputElement).value).toBe('someone@outlook.com')
+    expect(queryByTestId('app-password-microsoft')).toBeNull()
+  })
+
+  // A corporate Exchange server is the ordinary case for this form, and it
+  // must not be told that it needs a Gmail app password.
+  it('says nothing to an address it has no advice for', () => {
+    const { getByTestId, queryByTestId } = render(<AddAccount onDone={() => {}} />)
+
+    fireEvent.click(getByTestId('mode-password'))
+    fireEvent.change(getByTestId('email'), { target: { value: 'bt@sirket.local' } })
+
+    expect(queryByTestId('app-password-google')).toBeNull()
+    expect(queryByTestId('app-password-microsoft')).toBeNull()
   })
 })

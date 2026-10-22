@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  ArrowRight,
   CircleNotch,
   EyeSlash,
   HardDrives,
@@ -12,11 +13,13 @@ import {
 import type { Icon } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { addOAuthAccount, addPasswordAccount, syncAccount } from '../lib/api'
+import { AppPasswordHelp } from './AppPasswordHelp'
 import {
   BUTTON_PRIMARY,
   BUTTON_SECONDARY,
   ICON,
   INPUT,
+  LINK,
   RADIUS,
   SURFACE,
   TEXT,
@@ -39,8 +42,8 @@ const MODES: Array<{ value: Mode; label: string; hint: string; icon: Icon }> = [
   },
   {
     value: 'password',
-    label: 'Other IMAP server',
-    hint: 'Password or app password',
+    label: 'Password or app password',
+    hint: 'Gmail, iCloud, Yahoo, or your own server',
     icon: Envelope,
   },
 ]
@@ -96,6 +99,10 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Set only by the Gmail escape hatch. A Workspace account on a custom
+  // domain looks like any other address to this window, but the reader has
+  // just told us they are signing in to Google.
+  const [assumeGoogle, setAssumeGoogle] = useState(false)
 
   const submit = async () => {
     setBusy(true)
@@ -126,6 +133,32 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
     } finally {
       setBusy(false)
     }
+  }
+
+  // The Google sign-in needs a Cloud project of the reader's own. An app
+  // password is the short way around that, and it lands on the form already
+  // here, so the switch carries the address and fills in the server Gmail
+  // answers on.
+  const useGoogleAppPassword = () => {
+    setMode('password')
+    setAssumeGoogle(true)
+    setImapHost('imap.gmail.com')
+    setImapPort(993)
+    setSecurity('tls')
+    setError('')
+  }
+
+  // The other direction: Microsoft closed the password door, so the only
+  // useful thing this screen can do with an Outlook address is hand it back
+  // to the sign-in that still works.
+  const useMicrosoftSignIn = () => {
+    setMode('microsoft')
+    setAssumeGoogle(false)
+    setImapHost('')
+    setImapPort(993)
+    setSecurity('tls')
+    setPassword('')
+    setError('')
   }
 
   return (
@@ -193,7 +226,13 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                       value={value}
                       checked={active}
                       data-testid={`mode-${value}`}
-                      onChange={() => setMode(value)}
+                      onChange={() => {
+                        setMode(value)
+                        // Choosing a way in by hand replaces what the escape
+                        // hatch assumed; a stale Google hint would outlive the
+                        // reason it was set.
+                        setAssumeGoogle(false)
+                      }}
                       className="sr-only"
                     />
                     <ModeIcon
@@ -342,13 +381,46 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                     className={INPUT}
                   />
                 </div>
+
+                <AppPasswordHelp
+                  email={email}
+                  assumeGoogle={assumeGoogle}
+                  onUseMicrosoftSignIn={useMicrosoftSignIn}
+                />
               </>
             ) : (
-              <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
-                Your browser opens so you can sign in. Nexus Mail never sees your password.
-                {mode === 'google' &&
-                  ' Gmail also needs an OAuth client ID of your own; see docs/oauth-setup.md.'}
-              </p>
+              <div className="flex flex-col gap-2">
+                <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
+                  Your browser opens so you can sign in. Nexus Mail never sees your password.
+                </p>
+                <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
+                  {mode === 'google'
+                    ? 'Sign-in needs a client ID from your own Google Cloud project. This build does not ship one.'
+                    : 'Sign-in needs a client ID from your own Microsoft Entra app registration. This build does not ship one.'}
+                </p>
+                {mode === 'google' && (
+                  <div className={`mt-1 border-t pt-3 ${SURFACE.divider}`}>
+                    <p className={`text-xs leading-relaxed ${TEXT.secondary}`}>
+                      Gmail also accepts an app password, which needs no Google Cloud
+                      project.
+                    </p>
+                    <button
+                      type="button"
+                      data-testid="gmail-use-app-password"
+                      onClick={useGoogleAppPassword}
+                      className={`${LINK} mt-1`}
+                    >
+                      Use an app password
+                      <ArrowRight
+                        size={ICON.size}
+                        weight={ICON.weight}
+                        aria-hidden
+                        className="shrink-0"
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {error && (

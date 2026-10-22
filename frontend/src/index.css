@@ -22,6 +22,12 @@
   --color-accent-soft: oklch(0.96 0.02 200);
   --color-accent-soft-dark: oklch(0.28 0.05 200);
 
+  /* The accent as text on a dark surface. The fill accent is tuned to carry
+     white button text, and at 12px on near-black it falls under 4.5:1. This is
+     the same hue, lightened for the one place the accent is the type itself. */
+  --color-accent-dark: oklch(0.78 0.08 200);
+  --color-accent-dark-hover: oklch(0.86 0.07 200);
+
   /* Semantic status colors. These are NOT decoration: each one may appear only
      where it carries that exact meaning. A status color used for emphasis is
      the same mistake as a second accent. */

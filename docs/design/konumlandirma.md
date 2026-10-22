@@ -94,13 +94,24 @@ kapsıyor.
 Üç yol var ve üçü birbirini dışlamıyor:
 
 1. **GNOME Online Accounts (Linux).** Ayrı başlık, aşağıda.
-2. **Uygulama parolası.** Google ve Microsoft hâlâ, iki adımlı doğrulama açık
-   hesaplarda IMAP için uygulama parolası üretmeye izin veriyor. Tek tık
-   değil ama Cloud Console'dan çok daha kısa bir yol, ve zaten desteklenen
-   parola yoluna düşüyor. Ekranda anlatılması gereken bir şey, kod değil.
+2. **Uygulama parolası.** Google, iki adımlı doğrulama açık hesaplarda IMAP
+   için uygulama parolası üretmeye izin veriyor; Workspace yöneticisi bunu
+   kapatabilir. Microsoft'ta bu yol **kapandı**: Outlook.com 2024'te IMAP için
+   uygulama parolalarını kabul etmeyi bıraktı ve Microsoft 365'te temel kimlik
+   doğrulama zaten kapalı. Yani bu madde Gmail'in kısayolu, Microsoft'un değil.
+   Tek tık değil ama Cloud Console'dan çok daha kısa bir yol, ve zaten
+   desteklenen parola yoluna düşüyor. Ekranda anlatılması gereken bir şey, kod
+   değil.
 3. **Doğrulanmış bir OAuth istemcisi.** Gerçek çözüm bu. Bedeli bürokrasi ve
    masraf: Google'ın kısıtlı kapsam (`restricted scope`) doğrulaması, yıllık
    güvenlik denetimi ve bir tüzel kişilik istiyor. M14'ün (ürünleşme) parçası.
+
+**Ekran tarafı yapıldı.** Hesap ekleme ekranında Gmail'in OAuth yolundan
+*Use an app password* ile parola formuna geçiliyor; sunucu ve port hazır
+geliyor. Adres bir Microsoft alan adıysa form, parolanın artık çalışmadığını
+söylüyor ve Microsoft girişine geri gönderiyor. Bu, Microsoft duvarını
+kapatmıyor: onun için kalan yollar GNOME Online Accounts (M7b) ve doğrulanmış
+istemci (M14).
 
 **Sıralama kararı:** 2 önce, çünkü bugün yazılabilir ve kimseye bağlı değil.
 Sonra 1. 3 en sona, çünkü tek kod dışı iş o.

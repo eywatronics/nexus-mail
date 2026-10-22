@@ -44,7 +44,7 @@ kullanılamaz kılan üç şeyin M14'e (ürünleşme) yığılmış olduğunu g�
 
 | İş | Neredeydi | Nerede | Neden taşındı |
 |---|---|---|---|
-| Uygulama parolası yolunun anlatılması | — | M6 sonu | Bugün yazılabilir, kimseye bağlı değil, BYOK duvarını en ucuz aşan yol |
+| Uygulama parolası yolunun anlatılması | — | M6 sonu (bitti) | Bugün yazılabilir, kimseye bağlı değil, BYOK duvarını en ucuz aşan yol |
 | GNOME Online Accounts (`internal/auth/goa`) | — | M7 yanı | Linux/GNOME'da duvarı tamamen kaldırıyor; saf Go kaldığı ölçüldü |
 | İçerik taşımayan protokol günlüğü | M14 | M8 | Hata raporu alamadan uç durum yamalanamaz |
 | `.ics` davetinin okunabilir görünmesi | M9 | M8 | Tam CalDAV pahalı; davetin *ne olduğunu* göstermek değil |
@@ -329,7 +329,33 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
   UID bilinmiyor ve bir sonraki senkron buluyor
 - Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
+- ~~Uygulama parolası yolunun anlatılması~~ — **bitti**: Gmail'de OAuth
+  ekranından parola formuna tek adımda geçiş; Microsoft adresleri parolanın
+  kapandığını söyleyip girişe yönlendiriliyor
 - `mailto:` işleyicisi
+
+### Uygulama parolası: Gmail'de kısayol, Microsoft'ta kapalı kapı
+
+Gmail'in OAuth yolu kendi Cloud projesini istiyor. Bunu kurmak istemeyen
+okuyucu için hesap ekleme ekranında tek adımlık bir çıkış var: *Gmail* modunda
+**Use an app password**, adresi koruyup parola formuna geçiyor, sunucuyu
+(`imap.gmail.com`, 993) dolduruyor ve iki adımlı doğrulama ile uygulama
+parolası sayfalarına bağlantı veriyor.
+
+Bu, konumlandırma belgesindeki "Google ve Microsoft" ifadesini düzeltiyor.
+Microsoft'ta uygulama parolası IMAP için 2024'te kapandı; Outlook.com artık
+kabul etmiyor, Microsoft 365'te temel kimlik doğrulama zaten yok. Ekran bir
+Outlook adresi görürse parolanın çalışmayacağını söylüyor ve Microsoft
+girişine geri gönderiyor. O giriş hâlâ kendi Entra kaydını istiyor, yani duvar
+kapanmadı; yalan bir kısayol göstermemek bu turun kazancı.
+
+Kipin adı da değişti: *Other IMAP server* yerine **Password or app password**.
+Gmail kullanıcısı tam da "diğer" olmadığı için o seçeneği hiç açmıyordu.
+
+iCloud ve Yahoo da kendi uygulama parolalarını istiyor; ikisi için kısa
+yönlendirme aynı panelde. Kurumsal Exchange adreslerine ise hiçbir şey
+söylenmiyor: orada doğru cevap etki alanı parolası ve gereksiz bir uyarı formu
+yanlış yöne çekerdi.
 
 ### Outbox neden motoru değiştiriyor
 
