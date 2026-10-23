@@ -47,6 +47,10 @@ jobs:
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2
+          # The Linux GUI backend needs GTK headers through cgo. The build
+          # matrix still compiles the real GUI on Windows and macOS; this job
+          # only needs to typecheck the application and internal packages.
+          args: --build-tags server
 
       # fts_messages is maintained by triggers. Application code writing to it
       # directly is how the index silently drifts out of step; see design
@@ -88,8 +92,12 @@ jobs:
       # not a contradiction of the cgo ban: the ban is about what the shipped
       # binary links, which the build matrix verifies. The race detector is a
       # test-time instrument.
+      #
+      # -tags server keeps the Linux GUI backend and its GTK headers out of
+      # this job. All internal packages and the application's own code still
+      # run; the GUI itself is built by the matrix.
       - name: Go tests with the race detector
-        run: go test -race ./...
+        run: go test -race -tags server ./...
 
       # And once more on the pure-Go path, to prove the code the users actually
       # get behaves the same. Without this, a modernc.org/sqlite regression
