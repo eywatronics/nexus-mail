@@ -31,6 +31,13 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+      # The race detector and golangci both compile with cgo, so Wails'
+      # Linux backend needs the GTK headers even though this job opens no
+      # window. The runner image already carries package lists; skipping
+      # apt-get update avoids the mirror stall that held this job for minutes.
+      - name: Linux WebKit dependencies
+        run: sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
       # -ts -i, the same flags build/Taskfile.yml uses. Without them the
       # bindings come out as JavaScript, and because tsconfig sets
       # noImplicitAny to false the build still passes — with every call across
@@ -47,10 +54,6 @@ jobs:
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2
-          # The Linux GUI backend needs GTK headers through cgo. The build
-          # matrix still compiles the real GUI on Windows and macOS; this job
-          # only needs to typecheck the application and internal packages.
-          args: --build-tags server
 
       # fts_messages is maintained by triggers. Application code writing to it
       # directly is how the index silently drifts out of step; see design
@@ -88,16 +91,18 @@ jobs:
           wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build
 
+      # cgo-backed race detector needs Wails' GTK headers. The runner image
+      # already carries package lists; skipping apt-get update avoids the
+      # mirror stall that held this job for minutes.
+      - name: Linux WebKit dependencies
+        run: sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
       # -race requires cgo, so CGO_ENABLED stays at its default here. That is
       # not a contradiction of the cgo ban: the ban is about what the shipped
       # binary links, which the build matrix verifies. The race detector is a
       # test-time instrument.
-      #
-      # -tags server keeps the Linux GUI backend and its GTK headers out of
-      # this job. All internal packages and the application's own code still
-      # run; the GUI itself is built by the matrix.
       - name: Go tests with the race detector
-        run: go test -race -tags server ./...
+        run: go test -race ./...
 
       # And once more on the pure-Go path, to prove the code the users actually
       # get behaves the same. Without this, a modernc.org/sqlite regression
