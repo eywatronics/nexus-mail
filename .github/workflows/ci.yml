@@ -46,7 +46,7 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l . | grep -v node_modules)" || (gofmt -l . | grep -v node_modules && exit 1)
 
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2
 
