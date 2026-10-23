@@ -41,7 +41,7 @@ func Parse(raw string) (Draft, error) {
 		return Draft{}, fmt.Errorf("mailto: the link is longer than %d bytes", maxURLLength)
 	}
 	if !strings.HasPrefix(strings.ToLower(raw), "mailto:") {
-		return Draft{}, fmt.Errorf("mailto: %q does not start with mailto:", raw)
+		return Draft{}, fmt.Errorf("mailto: %q does not start with the mailto scheme", raw)
 	}
 
 	u, err := url.Parse(raw)
