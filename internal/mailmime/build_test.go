@@ -180,6 +180,105 @@ func TestHTMLBecomesAnAlternativeWithPlainTextFirst(t *testing.T) {
 	}
 }
 
+// An inline image is not an attachment beside the message; it is part of the
+// body, and cid: only resolves inside multipart/related.
+func TestInlineImageTravelsInMultipartRelated(t *testing.T) {
+	d := simple()
+	d.HTML = `<p><img src="cid:img1"></p>`
+	d.Inline = []Attachment{{
+		Filename:  "grafik.png",
+		MIMEType:  "image/png",
+		ContentID: "img1",
+		Content:   []byte("png-bytes"),
+	}}
+
+	raw := build(t, d)
+	header := topHeader(t, raw)
+	if !strings.Contains(header, "multipart/related") {
+		t.Errorf("the message is not multipart/related:\n%s", header)
+	}
+	if strings.Contains(header, "multipart/mixed") {
+		t.Errorf("an inline image alone was wrapped in multipart/mixed:\n%s", header)
+	}
+
+	got := parts(t, read(t, raw))
+	if got["image/png"] != "png-bytes" {
+		t.Errorf("image part = %q, want the bytes", got["image/png"])
+	}
+	if !strings.Contains(got["text/html"], "cid:img1") {
+		t.Error("the HTML no longer references the image")
+	}
+}
+
+func TestInlineImagePartCarriesAContentID(t *testing.T) {
+	d := simple()
+	d.HTML = `<p><img src="cid:img1"></p>`
+	d.Inline = []Attachment{{
+		Filename: "grafik.png", MIMEType: "image/png",
+		ContentID: "img1", Content: []byte("png-bytes"),
+	}}
+
+	r := read(t, build(t, d))
+	for {
+		p, err := r.NextPart()
+		if err == io.EOF {
+			t.Fatal("no image part was written")
+		}
+		if err != nil {
+			t.Fatalf("reading a part: %v", err)
+		}
+		if p.Header.Get("Content-Type") == "image/png" {
+			if got := p.Header.Get("Content-ID"); got != "<img1>" {
+				t.Errorf("Content-ID = %q, want <img1>", got)
+			}
+			if got := p.Header.Get("Content-Disposition"); !strings.HasPrefix(got, "inline") {
+				t.Errorf("Content-Disposition = %q, want inline", got)
+			}
+			return
+		}
+	}
+}
+
+// Files and inline images at once: related nests inside mixed, so the ordinary
+// attachments stay siblings of the body rather than of the images.
+func TestFilesAndInlineImagesNestRelatedInsideMixed(t *testing.T) {
+	d := simple()
+	d.HTML = `<p><img src="cid:img1"></p>`
+	d.Inline = []Attachment{{
+		Filename: "grafik.png", MIMEType: "image/png",
+		ContentID: "img1", Content: []byte("png-bytes"),
+	}}
+	d.Attachments = []Attachment{{
+		Filename: "rapor.pdf", MIMEType: "application/pdf", Content: []byte("pdf"),
+	}}
+
+	raw := build(t, d)
+	header := topHeader(t, raw)
+	if !strings.Contains(header, "multipart/mixed") {
+		t.Errorf("a message with a file is not multipart/mixed:\n%s", header)
+	}
+	if !strings.Contains(string(raw), "multipart/related") {
+		t.Error("the inline image was not placed in a related part")
+	}
+}
+
+func TestInlineImageNeedsContentIDAndHTML(t *testing.T) {
+	noID := simple()
+	noID.HTML = "<p>x</p>"
+	noID.Inline = []Attachment{{Filename: "x.png", Content: []byte("x")}}
+	if _, err := Build(noID); err == nil {
+		t.Error("Build() accepted an inline image with no content id")
+	}
+
+	noHTML := simple()
+	noHTML.Inline = []Attachment{{
+		Filename: "x.png", ContentID: "x", Content: []byte("x"),
+	}}
+	if _, err := Build(noHTML); err == nil {
+		t.Error("Build() accepted an inline image with no HTML to reference it")
+	}
+}
+
 // Quoted-printable everywhere means every message this client sends is 7-bit
 // clean, so a server with no 8BITMIME takes it without argument.
 func TestTheWholeMessageIsSevenBitClean(t *testing.T) {

@@ -102,6 +102,7 @@ Bunlar CI'da `depguard` ile zorlanır, yorum düzeyinde kalmaz:
   | `internal/carddavx` | CardDAV, LDAP (M7) | `ContactsBackend` |
   | `internal/caldavx` | CalDAV, ICS (M9b) | `CalendarBackend` |
   | `internal/graphx` | Microsoft Graph (M10) | yukarıdakilerin ikinci uygulaması |
+  | `internal/auth/goa` | GNOME Online Accounts, D-Bus (M7b) | `auth.CredentialProvider` |
   | `internal/ai` | Yerel ve bulut model sağlayıcıları (M13) | `LLMProvider`, `EmbeddingProvider` |
 
 - **`internal/ai` içinde yalnızca `provider` alt paketi ağa çıkabilir.** Bu da

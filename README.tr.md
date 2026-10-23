@@ -170,22 +170,25 @@ neyin **bilerek dışarıda** bırakıldığı:
 
 | Sağlayıcı | Kimlik doğrulama | Not |
 |---|---|---|
-| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Kendi Entra uygulama kaydınız gerekir |
-| Gmail / Google Workspace | OAuth 2.0 (XOAUTH2) | Kendi Google Cloud client ID'niz gerekir |
+| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Kendi Entra uygulama kaydınız gerekir; uygulama parolası IMAP için artık çalışmaz |
+| Gmail / Google Workspace | OAuth 2.0 veya uygulama parolası | Uygulama parolası iki adımlı doğrulama ister, client ID istemez |
 | Şirket içi Exchange | Parola | IMAP üzerinden; 143/STARTTLS veya 993/TLS |
 | Genel IMAP | Parola veya uygulama parolası | Kayıt gerekmez |
 
-Şirket içi Exchange IMAP üzerinden bağlanır: *Other IMAP server* seçin, BT'nin
-verdiği iç sunucu adını yazın ve **STARTTLS**'i seçin — Exchange'in IMAP4
-servisi varsayılan olarak 143'te yayınlanır ve bağlantı yükseltilmeden parola
-kabul etmez. Kayıt da client ID de gerekmez. Kurum temel kimlik doğrulamayı
-kapatmışsa NTLM gerekir ve o henüz yok; bu durumda hata mesajı sunucunun hangi
-mekanizmaları sunduğunu adlandırır.
+Şirket içi Exchange IMAP üzerinden bağlanır: **Password or app password**
+seçin, BT'nin verdiği iç sunucu adını yazın ve **STARTTLS**'i seçin —
+Exchange'in IMAP4 servisi varsayılan olarak 143'te yayınlanır ve bağlantı
+yükseltilmeden parola kabul etmez. Kayıt da client ID de gerekmez. Kurum temel
+kimlik doğrulamayı kapatmışsa NTLM gerekir ve o henüz yok; bu durumda hata
+mesajı sunucunun hangi mekanizmaları sunduğunu adlandırır.
 
-Microsoft ve Google için kendi OAuth client ID'niz gerekir. Bu, açık kaynak
-olmanın bir sonucu ve gerçekten bir avantaj: posta kutunuza erişim, başkasının
-uygulama kaydı üzerinden geçmek yerine sizin kontrolünüzde kalır. Birkaç
-dakikalık kurulum [docs/oauth-setup.md](docs/oauth-setup.md) içinde anlatılıyor.
+Microsoft ve Google girişi için kendi OAuth client ID'niz gerekir. Bu, açık
+kaynak olmanın bir sonucu ve gerçekten bir avantaj: posta kutunuza erişim,
+başkasının uygulama kaydı üzerinden geçmek yerine sizin kontrolünüzde kalır.
+Gmail ayrıca uygulama parolası kabul ediyor; o yol client ID'yi tamamen
+atlıyor. Microsoft IMAP için parolayı kapattığı için Entra kaydı zorunlu
+kalıyor. Birkaç dakikalık kurulum [docs/oauth-setup.md](docs/oauth-setup.md)
+içinde anlatılıyor.
 
 ## Mimari
 

@@ -33,6 +33,19 @@ type DraftDTO struct {
 	// InReplyTo and References thread the message under what it answers.
 	InReplyTo  string   `json:"inReplyTo"`
 	References []string `json:"references"`
+
+	// AttachmentPaths are files the person chose in the dialog, by path. Only
+	// paths PickAttachments handed out are accepted; see readAttachments.
+	AttachmentPaths []string `json:"attachmentPaths"`
+
+	// InlineImages are the images the HTML refers to by cid:. Their paths go
+	// through the same allowlist as ordinary attachments.
+	InlineImages []InlineImageDTO `json:"inlineImages"`
+
+	// DraftID is the saved draft this message came from, zero when it never
+	// was one. Cleared once the message is queued: a draft left behind after
+	// the message went out is a message the user will send a second time.
+	DraftID int64 `json:"draftId"`
 }
 
 // QueuedDTO is what the window is told about a message on its way.
@@ -63,7 +76,26 @@ func (s *MailService) SendMessage(d DraftDTO) (QueuedDTO, error) {
 		return QueuedDTO{}, err
 	}
 
-	draft, err := draftFromDTO(d, identity)
+	// Read before the draft is assembled, so a file that has gone missing
+	// since it was chosen stops the send rather than producing a message with
+	// a paperclip the reader cannot open.
+	inlinePaths := make([]string, 0, len(d.InlineImages))
+	for _, img := range d.InlineImages {
+		inlinePaths = append(inlinePaths, img.Path)
+	}
+	if err := s.checkAttachmentSize(append(append([]string{}, d.AttachmentPaths...), inlinePaths...)); err != nil {
+		return QueuedDTO{}, err
+	}
+	attachments, err := s.readAttachments(d.AttachmentPaths)
+	if err != nil {
+		return QueuedDTO{}, err
+	}
+	inline, err := s.readInlineImages(d.InlineImages)
+	if err != nil {
+		return QueuedDTO{}, err
+	}
+
+	draft, err := draftFromDTO(d, identity, attachments, inline)
 	if err != nil {
 		return QueuedDTO{}, err
 	}
@@ -98,6 +130,17 @@ func (s *MailService) SendMessage(d DraftDTO) (QueuedDTO, error) {
 		return QueuedDTO{}, err
 	}
 
+	// After the queue row, never before. A draft discarded first and a queue
+	// row that then failed to write would be a message that exists nowhere.
+	if d.DraftID != 0 {
+		// Ignored on purpose. The message is queued and will go out; reporting
+		// this as a failed send would invite a second copy of it. The cost is
+		// a draft that lingers, and that is not a silent failure — it is
+		// sitting in the Drafts list where the person can see it and throw it
+		// away, which is more than a log line would give them.
+		_ = s.store.DeleteDraft(ctx, d.DraftID)
+	}
+
 	s.nudgeWatchers()
 	return QueuedDTO{OperationID: id, Recipients: len(op.EnvelopeTo)}, nil
 }
@@ -127,7 +170,8 @@ func (s *MailService) identityFor(ctx context.Context, d DraftDTO) (model.Identi
 }
 
 // draftFromDTO turns what the window sent into what the builder takes.
-func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
+func draftFromDTO(d DraftDTO, identity model.Identity,
+	attachments, inline []mailmime.Attachment) (mailmime.Draft, error) {
 	to, err := parseAddressList("To", d.To)
 	if err != nil {
 		return mailmime.Draft{}, err
@@ -156,16 +200,18 @@ func draftFromDTO(d DraftDTO, identity model.Identity) (mailmime.Draft, error) {
 	}
 
 	return mailmime.Draft{
-		From:       mailmime.Address{Name: identity.DisplayName, Address: identity.Email},
-		To:         to,
-		Cc:         cc,
-		Bcc:        bcc,
-		ReplyTo:    replyTo,
-		Subject:    d.Subject,
-		Text:       text,
-		HTML:       html,
-		InReplyTo:  d.InReplyTo,
-		References: d.References,
+		From:        mailmime.Address{Name: identity.DisplayName, Address: identity.Email},
+		To:          to,
+		Cc:          cc,
+		Bcc:         bcc,
+		ReplyTo:     replyTo,
+		Attachments: attachments,
+		Inline:      inline,
+		Subject:     d.Subject,
+		Text:        text,
+		HTML:        html,
+		InReplyTo:   d.InReplyTo,
+		References:  d.References,
 	}, nil
 }
 

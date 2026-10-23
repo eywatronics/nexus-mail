@@ -1,9 +1,11 @@
 import {
   ArrowLeft,
+  ArrowRight,
   CircleNotch,
   EyeSlash,
   HardDrives,
   Key,
+  MagnifyingGlass,
   MicrosoftOutlookLogo,
   GoogleLogo,
   Envelope,
@@ -11,12 +13,14 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { useState } from 'react'
-import { addOAuthAccount, addPasswordAccount, syncAccount } from '../lib/api'
+import { addOAuthAccount, addPasswordAccount, discoverServer, syncAccount } from '../lib/api'
+import { AppPasswordHelp } from './AppPasswordHelp'
 import {
   BUTTON_PRIMARY,
   BUTTON_SECONDARY,
   ICON,
   INPUT,
+  LINK,
   RADIUS,
   SURFACE,
   TEXT,
@@ -39,8 +43,8 @@ const MODES: Array<{ value: Mode; label: string; hint: string; icon: Icon }> = [
   },
   {
     value: 'password',
-    label: 'Other IMAP server',
-    hint: 'Password or app password',
+    label: 'Password or app password',
+    hint: 'Gmail, iCloud, Yahoo, or your own server',
     icon: Envelope,
   },
 ]
@@ -84,18 +88,32 @@ const PROMISES: Array<{ icon: Icon; title: string; body: string }> = [
 interface AddAccountProps {
   onDone: () => void
   onCancel?: () => void
+  /**
+   * Opens the settings screen over this one. Optional because the rest of the
+   * form works without it; without it, the OAuth pane has no way to offer the
+   * one setting a fresh install is missing.
+   */
+  onOpenSettings?: () => void
 }
 
-export function AddAccount({ onDone, onCancel }: AddAccountProps) {
+export function AddAccount({ onDone, onCancel, onOpenSettings }: AddAccountProps) {
   const [mode, setMode] = useState<Mode>('microsoft')
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [imapHost, setImapHost] = useState('')
   const [imapPort, setImapPort] = useState(993)
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState(587)
   const [security, setSecurity] = useState<Security>('tls')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [discovering, setDiscovering] = useState(false)
+  const [discoveryNote, setDiscoveryNote] = useState('')
+  // Set only by the Gmail escape hatch. A Workspace account on a custom
+  // domain looks like any other address to this window, but the reader has
+  // just told us they are signing in to Google.
+  const [assumeGoogle, setAssumeGoogle] = useState(false)
 
   const submit = async () => {
     setBusy(true)
@@ -109,8 +127,8 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
               imapHost,
               imapPort,
               security,
-              '',
-              0,
+              smtpHost,
+              smtpHost.trim() === '' ? 0 : smtpPort,
               password,
             )
           : await addOAuthAccount(email, displayName, mode)
@@ -125,6 +143,67 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // The Google sign-in needs a Cloud project of the reader's own. An app
+  // password is the short way around that, and it lands on the form already
+  // here, so the switch carries the address and fills in the server Gmail
+  // answers on.
+  const useGoogleAppPassword = () => {
+    setMode('password')
+    setAssumeGoogle(true)
+    setImapHost('imap.gmail.com')
+    setImapPort(993)
+    // The server fields are filled here rather than left to the backend's
+    // preset, which only fills SMTP when the IMAP host is blank. Filling one
+    // and not the other is an account that can receive but not send.
+    setSmtpHost('smtp.gmail.com')
+    setSmtpPort(587)
+    setSecurity('tls')
+    setError('')
+  }
+
+  // The other direction: Microsoft closed the password door, so the only
+  // useful thing this screen can do with an Outlook address is hand it back
+  // to the sign-in that still works.
+  const useMicrosoftSignIn = () => {
+    setMode('microsoft')
+    setAssumeGoogle(false)
+    setImapHost('')
+    setImapPort(993)
+    setSmtpHost('')
+    setSmtpPort(587)
+    setSecurity('tls')
+    setPassword('')
+    setError('')
+  }
+
+  const findSettings = async () => {
+    const address = email.trim()
+    if (address === '') return
+
+    setDiscovering(true)
+    setError('')
+    setDiscoveryNote('')
+    try {
+      const found = await discoverServer(address)
+      setImapHost(found.imapHost)
+      setImapPort(found.imapPort)
+      setSecurity(found.security === 'starttls' ? 'starttls' : 'tls')
+      if (found.smtpHost !== '') {
+        setSmtpHost(found.smtpHost)
+        setSmtpPort(found.smtpPort)
+      }
+      setDiscoveryNote(
+        found.source === 'srv'
+          ? 'Found the servers from published DNS records.'
+          : 'Found conventional server names. Check them with your provider before connecting.',
+      )
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDiscovering(false)
     }
   }
 
@@ -193,7 +272,13 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                       value={value}
                       checked={active}
                       data-testid={`mode-${value}`}
-                      onChange={() => setMode(value)}
+                      onChange={() => {
+                        setMode(value)
+                        // Choosing a way in by hand replaces what the escape
+                        // hatch assumed; a stale Google hint would outlive the
+                        // reason it was set.
+                        setAssumeGoogle(false)
+                      }}
                       className="sr-only"
                     />
                     <ModeIcon
@@ -245,6 +330,44 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
 
             {mode === 'password' ? (
               <>
+                <div
+                  className={`flex items-center justify-between gap-3 border-t pt-3 ${SURFACE.divider}`}
+                >
+                  <span className={`text-xs ${TEXT.muted}`}>Server details</span>
+                  <button
+                    type="button"
+                    data-testid="discover-server"
+                    onClick={() => void findSettings()}
+                    disabled={discovering || email.trim() === ''}
+                    className={`${BUTTON_SECONDARY} inline-flex items-center gap-1.5 whitespace-nowrap py-1.5 text-xs`}
+                  >
+                    {discovering ? (
+                      <CircleNotch
+                        size={ICON.size}
+                        weight="bold"
+                        aria-hidden
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <MagnifyingGlass
+                        size={ICON.size}
+                        weight={ICON.weight}
+                        aria-hidden
+                      />
+                    )}
+                    {discovering ? 'Looking up' : 'Find settings'}
+                  </button>
+                </div>
+
+                {discoveryNote && (
+                  <p
+                    data-testid="discovery-note"
+                    className={`text-xs leading-relaxed ${TEXT.secondary}`}
+                  >
+                    {discoveryNote}
+                  </p>
+                )}
+
                 {/* Above the host and port because it decides the port. Asked
                     for rather than guessed from the number typed: a server on
                     a non-standard port would be guessed wrong, and guessing
@@ -327,6 +450,39 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-[1fr_6rem] gap-3">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="smtp-host" className={`text-xs font-medium ${TEXT.secondary}`}>
+                      SMTP host
+                    </label>
+                    <input
+                      id="smtp-host"
+                      data-testid="smtp-host"
+                      type="text"
+                      placeholder="smtp.example.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      className={INPUT}
+                    />
+                    <p className={`text-xs ${TEXT.muted}`}>
+                      Used for sending. Leave blank if you do not know it.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="smtp-port" className={`text-xs font-medium ${TEXT.secondary}`}>
+                      Port
+                    </label>
+                    <input
+                      id="smtp-port"
+                      data-testid="smtp-port"
+                      type="number"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(Number(e.target.value))}
+                      className={`${INPUT} tabular font-mono`}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex flex-col gap-2">
                   <label htmlFor="password" className={`text-xs font-medium ${TEXT.secondary}`}>
                     Password
@@ -342,13 +498,62 @@ export function AddAccount({ onDone, onCancel }: AddAccountProps) {
                     className={INPUT}
                   />
                 </div>
+
+                <AppPasswordHelp
+                  email={email}
+                  assumeGoogle={assumeGoogle}
+                  onUseMicrosoftSignIn={useMicrosoftSignIn}
+                />
               </>
             ) : (
-              <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
-                Your browser opens so you can sign in. Nexus Mail never sees your password.
-                {mode === 'google' &&
-                  ' Gmail also needs an OAuth client ID of your own; see docs/oauth-setup.md.'}
-              </p>
+              <div className="flex flex-col gap-2">
+                <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
+                  Your browser opens so you can sign in. Nexus Mail never sees your password.
+                </p>
+                <p className={`text-xs leading-relaxed ${TEXT.muted}`}>
+                  {mode === 'google'
+                    ? 'Sign-in needs a client ID from your own Google Cloud project. You can add it in Settings.'
+                    : 'Sign-in needs a client ID from your own Microsoft Entra app registration. You can add it in Settings.'}
+                </p>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    data-testid="open-oauth-settings"
+                    onClick={onOpenSettings}
+                    className={`${LINK} self-start`}
+                  >
+                    Open Settings
+                    <ArrowRight
+                      size={ICON.size}
+                      weight={ICON.weight}
+                      aria-hidden
+                      className="shrink-0"
+                    />
+                  </button>
+                )}
+                {mode === 'google' && (
+                  <div className={`mt-1 border-t pt-3 ${SURFACE.divider}`}>
+                    <p className={`text-xs leading-relaxed ${TEXT.secondary}`}>
+                      Gmail also accepts an app password, which needs no Google Cloud
+                      project.
+                    </p>
+                    <button
+                      type="button"
+                      data-testid="gmail-use-app-password"
+                      onClick={useGoogleAppPassword}
+                      className={`${LINK} mt-1`}
+                    >
+                      Use an app password
+                      <ArrowRight
+                        size={ICON.size}
+                        weight={ICON.weight}
+                        aria-hidden
+                        className="shrink-0"
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {error && (

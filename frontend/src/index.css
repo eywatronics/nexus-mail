@@ -22,6 +22,12 @@
   --color-accent-soft: oklch(0.96 0.02 200);
   --color-accent-soft-dark: oklch(0.28 0.05 200);
 
+  /* The accent as text on a dark surface. The fill accent is tuned to carry
+     white button text, and at 12px on near-black it falls under 4.5:1. This is
+     the same hue, lightened for the one place the accent is the type itself. */
+  --color-accent-dark: oklch(0.78 0.08 200);
+  --color-accent-dark-hover: oklch(0.86 0.07 200);
+
   /* Semantic status colors. These are NOT decoration: each one may appear only
      where it carries that exact meaning. A status color used for emphasis is
      the same mistake as a second accent. */
@@ -73,6 +79,64 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: var(--radius-ui);
+}
+
+/* The composer's contenteditable keeps its own document structure, so the
+   styles a mail reader will apply have to exist here too. Only the tags the
+   outgoing sanitiser allows are covered. */
+.rich-editor p {
+  margin: 0 0 0.75rem;
+}
+
+.rich-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-editor ul,
+.rich-editor ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.4rem;
+}
+
+.rich-editor ul {
+  list-style: disc;
+}
+
+.rich-editor ol {
+  list-style: decimal;
+}
+
+.rich-editor li {
+  margin: 0.15rem 0;
+}
+
+.rich-editor blockquote {
+  margin: 0 0 0.75rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid rgb(0 0 0 / 0.15);
+  color: var(--color-neutral-600, #525252);
+}
+
+.dark .rich-editor blockquote {
+  border-left-color: rgb(255 255 255 / 0.2);
+  color: #d4d4d4;
+}
+
+.rich-editor a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-editor img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.35rem 0;
+  border-radius: var(--radius-ui);
+}
+
+.dark .rich-editor a {
+  color: var(--color-accent-dark);
 }
 
 /* MOTION_INTENSITY is 2: hover and press feedback only, no entrance

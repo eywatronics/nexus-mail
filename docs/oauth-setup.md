@@ -4,7 +4,9 @@ Nexus Mail açık kaynak olduğu için kendi OAuth kimlik bilgileriyle gelmez.
 İstemcinizi bir kez kaydedersiniz — birkaç dakika sürer ve posta kutunuza
 erişimin sizin kontrolünüzde kalmasını sağlar.
 
-Client ID'ler veri dizinindeki `config.json` dosyasına yazılır:
+Client ID'ler uygulamanın **Settings** ekranından girilir. O ekran hesap
+ekleme ekranından da açılabilir; yazdıkları veri dizinindeki `config.json`
+dosyasına gider:
 
 | Platform | Yol |
 |---|---|
@@ -28,6 +30,44 @@ refresh token'dır ve o bu dosyaya değil, işletim sisteminin anahtarlığına 
 doğru olan budur. Yalnızca güvenlik yazılımınız rastgele port bağlamayı
 engelliyorsa sabit bir değer verin — o zaman aynı portu sağlayıcıya da
 kaydetmeniz gerekir.
+
+---
+
+## Uygulama parolası: client ID olmadan bağlanmak
+
+Bir sağlayıcı uygulama parolası sunuyorsa OAuth istemcisi kaydetmeye gerek
+yok. Hesap ekleme ekranında **Password or app password** seçin.
+
+### Gmail
+
+Google, iki adımlı doğrulama açıkken IMAP için uygulama parolası üretiyor.
+Gmail modunda **Use an app password** bağlantısı doğrudan bu forma geçirir;
+sunucu ve port hazır gelir.
+
+1. [2-Step Verification](https://myaccount.google.com/security) açık olsun.
+2. [App passwords](https://myaccount.google.com/apppasswords) sayfasından bir
+   tane üretin (16 karakter).
+3. Parolayı hesap ekleme ekranındaki **Password** alanına yapıştırın. Boşluklar
+   önemli değil; normal Google parolanız çalışmaz.
+
+Workspace hesaplarında yönetici uygulama parolalarını kapatmış olabilir.
+
+### Microsoft: bu yol kapalı
+
+Outlook.com 2024'te IMAP için uygulama parolalarını kabul etmeyi bıraktı;
+Microsoft 365'te temel kimlik doğrulama zaten kapalı. Microsoft hesabı yalnızca
+yukarıdaki OAuth yoluyla bağlanır. Ekran, bir Outlook adresi girildiğinde bunu
+söyleyip girişe geri gönderir.
+
+### iCloud ve Yahoo
+
+iCloud, Apple ID parolası yerine **app-specific password** istiyor:
+[Apple ID](https://account.apple.com/) → Sign-In and Security.
+Yahoo, iki adımlı doğrulama açıkken
+[hesap güvenliği](https://login.yahoo.com/account/security) sayfasından
+uygulama parolası üretiyor. İkisinde de sunucu alanı boş bırakılabilir; preset
+`imap.mail.me.com` ve `imap.mail.yahoo.com` adreslerine gider. Port 993,
+SSL/TLS.
 
 ---
 
@@ -82,8 +122,8 @@ için bunların hiçbiri sizi bağlamaz.
 
 ## Diğer sağlayıcılar
 
-Hesap eklerken *Other IMAP server* seçin ve parolanızı ya da bir uygulama
-parolası kullanın. Kayıt gerekmez.
+Hesap eklerken **Password or app password** seçin ve parolanızı ya da bir
+uygulama parolası kullanın. Kayıt gerekmez.
 
 Yaygın sağlayıcılar (Yandex, Zoho, Fastmail, iCloud, Yahoo ve diğerleri) için
 sunucu adresleri gömülüdür; adresinizi yazmanız yeterli. Kurumsal bir alan adı
@@ -98,7 +138,7 @@ sunucular tahmin edilemez.
 Gmail bulut hesapları içindir; kendi sunucunuzdaki Exchange'e parolayla
 bağlanılır.
 
-1. Hesap eklerken **Other IMAP server** seçin.
+1. Hesap eklerken **Password or app password** seçin.
 2. **IMAP host**: BT'nin verdiği iç sunucu adı (`mail.sirket.com.tr` gibi).
 3. **Encryption**: **STARTTLS**. Exchange'in IMAP4 servisi varsayılan olarak
    143'te yayınlanır ve `LoginType` değeri `SecureLogin` olduğu için bağlantı

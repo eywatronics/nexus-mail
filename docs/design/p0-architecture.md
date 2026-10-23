@@ -59,6 +59,37 @@ katkıcıya C araç zinciri kurdurur, çapraz derlemeyi zorlaştırır ve
 Ölçüm depoda duruyor, tekrar çalıştırmak bir komut. Sayılar bu makinede ve
 sıcak sayfa önbelleğiyle alındı; soğuk bir disk daha yavaş olur.
 
+### 2.2 Tek yazıcı: motor yazarken pencere ne yapıyor?
+
+SQLite tek bir yazıcıya izin verir. Bu istemcide asıl soru şu: senkron motoru
+beş yüz başlığı tek işlemde yazarken — ve her INSERT arkasındaki FTS
+tetikleyicilerini çalıştırırken — kullanıcı tam o anda arama yaparsa ne olur?
+
+Yapılandırma üç şeyi istiyor: `journal_mode(WAL)`, `busy_timeout(5000)` ve
+ayrı havuzlar (yazma `SetMaxOpenConns(1)`, okuma 4). Ama istemek almak değil:
+`_pragma` bağlantı başına uygulanır ve havuz birden fazla bağlantı dağıtır.
+Yalnızca ilkine ulaşan bir pragma, tek iş yapan her testten geçer ve tam da var
+olma sebebi olan yükte çöker. `concurrency_test.go` havuzdaki her bağlantıyı
+ayrı ayrı yokluyor.
+
+Senaryonun kendisi de ölçüldü — iki saniye boyunca 500'lük gruplar yazılırken
+üç goroutine arama ve listeleme yapıyor:
+
+| | grup | okuma turu | en yavaş okuma |
+|---|---|---|---|
+| WAL | 47 | 318 | 55 ms |
+| DELETE | 28 | 263 | 142 ms |
+
+Tek bir hata yok, tek bir `SQLITE_BUSY` yok. **WAL'ın satın aldığı şey doğruluk
+değil**, verim ve iki buçuk kat daha iyi bir en kötü durum: geri alma
+günlüğüyle de çalışıyor, çünkü `busy_timeout` çekişmeyi yutuyor ve okuyucu hata
+değil yavaş cevap alıyor.
+
+Testin tuttuğu şey bu yüzden gecikme değil: bir okuma **hiç başarısız olmuyor**
+ve beş saniyelik zaman aşımını hiç beklemiyor. WAL'ın yokluğunu yakalayacak
+kadar dar bir tavan, yüklü bir CI makinesinde patlayacak kadar dar olurdu — o
+da bir şey yakalayan test değil, silinen test olur.
+
 ### Reddedilen alternatifler
 
 - **Write-through senkron:** Her UI eylemi ağ gecikmesi kadar bekler, çevrimdışıyken

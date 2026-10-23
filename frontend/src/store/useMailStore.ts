@@ -2,7 +2,14 @@ import { create } from 'zustand'
 import { EVENTS, type ErrorClass, type SyncEventPayload } from '../lib/events'
 import { readPref, writePref } from '../lib/prefs'
 import { THEME_CHOICES, type ThemeChoice } from '../lib/theme'
-import type { Account, Folder, Message, PendingChanges, Undoable } from '../lib/api'
+import type {
+  Account,
+  DraftRecord,
+  Folder,
+  Message,
+  PendingChanges,
+  Undoable,
+} from '../lib/api'
 
 export type SyncStatus =
   | { status: 'idle' }
@@ -148,6 +155,8 @@ interface MailState {
 /** What the composer opens on. A bare account means a new message. */
 export interface ComposerRequest {
   accountId: number
+  /** An existing draft being picked up again. */
+  draft?: DraftRecord
   reply?: {
     subject: string
     to: string

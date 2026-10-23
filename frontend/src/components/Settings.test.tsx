@@ -193,4 +193,13 @@ describe('leaving', () => {
 
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  // Settings also opens over account setup, before a mailbox exists. "Back to
+  // mail" there would name a place the reader has never been.
+  it('names account setup when that is where it came from', () => {
+    const { getByText } = render(
+      <Settings onClose={() => {}} backLabel="Back to account setup" />,
+    )
+    expect(getByText('Back to account setup')).toBeTruthy()
+  })
 })

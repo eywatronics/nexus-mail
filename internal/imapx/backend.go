@@ -47,6 +47,10 @@ type Capabilities struct {
 	// SpecialUse means the server will say which mailbox is Sent, Drafts and
 	// so on, instead of leaving the client to guess from the name.
 	SpecialUse bool
+	// ListStatus means LIST can carry STATUS data (RFC 5819). Without it,
+	// asking for ReturnStatus turns the whole LIST into a protocol error on
+	// servers that did not implement the extension.
+	ListStatus bool
 }
 
 // SelectResult carries the mailbox state a SELECT reports. HighestModSeq is

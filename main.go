@@ -11,6 +11,8 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -205,6 +207,22 @@ func run(debug bool) error {
 			wailsApp.Event.Emit(name, data)
 		}
 	}
+	cfg.OpenComposerWindow = func(id string) error {
+		if wailsApp == nil {
+			return errors.New("app: the window system is not ready")
+		}
+		window := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:      "composer-" + id,
+			Title:     "Nexus Mail",
+			URL:       "/composer.html?id=" + url.QueryEscape(id),
+			Width:     980,
+			Height:    760,
+			MinWidth:  640,
+			MinHeight: 420,
+		})
+		window.Show()
+		return nil
+	}
 
 	// The same cycle again, and the same way out of it: the body handler is
 	// built from the service, and the service has to be able to drop entries
@@ -264,7 +282,20 @@ func run(debug bool) error {
 	engine := imapsync.New(db, app.DialerFor(db, secrets, cfg))
 	engine.SetRetention(cfg.Retention)
 	engine.SetSender(app.SenderFor(db, secrets, cfg), outbox)
+
+	// A mailto: link arrives as an argument on launch. It is not parsed here:
+	// the service does that once, and the window asks for it when its event
+	// listeners exist.
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(strings.ToLower(arg), "mailto:") {
+			cfg.Mailto = arg
+			break
+		}
+	}
+
 	service := app.NewMailService(db, secrets, engine, cfg)
+	inline := app.NewInlineImages()
+	app.SetInlineImages(service, inline)
 
 	// Files nothing refers to accumulate two ways: a crash between writing one
 	// and recording its row, and a message the user cancelled. Swept at start
@@ -289,7 +320,7 @@ func run(debug bool) error {
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.AssetFileServerFS(assets),
-			Middleware: mailContentMiddleware(bodies),
+			Middleware: mailContentMiddleware(bodies, inline),
 		},
 		Mac: application.MacOptions{
 			// The window is hidden rather than closed, so this would not fire
@@ -310,6 +341,12 @@ func run(debug bool) error {
 		BackgroundColour: application.NewRGB(255, 255, 255),
 		URL:              "/",
 	})
+
+	// The file dialog needs a window to hang off, so it is handed over here
+	// rather than at construction. internal/app knows it as an interface and
+	// imports nothing from the toolkit: that is what lets everything below the
+	// window be tested without one.
+	app.SetFilePicker(service, filePicker{app: wailsApp, window: window})
 
 	// Closing the window hides it; the app keeps running.
 	//
@@ -391,13 +428,14 @@ func run(debug bool) error {
 	return nil
 }
 
-// mailContentMiddleware routes message bodies and proxied images to the body
-// handler, leaving everything else to the embedded frontend.
+// mailContentMiddleware routes message bodies, proxied images and composer
+// image previews to their handlers, leaving everything else to the embedded
+// frontend.
 //
 // Serving bodies here rather than over the Wails bridge keeps an
 // eight-megabyte newsletter out of an IPC message, and lets the response carry
 // a real Content-Security-Policy header — which srcdoc cannot.
-func mailContentMiddleware(bodies http.Handler) application.Middleware {
+func mailContentMiddleware(bodies http.Handler, inline http.Handler) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, "/mail-body/") ||
@@ -406,7 +444,43 @@ func mailContentMiddleware(bodies http.Handler) application.Middleware {
 				bodies.ServeHTTP(w, r)
 				return
 			}
+			if strings.HasPrefix(r.URL.Path, "/compose-image/") {
+				inline.ServeHTTP(w, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// filePicker is the operating system's own file dialog.
+//
+// Attached to the window so that it appears over the application rather than
+// somewhere else on the desktop, and so that the window is blocked while it is
+// open — a second dialog on top of the first is how somebody ends up attaching
+// the file they meant to replace.
+type filePicker struct {
+	app    *application.App
+	window application.Window
+}
+
+// PickFiles returns nothing and no error when the person closes the dialog.
+// Cancelling is an answer, not a failure.
+func (p filePicker) PickFiles(title string) ([]string, error) {
+	// The dialog belongs to the window the person is looking at, not always
+	// the main one: a composer can have its own window, and a file dialog
+	// attached to a hidden window looks like a dialog that never opened.
+	window := p.window
+	if current := p.app.Window.Current(); current != nil {
+		window = current
+	}
+	dialog := p.app.Dialog.OpenFile().
+		SetTitle(title).
+		CanChooseFiles(true).
+		// Folders cannot be attached, and offering to choose one only leads to
+		// an error message a moment later.
+		CanChooseDirectories(false).
+		AttachToWindow(window)
+
+	return dialog.PromptForMultipleSelection()
 }

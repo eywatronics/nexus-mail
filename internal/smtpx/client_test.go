@@ -7,15 +7,57 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 
+	"nexusmail/internal/auth"
 	"nexusmail/internal/model"
 )
 
+// passwordCredential is what a generic server gets: a secret it may ask for
+// as PLAIN or as LOGIN.
+type passwordCredential struct {
+	username, secret string
+	reads            int
+}
+
+func (p *passwordCredential) SASLClient(context.Context) (sasl.Client, error) {
+	return sasl.NewPlainClient("", p.username, p.secret), nil
+}
+func (p *passwordCredential) Refresh(context.Context) error { return nil }
+func (p *passwordCredential) Kind() model.AuthKind          { return model.AuthPassword }
+func (p *passwordCredential) Username() string              { return p.username }
+func (p *passwordCredential) Password(context.Context) (string, error) {
+	p.reads++
+	return p.secret, nil
+}
+
+// tokenCredential is an OAuth account: no password to offer, only a minted
+// token presented as XOAUTH2. It deliberately does not implement
+// PasswordCredential, which is what sends smtpx down the other path.
+type tokenCredential struct {
+	username, token string
+	err             error
+}
+
+func (c tokenCredential) SASLClient(context.Context) (sasl.Client, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return auth.NewXOAUTH2Client(c.username, c.token), nil
+}
+func (c tokenCredential) Refresh(context.Context) error { return nil }
+func (c tokenCredential) Kind() model.AuthKind          { return model.AuthOAuth }
+
 func dial(t *testing.T, cfg Config, secret string) *Client {
 	t.Helper()
+	return dialWith(t, cfg, &passwordCredential{username: "u@example.com", secret: secret})
+}
 
-	c, err := Dial(context.Background(), cfg, secret)
+func dialWith(t *testing.T, cfg Config, provider auth.CredentialProvider) *Client {
+	t.Helper()
+
+	c, err := Dial(context.Background(), cfg, provider)
 	if err != nil {
 		t.Fatalf("Dial() error: %v", err)
 	}
@@ -123,7 +165,8 @@ func TestAMessageRejectedAtTheEndOfDataIsNotASuccess(t *testing.T) {
 func TestWrongCredentialsAreReportedWithoutTheSecret(t *testing.T) {
 	cfg, _ := startServer(t, serverOptions{password: "correct-horse"})
 
-	_, err := Dial(context.Background(), cfg, "CANARY-WRONG-PASSWORD")
+	_, err := Dial(context.Background(), cfg,
+		&passwordCredential{username: "u@example.com", secret: "CANARY-WRONG-PASSWORD"})
 	if err == nil {
 		t.Fatal("Dial() accepted the wrong password")
 	}
@@ -139,7 +182,8 @@ func TestWrongCredentialsAreReportedWithoutTheSecret(t *testing.T) {
 func TestCleartextIsRefusedOffLoopback(t *testing.T) {
 	for _, host := range []string{"smtp.example.com", "203.0.113.10"} {
 		_, err := Dial(context.Background(),
-			Config{Host: host, Port: 25, Insecure: true, Username: "u@example.com"}, "pw")
+			Config{Host: host, Port: 25, Insecure: true, Username: "u@example.com"},
+			&passwordCredential{username: "u@example.com", secret: "pw"})
 		if err == nil {
 			t.Errorf("Dial() allowed cleartext to %s", host)
 			continue
@@ -182,7 +226,8 @@ func TestTheTwoSubmissionPortMistakesAreNamed(t *testing.T) {
 	for _, c := range cases {
 		// Nothing is listening, so the dial fails and the wrapper runs. The
 		// message is what is under test, not the connection.
-		_, err := Dial(context.Background(), c.cfg, "pw")
+		_, err := Dial(context.Background(), c.cfg,
+			&passwordCredential{username: "u@example.com", secret: "pw"})
 		if err == nil {
 			t.Errorf("%s: Dial() succeeded against nothing", c.name)
 			continue
@@ -337,5 +382,75 @@ func TestLocalRefusalsAreMarkedPermanent(t *testing.T) {
 	}
 	if !IsPermanent(err) {
 		t.Errorf("a size refusal was classified as worth retrying: %v", err)
+	}
+}
+
+// An OAuth account could read mail and could not send any: submission had its
+// own credential path that took a password and refused anything else.
+func TestATokenAccountCanSend(t *testing.T) {
+	cfg, got := startServer(t, serverOptions{
+		authMechs: []string{"XOAUTH2"},
+		username:  "u@example.com",
+		token:     "ya29.TOKEN",
+	})
+
+	c := dialWith(t, cfg, tokenCredential{username: "u@example.com", token: "ya29.TOKEN"})
+
+	env := Envelope{From: "u@example.com", To: []string{"r@example.com"}}
+	if err := c.Send(context.Background(), env, message("Konu", "metin")); err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+	if mech := got.snapshot().mechanism; mech != "XOAUTH2" {
+		t.Errorf("the server saw mechanism %q", mech)
+	}
+}
+
+// A server that will not take a token says so in those words. The alternative
+// is an opaque SASL failure on an account that is correctly configured
+// everywhere else.
+func TestATokenAccountAgainstAPasswordOnlyServerIsExplained(t *testing.T) {
+	cfg, _ := startServer(t, serverOptions{authMechs: []string{"PLAIN", "LOGIN"}})
+
+	_, err := Dial(context.Background(), cfg,
+		tokenCredential{username: "u@example.com", token: "ya29.TOKEN"})
+	if err == nil {
+		t.Fatal("Dial() claimed to authenticate with a token the server cannot take")
+	}
+	if !strings.Contains(err.Error(), "signs in with a token") {
+		t.Errorf("the error does not say what went wrong: %v", err)
+	}
+}
+
+// Minting a token costs a network round trip and can fail. It must not read as
+// a rejected credential, which is what somebody would go and re-enter.
+func TestAFailureToMintATokenSaysSo(t *testing.T) {
+	cfg, _ := startServer(t, serverOptions{
+		authMechs: []string{"XOAUTH2"}, username: "u@example.com", token: "t",
+	})
+
+	_, err := Dial(context.Background(), cfg, tokenCredential{
+		username: "u@example.com", err: errors.New("the refresh token has been revoked"),
+	})
+	if err == nil {
+		t.Fatal("Dial() succeeded with no token")
+	}
+	if !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("the error lost the reason: %v", err)
+	}
+}
+
+// The secret leaves the keyring only once there is a mechanism that can carry
+// it. Reading it first would put a password in this process to talk to a
+// server that was never going to accept one.
+func TestThePasswordIsNotReadWhenNoMechanismFits(t *testing.T) {
+	cfg, _ := startServer(t, serverOptions{authMechs: []string{"CRAM-MD5"}})
+	credential := &passwordCredential{username: "u@example.com", secret: "pw"}
+
+	if _, err := Dial(context.Background(), cfg, credential); err == nil {
+		t.Fatal("Dial() accepted a server offering nothing this client speaks")
+	}
+	if credential.reads != 0 {
+		t.Errorf("the password was read %d times for a server that cannot take it",
+			credential.reads)
 	}
 }

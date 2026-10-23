@@ -104,6 +104,21 @@ export const ROW_DIVIDER = 'border-b border-b-neutral-200 dark:border-b-neutral-
 export const ICON = { size: 16, weight: 'regular' } as const
 
 /**
+ * An inline action that reads as a link.
+ *
+ * Used where a bordered button would compete with the form's one primary
+ * action: opening a provider's page, or switching to the other way in. The
+ * dark tone is a lightened accent because the fill accent is tuned for white
+ * type on it, and is too dark to be type itself on a near-black surface.
+ */
+export const LINK = [
+  'inline-flex items-center gap-1 font-medium',
+  'text-[var(--color-accent)] underline underline-offset-2',
+  'hover:text-[var(--color-accent-hover)]',
+  'dark:text-[var(--color-accent-dark)] dark:hover:text-[var(--color-accent-dark-hover)]',
+].join(' ')
+
+/**
  * An icon-only toolbar button.
  *
  * The padding is the whole point: a 16px icon with p-1.5 gives a 28px target,

@@ -1,7 +1,32 @@
-import { PaperPlaneRight, X } from '@phosphor-icons/react'
+import { ArrowSquareOut, Paperclip, PaperPlaneRight, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
-import { identities as readIdentities, sendMessage, type Identity } from '../lib/api'
-import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, SURFACE, TEXT } from '../lib/ui'
+import {
+  identities as readIdentities,
+  pickAttachments,
+  pickInlineImage,
+  openComposerWindow,
+  saveDraft,
+  sendMessage,
+  type DraftRecord,
+  type Identity,
+  type InlineImage,
+  type OutgoingAttachment,
+} from '../lib/api'
+import { mentionsAttachment, textBeforeQuote } from '../lib/attachmentReminder'
+import { formatSize } from '../lib/format'
+import { cidHTML, previewHTML, sanitizeComposeHTML, textToHTML } from '../lib/richText'
+import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, RADIUS, SURFACE, TEXT } from '../lib/ui'
+import { ConfirmDialog } from './ConfirmDialog'
+import { RecipientField } from './RecipientField'
+import { RichTextEditor } from './RichTextEditor'
+
+/**
+ * How long a pause counts as "stopped typing".
+ *
+ * Short enough that almost nothing is lost to a crash, long enough that
+ * writing a sentence is one write rather than forty.
+ */
+const AUTOSAVE_PAUSE_MS = 2000
 
 /**
  * Writing a message.
@@ -19,10 +44,14 @@ import { BUTTON_GHOST, BUTTON_PRIMARY, ICON, ICON_ONLY, SURFACE, TEXT } from '..
 export function Composer({
   accountId,
   onClose,
+  draft,
   reply,
+  canDetach = false,
 }: {
   accountId: number
   onClose: () => void
+  /** An existing draft being picked up again. */
+  draft?: DraftRecord
   /**
    * Set when answering or forwarding, which carries the threading headers and
    * the quoted original through.
@@ -35,30 +64,72 @@ export function Composer({
     references: string[]
     quoted: string
   }
+  /**
+   * Offered only in the main window. Moving a composer that is already in its
+   * own window into another one is a way to lose it, not a feature.
+   */
+  canDetach?: boolean
 }) {
   const [from, setFrom] = useState<Identity[]>([])
   const [identityId, setIdentityId] = useState(0)
 
-  const [to, setTo] = useState(reply?.to ?? '')
-  const [cc, setCc] = useState(reply?.cc ?? '')
-  const [bcc, setBcc] = useState('')
+  const [to, setTo] = useState(draft?.to ?? reply?.to ?? '')
+  const [cc, setCc] = useState(draft?.cc ?? reply?.cc ?? '')
+  const [bcc, setBcc] = useState(draft?.bcc ?? '')
   // Cc and Bcc are hidden until asked for. Most messages have neither, and
   // four empty fields at the top of every compose window is four lines of
   // nothing between the writer and the thing they came to write.
   // Shown from the start when a reply-all already put people there: a Cc line
   // with names on it that the writer cannot see is a message going somewhere
   // they did not check.
-  const [showCopies, setShowCopies] = useState((reply?.cc ?? '') !== '')
+  const [showCopies, setShowCopies] = useState(
+    (draft?.cc ?? reply?.cc ?? '') !== '' || (draft?.bcc ?? '') !== '',
+  )
 
-  const [subject, setSubject] = useState(reply?.subject ?? '')
+  const [subject, setSubject] = useState(draft?.subject ?? reply?.subject ?? '')
   // The quote starts below an empty line, and the cursor starts above it.
   // Top-posting is what the rest of the world does and what a reader scanning
   // a thread expects; the quote is there to be referred to, not read first.
-  const [body, setBody] = useState(reply?.quoted ? `\n\n${reply.quoted}` : '')
+  const [body, setBody] = useState(
+    draft ? draft.body : reply?.quoted ? `\n\n${reply.quoted}` : '',
+  )
+  // Formatted text is opt-in for now. A draft written in the rich editor
+  // reopens in it; everything else starts as plain text, which is what the
+  // composer did before this existed and what a reply's quoted original is.
+  const [html, setHtml] = useState(
+    draft?.html ? previewHTML(sanitizeComposeHTML(draft.html)) : '',
+  )
+  const [rich, setRich] = useState((draft?.html ?? '') !== '')
+  const [inlineImages, setInlineImages] = useState<InlineImage[]>(
+    draft?.inlineImages ?? [],
+  )
+
+  // Files, by path. The bytes stay on disk until Send, so a composer left
+  // open with three photographs on it costs this window three filenames.
+  const [files, setFiles] = useState<OutgoingAttachment[]>(draft?.attachments ?? [])
 
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const firstField = useRef<HTMLInputElement>(null)
+  const [detaching, setDetaching] = useState(false)
+  const [confirmingNoAttachment, setConfirmingNoAttachment] = useState(false)
+  // A reopened draft whose attachment has gone says so from the moment it
+  // opens. Not an error — the message is fine and the person may not care
+  // about the file — but not a silence either.
+  const missing = draft?.missingAttachments ?? []
+  const [error, setError] = useState(
+    missing.length > 0 ? `No longer on disk, so not attached: ${missing.join(', ')}` : '',
+  )
+
+  // The draft's id, once it has one. A ref rather than state because the
+  // autosave that creates it must hand the id to the autosave after it, and a
+  // state update would not have landed by then — which is how autosave ends up
+  // writing a new row every time instead of replacing one.
+  const draftId = useRef(draft?.id ?? 0)
+  const [savedAt, setSavedAt] = useState<number | null>(
+    draft ? draft.updatedAtUnix * 1000 : null,
+  )
+  // Set once the message is on its way, so the unmount save does not put back
+  // a draft the send just cleared.
+  const sent = useRef(false)
   const bodyField = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -73,20 +144,161 @@ export function Composer({
   }, [accountId])
 
   // A reply already knows who it is going to, so the cursor belongs in the
-  // body; a new message has an empty To line and belongs there.
+  // body; a new message has an empty To line, and the address field puts the
+  // cursor there itself.
   useEffect(() => {
-    if (reply) {
-      // The cursor goes to the top of the body, above the quote.
-      bodyField.current?.focus()
-      bodyField.current?.setSelectionRange(0, 0)
-      return
-    }
-    firstField.current?.focus()
+    if (!reply) return
+    // The cursor goes to the top of the body, above the quote.
+    bodyField.current?.focus()
+    bodyField.current?.setSelectionRange(0, 0)
   }, [reply])
 
   const canSend = to.trim() !== '' || cc.trim() !== '' || bcc.trim() !== ''
 
-  const send = async () => {
+  // Everything a save would write. Named so the effect below can depend on it
+  // without listing nine things and getting one of them wrong.
+  const contents = { identityId, to, cc, bcc, subject, body, html, inlineImages, files }
+  // An image removed from the body must not travel as an unreferenced part.
+  const usedInlineImages = inlineImages.filter((img) => html.includes(img.cid))
+  const empty =
+    to.trim() === '' && cc.trim() === '' && bcc.trim() === '' &&
+    subject.trim() === '' && body.trim() === '' &&
+    usedInlineImages.length === 0 && files.length === 0
+
+  // Saved on a pause rather than on every keystroke: two seconds is short
+  // enough that almost nothing is lost and long enough that typing a sentence
+  // is one write.
+  //
+  // An empty composer is not saved. Opening one, thinking better of it and
+  // closing it should leave nothing behind — a Drafts folder that fills up
+  // with blank messages is one nobody looks at.
+  const save = async () => {
+    if (empty || sent.current) return
+    try {
+      const id = await saveDraft({
+        id: draftId.current,
+        accountId,
+        identityId: contents.identityId,
+        to: contents.to,
+        cc: contents.cc,
+        bcc: contents.bcc,
+        subject: contents.subject,
+        body: contents.body,
+        // Plain mode drops formatting from the saved draft rather than leaving
+        // HTML the writer can no longer see or edit.
+        html: rich ? sanitizeComposeHTML(cidHTML(contents.html)) : '',
+        inlineImages: rich ? usedInlineImages : [],
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
+        attachmentPaths: contents.files.map((f) => f.path),
+        attachments: null,
+        missingAttachments: null,
+        updatedAtUnix: 0,
+      })
+      draftId.current = id
+      setSavedAt(Date.now())
+    } catch {
+      // Deliberately quiet. A failed autosave is worth knowing about, but not
+      // as a red banner over a message somebody is in the middle of writing:
+      // the next pause tries again, and the heading stops saying the draft is
+      // saved, which is the honest signal.
+      setSavedAt(null)
+    }
+  }
+
+  useEffect(() => {
+    if (empty || sent.current) return
+
+    const timer = setTimeout(() => void save(), AUTOSAVE_PAUSE_MS)
+
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    accountId, empty, identityId, to, cc, bcc, subject, body, html, rich,
+    inlineImages, files,
+  ])
+
+  // The pause is not enough on its own. Typing a sentence and closing the
+  // window straight away would clear the pending timer and lose it, which is
+  // the exact thing this whole mechanism exists to prevent — so closing saves
+  // too, whatever the timer was doing.
+  //
+  // The contents go through a ref because this effect runs once: a cleanup
+  // that closed over the first render's empty fields would save nothing.
+  const latest = useRef(save)
+  latest.current = save
+  useEffect(() => {
+    return () => {
+      void latest.current()
+    }
+  }, [])
+
+  const attach = async () => {
+    try {
+      const chosen = await pickAttachments()
+      // Appended, and the same file twice is the same file: choosing it again
+      // is how somebody ends up mailing two copies of one attachment.
+      setFiles((current) => {
+        const have = new Set(current.map((f) => f.path))
+        return [...current, ...chosen.filter((f) => !have.has(f.path))]
+      })
+    } catch (err: unknown) {
+      setError(messageOf(err))
+    }
+  }
+
+  const embedImage = async () => {
+    try {
+      const image = await pickInlineImage()
+      if (image.cid === '') return null
+      setInlineImages((current) => [...current, image])
+      return { cid: image.cid, name: image.name, url: image.url }
+    } catch (err: unknown) {
+      setError(messageOf(err))
+      return null
+    }
+  }
+
+  const detach = async () => {
+    if (detaching) return
+    setDetaching(true)
+    setError('')
+    try {
+      await openComposerWindow({
+        id: draftId.current,
+        accountId,
+        identityId,
+        to,
+        cc,
+        bcc,
+        subject,
+        body,
+        html: rich ? sanitizeComposeHTML(cidHTML(html)) : '',
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
+        attachmentPaths: files.map((f) => f.path),
+        inlineImages: rich ? usedInlineImages : [],
+        attachments: files,
+        missingAttachments: [],
+        updatedAtUnix: 0,
+      })
+      // The draft now belongs to the new window. Letting this component's
+      // unmount save would write a second copy of a never-saved draft before
+      // the other window had a chance to open it.
+      sent.current = true
+      onClose()
+    } catch (err: unknown) {
+      setError(messageOf(err))
+    } finally {
+      setDetaching(false)
+    }
+  }
+
+  const deliver = async () => {
     if (!canSend || sending) return
     setSending(true)
     setError('')
@@ -100,10 +312,20 @@ export function Composer({
         bcc,
         subject,
         text: body,
-        html: '',
-        inReplyTo: reply?.inReplyTo ?? '',
-        references: reply?.references ?? [],
+        // The editor sanitises as it goes; this is the last line before the
+        // bridge, where a draft or a future caller could otherwise bypass it.
+        html: rich ? sanitizeComposeHTML(cidHTML(html)) : '',
+        inReplyTo: draft?.inReplyTo || reply?.inReplyTo || '',
+        references: draft?.references.length
+          ? draft.references
+          : reply?.references ?? [],
+        attachmentPaths: files.map((f) => f.path),
+        inlineImages: rich ? usedInlineImages : [],
+        draftId: draftId.current,
       })
+      // Before onClose, so the autosave timer that may still be pending does
+      // not write the draft back after the backend has just deleted it.
+      sent.current = true
       onClose()
     } catch (err: unknown) {
       // The window stays open with everything in it. A send that failed and a
@@ -113,12 +335,62 @@ export function Composer({
     }
   }
 
+  const send = () => {
+    if (!canSend || sending) return
+
+    // A message that says "attached" and carries nothing is the kind of
+    // mistake the writer notices one second too late. The check looks only at
+    // what they wrote above the quote: an original that mentions its own
+    // attachment would otherwise question every answer.
+    const promisesAttachment =
+      files.length === 0 &&
+      mentionsAttachment(textBeforeQuote(body, reply?.quoted))
+
+    if (promisesAttachment) {
+      setConfirmingNoAttachment(true)
+      return
+    }
+    void deliver()
+  }
+
   return (
     <div className={`flex h-full flex-col ${SURFACE.page}`}>
       <header className={`flex items-center gap-3 border-b px-6 py-3 ${SURFACE.divider}`}>
-        <h1 className={`flex-1 text-base font-semibold tracking-tight ${TEXT.primary}`}>
+        <h1 className={`text-base font-semibold tracking-tight ${TEXT.primary}`}>
           {reply ? (reply.to === '' ? 'Forward' : 'Reply') : 'New message'}
         </h1>
+
+        {/* Quiet, and only ever after a save has actually happened. A composer
+            that claims to be saved when it is not is worse than one that says
+            nothing: it is the claim people close the window on. */}
+        <p data-testid="composer-saved" className={`flex-1 text-xs ${TEXT.muted}`}>
+          {savedAt !== null && 'Draft saved'}
+        </p>
+
+        {canDetach && (
+          <button
+            type="button"
+            data-testid="composer-detach"
+            aria-label="Open in a separate window"
+            title="Open in a separate window"
+            disabled={detaching}
+            onClick={() => void detach()}
+            className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+          >
+            <ArrowSquareOut size={ICON.size} weight={ICON.weight} aria-hidden />
+          </button>
+        )}
+
+        <button
+          type="button"
+          data-testid="composer-attach"
+          aria-label="Attach files"
+          title="Attach files"
+          onClick={() => void attach()}
+          className={`${BUTTON_GHOST} ${ICON_ONLY}`}
+        >
+          <Paperclip size={ICON.size} weight={ICON.weight} aria-hidden />
+        </button>
 
         <button
           type="button"
@@ -176,7 +448,13 @@ export function Composer({
         )}
 
         <Row label="To" htmlFor="composer-to">
-          <Line id="composer-to" ref={firstField} value={to} onChange={setTo} />
+          <RecipientField
+            id="composer-to"
+            accountId={accountId}
+            value={to}
+            onChange={setTo}
+            autoFocus={!reply}
+          />
           {!showCopies && (
             <button
               type="button"
@@ -192,10 +470,20 @@ export function Composer({
         {showCopies && (
           <>
             <Row label="Cc" htmlFor="composer-cc">
-              <Line id="composer-cc" value={cc} onChange={setCc} />
+              <RecipientField
+                id="composer-cc"
+                accountId={accountId}
+                value={cc}
+                onChange={setCc}
+              />
             </Row>
             <Row label="Bcc" htmlFor="composer-bcc">
-              <Line id="composer-bcc" value={bcc} onChange={setBcc} />
+              <RecipientField
+                id="composer-bcc"
+                accountId={accountId}
+                value={bcc}
+                onChange={setBcc}
+              />
             </Row>
           </>
         )}
@@ -205,15 +493,90 @@ export function Composer({
         </Row>
       </div>
 
-      <textarea
-        ref={bodyField}
-        data-testid="composer-body"
-        aria-label="Message"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        spellCheck
-        className={`min-h-0 flex-1 resize-none bg-transparent px-6 py-4 text-sm leading-relaxed outline-none ${TEXT.primary}`}
-      />
+      {files.length > 0 && (
+        <ul
+          data-testid="composer-attachments"
+          className={`flex flex-wrap gap-2 border-b px-6 py-2 ${SURFACE.divider}`}
+        >
+          {files.map((file) => (
+            <li
+              key={file.path}
+              className={`inline-flex items-center gap-1.5 border py-1 pl-2 pr-1 text-xs ${RADIUS} ${SURFACE.divider} ${TEXT.primary}`}
+            >
+              <Paperclip size={ICON.size} weight={ICON.weight} aria-hidden />
+              <span className="max-w-56 truncate">{file.name}</span>
+              <span className={`font-mono ${TEXT.muted}`}>{formatSize(file.size)}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${file.name}`}
+                title={`Remove ${file.name}`}
+                onClick={() => setFiles((current) => current.filter((f) => f.path !== file.path))}
+                className={`${BUTTON_GHOST} p-0.5`}
+              >
+                <X size={ICON.size} weight={ICON.weight} aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {rich ? (
+        <RichTextEditor
+          initialHTML={html}
+          onChange={(nextHTML, nextText) => {
+            setHtml(nextHTML)
+            setBody(nextText)
+          }}
+          onPlain={() => {
+            setInlineImages([])
+            setRich(false)
+          }}
+          onPickImage={embedImage}
+          autoFocus
+        />
+      ) : (
+        <>
+          <div
+            className={`flex items-center justify-end border-b px-6 py-1 ${SURFACE.divider}`}
+          >
+            <button
+              type="button"
+              data-testid="composer-format"
+              onClick={() => {
+                setHtml(textToHTML(body))
+                setRich(true)
+              }}
+              className={`${BUTTON_GHOST} text-xs`}
+            >
+              Formatted text
+            </button>
+          </div>
+          <textarea
+            ref={bodyField}
+            data-testid="composer-body"
+            aria-label="Message"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            spellCheck
+            className={`min-h-0 flex-1 resize-none bg-transparent px-6 py-4 text-sm leading-relaxed outline-none ${TEXT.primary}`}
+          />
+        </>
+      )}
+
+      {confirmingNoAttachment && (
+        <ConfirmDialog
+          title="Send without the attachment?"
+          body="Your message mentions an attachment, but no file is attached."
+          confirmLabel="Send without it"
+          cancelLabel="Keep editing"
+          tone="warn"
+          onCancel={() => setConfirmingNoAttachment(false)}
+          onConfirm={() => {
+            setConfirmingNoAttachment(false)
+            void deliver()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -148,6 +148,78 @@ export const addPasswordAccount = (
 export const addOAuthAccount = (email: string, displayName: string, provider: string) =>
   MailService.AddOAuthAccount(email, displayName, provider) as Promise<Account>
 
+/** Server settings found by DNS for an address's domain. */
+export interface DiscoveredServer {
+  imapHost: string
+  imapPort: number
+  security: string
+  smtpHost: string
+  smtpPort: number
+  /** "srv" when published, "guess" when derived from conventional names. */
+  source: string
+}
+
+/**
+ * Looks up the account's servers from DNS.
+ *
+ * Explicit, not on every keystroke: a typo should not become a DNS query, and
+ * the answer is a suggestion the person can see before using.
+ */
+export const discoverServer = (email: string) =>
+  MailService.DiscoverServer(email) as Promise<DiscoveredServer>
+
+/** A mailto: link this launch was asked to open. */
+export interface MailtoDraft {
+  to: string
+  cc: string
+  bcc: string
+  subject: string
+  body: string
+  inReplyTo: string
+}
+
+/**
+ * Takes the mailto: link the process was launched with, once.
+ *
+ * Called by the shell when it can open a composer rather than emitted at
+ * startup: an event sent before the window subscribed is lost, and a mailto
+ * handler that opens nothing is the one failure it must not have.
+ */
+export const pendingMailto = () =>
+  MailService.PendingMailto() as Promise<MailtoDraft>
+
+/**
+ * Moves a composer into its own operating-system window.
+ *
+ * The draft is handed to the backend first; the window fetches it by a
+ * one-time id. Nothing but that id travels in the URL.
+ */
+export const openComposerWindow = (draft: DraftRecord) =>
+  MailService.OpenComposerWindow({
+    ...draft,
+    attachments: draft.attachments ?? [],
+    missingAttachments: draft.missingAttachments ?? [],
+  }) as Promise<string>
+
+/** Fetches the draft a composer window was opened for, once. */
+export const takeComposerWindow = (id: string) =>
+  MailService.TakeComposerWindow(id) as Promise<DraftRecord>
+
+/** One address the composer can offer, collected from mail already on disk. */
+export interface Recipient {
+  name: string
+  addr: string
+}
+
+/**
+ * Address completion for the composer.
+ *
+ * From people who have already written to this account: contacts are M7, and
+ * an address this client has never seen is one it has no business inventing.
+ */
+export const suggestRecipients = (accountId: number, query: string, limit = 8) =>
+  MailService.SuggestRecipients(accountId, query, limit) as Promise<Recipient[]>
+
 /**
  * The body is served over HTTP, not the bridge, so this is just a URL.
  *
@@ -311,7 +383,122 @@ export interface Draft {
   html: string
   inReplyTo: string
   references: string[]
+  /**
+   * Files to attach, by path.
+   *
+   * Paths rather than contents: an eight-megabyte PDF serialised into an IPC
+   * message would block this window for long enough to be seen. The backend
+   * accepts only paths its own file dialog handed out, so this cannot be used
+   * to ask it to read something the person did not choose.
+   */
+  attachmentPaths: string[]
+  /** Images the formatted body refers to by cid:. */
+  inlineImages: InlineImage[]
+  /**
+   * The saved draft this message came from, zero when it never was one.
+   * Cleared once the message is queued.
+   */
+  draftId: number
 }
+
+/** A file chosen in the dialog, described but not read. */
+export interface OutgoingAttachment {
+  path: string
+  name: string
+  size: number
+  /** Guessed from the extension; empty when there is nothing to guess from. */
+  mimeType: string
+}
+
+/**
+ * Opens the operating system's file dialog.
+ *
+ * Resolves to an empty list when the person closes it: cancelling is an
+ * answer, not a failure.
+ */
+export const pickAttachments = () =>
+  MailService.PickAttachments() as Promise<OutgoingAttachment[]>
+
+/** One image embedded in a formatted message. */
+export interface InlineImage {
+  path: string
+  cid: string
+  name: string
+  mimeType: string
+  /** Local preview address while the image is still being composed. */
+  url: string
+}
+
+/**
+ * Opens the file dialog for one image to embed.
+ *
+ * Resolves to an empty DTO when the dialog is cancelled; the composer inserts
+ * nothing in that case.
+ */
+export const pickInlineImage = () => MailService.PickInlineImage() as Promise<InlineImage>
+
+/**
+ * A draft, on its way to or from the composer.
+ *
+ * Address lines are strings as typed, not parsed lists. A half-typed address
+ * is the normal state of a draft and would not survive a parse.
+ */
+export interface DraftRecord {
+  /** Zero for a draft that has never been saved. */
+  id: number
+  accountId: number
+  identityId: number
+  to: string
+  cc: string
+  bcc: string
+  subject: string
+  body: string
+  /** The formatted body when there is one; empty for a plain-text draft. */
+  html: string
+  inReplyTo: string
+  references: string[]
+  /** What a save carries: the files by path. */
+  attachmentPaths: string[]
+  /** Images the formatted body refers to by cid:. */
+  inlineImages: InlineImage[]
+  /**
+   * What a read of one draft carries: the same files, described, so the
+   * composer can show names and sizes without reading them.
+   *
+   * Optional because it is genuinely absent twice over — on the way in, and in
+   * the list, which does not go to disk to describe every draft's files.
+   */
+  attachments?: OutgoingAttachment[] | null
+  /**
+   * Files a reopened draft referred to that are no longer on disk. Named
+   * rather than dropped in silence — a draft that quietly comes back with one
+   * fewer attachment is a message sent without the thing it was about.
+   */
+  missingAttachments?: string[] | null
+  updatedAtUnix: number
+}
+
+/**
+ * Writes what is in the composer and resolves to the draft's id.
+ *
+ * The two describe-only fields are sent empty. One backend struct serves both
+ * directions, so the generated type asks for them on the way in as well; the
+ * save ignores them, and sending what the composer happens to hold would be
+ * sending derived data back as though it were input.
+ */
+export const saveDraft = (draft: DraftRecord) =>
+  MailService.SaveDraft({
+    ...draft,
+    attachments: [],
+    missingAttachments: [],
+  }) as Promise<number>
+
+/** An account's unfinished messages, newest first. */
+export const drafts = (accountId: number) =>
+  MailService.Drafts(accountId) as Promise<DraftRecord[]>
+
+/** Throws one away. Discarding one that is already gone is not an error. */
+export const discardDraft = (id: number) => MailService.DiscardDraft(id) as Promise<void>
 
 /** What the window is told about a message on its way. */
 export interface Queued {

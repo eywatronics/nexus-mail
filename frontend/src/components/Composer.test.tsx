@@ -1,14 +1,24 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Composer } from './Composer'
-import type { Identity } from '../lib/api'
+import type { DraftRecord, Identity, OutgoingAttachment } from '../lib/api'
 
 const identities = vi.fn()
 const sendMessage = vi.fn()
+const pickAttachments = vi.fn()
+const pickInlineImage = vi.fn()
+const openComposerWindow = vi.fn()
+const saveDraft = vi.fn()
+const suggestRecipients = vi.fn()
 
 vi.mock('../lib/api', () => ({
   identities: (accountId: number) => identities(accountId),
   sendMessage: (draft: unknown) => sendMessage(draft),
+  pickAttachments: () => pickAttachments(),
+  pickInlineImage: () => pickInlineImage(),
+  openComposerWindow: (draft: unknown) => openComposerWindow(draft),
+  saveDraft: (draft: unknown) => saveDraft(draft),
+  suggestRecipients: (...args: unknown[]) => suggestRecipients(...args),
 }))
 
 const identity = (over: Partial<Identity> = {}): Identity => ({
@@ -26,6 +36,49 @@ beforeEach(() => {
   identities.mockResolvedValue([identity()])
   sendMessage.mockReset()
   sendMessage.mockResolvedValue({ operationId: 1, recipients: 1 })
+  pickAttachments.mockReset()
+  pickAttachments.mockResolvedValue([])
+  pickInlineImage.mockReset()
+  pickInlineImage.mockResolvedValue({
+    path: '', cid: '', name: '', mimeType: '', url: '',
+  })
+  openComposerWindow.mockReset()
+  openComposerWindow.mockResolvedValue('window-1')
+  saveDraft.mockReset()
+  saveDraft.mockResolvedValue(7)
+  suggestRecipients.mockReset()
+  suggestRecipients.mockResolvedValue([])
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: vi.fn(),
+  })
+  vi.useRealTimers()
+})
+
+const file = (over: Partial<OutgoingAttachment> = {}): OutgoingAttachment => ({
+  path: '/tmp/rapor.pdf',
+  name: 'rapor.pdf',
+  size: 2048,
+  mimeType: 'application/pdf',
+  ...over,
+})
+
+const record = (over: Partial<DraftRecord> = {}): DraftRecord => ({
+  id: 7,
+  accountId: 1,
+  identityId: 0,
+  to: 'ali@example.com, bir yar',
+  cc: '',
+  bcc: '',
+  subject: 'Yarim konu',
+  body: 'burada kalmis',
+  html: '',
+  inReplyTo: '',
+  references: [],
+  attachmentPaths: [],
+  inlineImages: [],
+  updatedAtUnix: 1_700_000_000,
+  ...over,
 })
 
 function open(props: Partial<Parameters<typeof Composer>[0]> = {}) {
@@ -76,6 +129,41 @@ describe('writing a message', () => {
     )
   })
 
+  it('moves itself into a separate window with what is on screen', async () => {
+    const { getByTestId, onClose } = open({ canDetach: true })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-subject'), { target: { value: 'Konu' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'gövde' } })
+    fireEvent.click(getByTestId('composer-detach'))
+
+    await waitFor(() =>
+      expect(openComposerWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: 1,
+          to: 'r@example.com',
+          subject: 'Konu',
+          body: 'gövde',
+        }),
+      ),
+    )
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('says why it could not move instead of losing the draft', async () => {
+    openComposerWindow.mockRejectedValueOnce(new Error('no window system'))
+    const { getByTestId, onClose } = open({ canDetach: true })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-detach'))
+
+    await waitFor(() =>
+      expect(getByTestId('composer-error').textContent).toContain('no window system'),
+    )
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('closes once the message is queued', async () => {
     const { getByTestId, onClose } = open()
     await waitFor(() => expect(identities).toHaveBeenCalled())
@@ -84,6 +172,148 @@ describe('writing a message', () => {
     fireEvent.click(getByTestId('composer-send'))
 
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+})
+
+describe('formatted text', () => {
+  it('switches to the rich editor and back', async () => {
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), {
+      target: { value: 'bir\n\niki' },
+    })
+    fireEvent.click(getByTestId('composer-format'))
+
+    expect(getByTestId('rich-editor').innerHTML).toBe('<p>bir</p><p>iki</p>')
+    expect(queryByTestId('composer-body')).toBeNull()
+
+    fireEvent.click(getByTestId('composer-format'))
+
+    expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe(
+      'bir\n\niki',
+    )
+  })
+
+  it('sends HTML and its plain text alternative', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-format'))
+
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = '<p>kalın <b>metin</b></p>'
+    fireEvent.input(editor)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: '<p>kalın <b>metin</b></p>',
+          text: 'kalın metin',
+        }),
+      ),
+    )
+  })
+
+  it('saves the formatting with the draft', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-format'))
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = '<p><b>kalın</b></p>'
+    fireEvent.input(editor)
+
+    await vi.advanceTimersByTimeAsync(2100)
+
+    expect(saveDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: 'kalın', html: '<p><b>kalın</b></p>' }),
+    )
+  })
+
+  it('reopens a formatted draft in the editor', async () => {
+    const { getByTestId, queryByTestId } = open({
+      draft: record({ body: 'kalın', html: '<p><b>kalın</b></p>' }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByTestId('rich-editor').innerHTML).toBe('<p><b>kalın</b></p>')
+    expect(queryByTestId('composer-body')).toBeNull()
+  })
+
+  it('reopens an embedded image as a preview', async () => {
+    const image = {
+      path: '/tmp/grafik.png',
+      cid: 'nx-1@nexus-mail',
+      name: 'grafik.png',
+      mimeType: 'image/png',
+      url: '/compose-image/nx-1@nexus-mail',
+    }
+    const { getByTestId } = open({
+      draft: record({
+        html: `<p><img src="cid:${image.cid}" data-cid="${image.cid}" alt="grafik.png"></p>`,
+        inlineImages: [image],
+      }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    const img = getByTestId('rich-editor').querySelector('img')
+    expect(img?.getAttribute('src')).toBe(image.url)
+    expect(img?.getAttribute('data-cid')).toBe(image.cid)
+  })
+
+  // A plain-text writer gets a plain-text message: no HTML part with markup
+  // they did not ask for.
+  it('sends no HTML from plain mode', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'düz metin' } })
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ html: '', text: 'düz metin' }),
+      ),
+    )
+  })
+
+  it('sends an embedded image as a cid part', async () => {
+    const image = {
+      path: '/tmp/grafik.png',
+      cid: 'nx-1@nexus-mail',
+      name: 'grafik.png',
+      mimeType: 'image/png',
+      url: '/compose-image/nx-1@nexus-mail',
+    }
+    pickInlineImage.mockResolvedValue(image)
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-format'))
+    fireEvent.click(getByTestId('rich-image'))
+    await waitFor(() => expect(pickInlineImage).toHaveBeenCalled())
+
+    // The editor's own insertion is covered where execCommand is mocked; here
+    // the line it would produce is what matters.
+    const editor = getByTestId('rich-editor')
+    editor.innerHTML = `<p><img src="${image.url}" alt="${image.name}" data-cid="${image.cid}"></p>`
+    fireEvent.input(editor)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining(`cid:${image.cid}`),
+          inlineImages: [expect.objectContaining({ path: image.path, cid: image.cid })],
+        }),
+      ),
+    )
   })
 })
 
@@ -110,6 +340,23 @@ describe('addressing', () => {
     fireEvent.change(getByTestId('composer-bcc'), { target: { value: 'herkes@example.com' } })
 
     expect((getByTestId('composer-send') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // The completion source is the account's own mail, not a network service:
+  // people who have written before are the address book this build has.
+  it('completes an address from someone who wrote before', async () => {
+    suggestRecipients.mockResolvedValue([{ name: 'Alice', addr: 'alice@example.com' }])
+    const { getByTestId, getByText, findByRole } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    const to = getByTestId('composer-to')
+    fireEvent.focus(to)
+    fireEvent.change(to, { target: { value: 'ali' } })
+    fireEvent.click(await findByRole('option'))
+
+    await waitFor(() => expect(suggestRecipients).toHaveBeenCalledWith(1, 'ali', 8))
+    expect(getByText('Alice')).toBeTruthy()
+    expect((to as HTMLInputElement).value).toBe('')
   })
 
   // Most messages have neither, and four empty lines is four lines of nothing
@@ -284,5 +531,311 @@ describe('quoting', () => {
     await waitFor(() => expect(identities).toHaveBeenCalled())
 
     expect(getByText('Forward')).toBeTruthy()
+  })
+})
+
+describe('attaching files', () => {
+  // Paths, not bytes. An eight-megabyte PDF serialised into an IPC message
+  // would block this window for long enough to be seen.
+  it('sends the paths of what was chosen', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ attachmentPaths: ['/tmp/rapor.pdf'] }),
+      ),
+    )
+  })
+
+  it('shows nothing until something is attached', async () => {
+    const { queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(queryByTestId('composer-attachments')).toBeNull()
+  })
+
+  // Choosing the same file twice is how somebody ends up mailing two copies of
+  // one attachment.
+  it('does not attach the same file twice', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findAllByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findAllByText('rapor.pdf')
+    fireEvent.click(getByTestId('composer-attach'))
+
+    await waitFor(async () => expect(await findAllByText('rapor.pdf')).toHaveLength(1))
+  })
+
+  it('can take a file back off', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, getByLabelText, queryByTestId, findByText } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+
+    fireEvent.click(getByLabelText('Remove rapor.pdf'))
+
+    await waitFor(() => expect(queryByTestId('composer-attachments')).toBeNull())
+  })
+
+  // Cancelling is an answer, not a failure, and an error message every time
+  // somebody changes their mind would make the button unusable.
+  it('says nothing when the dialog is closed', async () => {
+    pickAttachments.mockResolvedValue([])
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+
+    await waitFor(() => expect(pickAttachments).toHaveBeenCalled())
+    expect(queryByTestId('composer-error')).toBeNull()
+    expect(queryByTestId('composer-attachments')).toBeNull()
+  })
+
+  // A file that cannot be read is worth saying out loud: the alternative is a
+  // paperclip button that sometimes does nothing.
+  it('reports a dialog that failed', async () => {
+    pickAttachments.mockRejectedValue(new Error('is a folder'))
+    const { getByTestId, findByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+
+    expect((await findByTestId('composer-error')).textContent).toContain('is a folder')
+  })
+})
+
+describe('the attachment reminder', () => {
+  const write = (getByTestId: (id: string) => HTMLElement) => {
+    fireEvent.change(getByTestId('composer-to'), { target: { value: 'r@example.com' } })
+    fireEvent.change(getByTestId('composer-body'), {
+      target: { value: 'Please find the attached report.' },
+    })
+  }
+
+  it('asks before sending a message that promises a file and carries none', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+
+    expect(getByTestId('confirm-dialog')).toBeTruthy()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('sends once the writer says the message is complete', async () => {
+    const { getByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+    fireEvent.click(getByTestId('confirm-accept'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+  })
+
+  it('goes back to the message when the writer keeps editing', async () => {
+    const { getByTestId, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+    fireEvent.click(getByTestId('confirm-cancel'))
+
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  // With a file already attached there is nothing to warn about, however the
+  // body reads.
+  it('says nothing when something is attached', async () => {
+    pickAttachments.mockResolvedValue([file()])
+    const { getByTestId, findByText, queryByTestId } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-attach'))
+    await findByText('rapor.pdf')
+    write(getByTestId)
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+  })
+
+  // A reply carries the original below the cursor. If the original mentions
+  // its own attachment, every answer to it would otherwise ask the question.
+  it('does not read the quoted original as a promise', async () => {
+    const { getByTestId, queryByTestId } = open({
+      reply: {
+        subject: 'Re: rapor',
+        to: 'r@example.com',
+        cc: '',
+        inReplyTo: '<x@example.com>',
+        references: ['<x@example.com>'],
+        quoted: 'Please see the attached file.',
+      },
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled())
+    expect(queryByTestId('confirm-dialog')).toBeNull()
+  })
+})
+
+describe('not losing what was typed', () => {
+  // Two seconds of nothing counts as having stopped typing.
+  it('saves after a pause, not on every keystroke', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'b' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'bi' } })
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'bir' } })
+    expect(saveDraft).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenCalledTimes(1)
+    expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ body: 'bir' }))
+  })
+
+  // One row, not one per pause. The id has to come back into the next save.
+  it('writes into the same draft on the second pause', async () => {
+    vi.useFakeTimers()
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'ilk' } })
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ id: 0 }))
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'ikinci' } })
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ id: 7 }))
+  })
+
+  // Opening a composer, thinking better of it and closing it should leave
+  // nothing behind. A Drafts folder full of blank messages is one nobody reads.
+  it('does not save an empty composer', async () => {
+    vi.useFakeTimers()
+    open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(saveDraft).not.toHaveBeenCalled()
+  })
+
+  // The pause is not enough on its own: typing a sentence and closing the
+  // window straight away would clear the pending timer and lose it, which is
+  // the exact thing this mechanism exists to prevent.
+  it('saves on the way out, even before the pause is up', async () => {
+    const { getByTestId, unmount } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'aceleyle' } })
+    unmount()
+
+    await waitFor(() =>
+      expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ body: 'aceleyle' })),
+    )
+  })
+
+  // And a composer that was never typed into leaves nothing behind on the way
+  // out either.
+  it('saves nothing on the way out of an empty composer', async () => {
+    const { unmount } = open()
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    unmount()
+
+    expect(saveDraft).not.toHaveBeenCalled()
+  })
+
+  // The address line reopens as a finished pill plus the unfinished tail, not
+  // as one long string: the pills are the same line the backend will receive,
+  // only laid out the way the writer left it.
+  it('comes back with everything as it was typed', async () => {
+    const { getByTestId, getByText } = open({ draft: record() })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByText('ali@example.com')).toBeTruthy()
+    expect((getByTestId('composer-to') as HTMLInputElement).value).toBe('bir yar')
+    expect((getByTestId('composer-subject') as HTMLInputElement).value).toBe('Yarim konu')
+    expect((getByTestId('composer-body') as HTMLTextAreaElement).value).toBe('burada kalmis')
+  })
+
+  // A draft opened from a mailto: link, or one picked up from the list, still
+  // knows what it answers. Losing the headers would start a new thread.
+  it('sends the threading headers a draft carried', async () => {
+    const { getByTestId } = open({
+      draft: record({
+        inReplyTo: '<parent@example.com>',
+        references: ['<root@example.com>', '<parent@example.com>'],
+      }),
+    })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inReplyTo: '<parent@example.com>',
+          references: ['<root@example.com>', '<parent@example.com>'],
+        }),
+      ),
+    )
+  })
+
+  // A blind copy the writer cannot see is a message going somewhere they did
+  // not check, which is as true on reopening as it is on reply-all.
+  it('shows the copy lines when the draft has them', async () => {
+    const { getByTestId } = open({ draft: record({ bcc: 'gizli@example.com' }) })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect((getByTestId('composer-bcc') as HTMLInputElement).value).toBe('gizli@example.com')
+  })
+
+  it('tells the backend which draft the sent message came from', async () => {
+    const { getByTestId } = open({ draft: record() })
+    await waitFor(() => expect(identities).toHaveBeenCalled())
+
+    fireEvent.click(getByTestId('composer-send'))
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ draftId: 7 })),
+    )
+  })
+
+  // A composer that claims to be saved when it is not is worse than one that
+  // says nothing: that claim is what people close the window on.
+  it('says nothing about saving until a save has happened', async () => {
+    vi.useFakeTimers()
+    saveDraft.mockRejectedValue(new Error('disk full'))
+    const { getByTestId } = open()
+    await vi.waitFor(() => expect(identities).toHaveBeenCalled())
+
+    expect(getByTestId('composer-saved').textContent).toBe('')
+
+    fireEvent.change(getByTestId('composer-body'), { target: { value: 'metin' } })
+    await vi.advanceTimersByTimeAsync(2100)
+
+    expect(getByTestId('composer-saved').textContent).toBe('')
+    // And it is not shouted about either: the person is mid-sentence.
+    expect(getByTestId('composer-body')).toBeTruthy()
   })
 })

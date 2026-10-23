@@ -167,23 +167,25 @@ How the roadmap was arrived at, why each feature is in scope, and what was
 
 | Provider | Authentication | Note |
 |---|---|---|
-| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Needs your own Entra app registration |
-| Gmail / Google Workspace | OAuth 2.0 (XOAUTH2) | Needs your own Google Cloud client ID |
+| Microsoft 365 / Outlook.com | OAuth 2.0 (XOAUTH2) | Needs your own Entra app registration; app passwords no longer work for IMAP |
+| Gmail / Google Workspace | OAuth 2.0 or app password | App password needs 2-Step Verification and no client ID |
 | On-premises Exchange | Password | Over IMAP; 143/STARTTLS or 993/TLS |
 | Generic IMAP | Password or app password | No registration needed |
 
-On-premises Exchange connects over IMAP: choose *Other IMAP server*, use the
-internal host name your IT gave you, and pick **STARTTLS** — the Exchange IMAP4
-service is published on 143 by default and will not accept a password until the
-connection has been upgraded. No registration and no client ID. If the
+On-premises Exchange connects over IMAP: choose **Password or app password**,
+use the internal host name your IT gave you, and pick **STARTTLS** — the Exchange
+IMAP4 service is published on 143 by default and will not accept a password until
+the connection has been upgraded. No registration and no client ID. If the
 organisation has disabled basic authentication you will need NTLM, which does
 not exist yet; in that case the error names the mechanisms the server offers.
 
-Microsoft and Google need an OAuth client ID of your own. That is a consequence
-of being open source and it is genuinely an advantage: access to your mailbox
-stays under your control rather than routed through somebody else's app
-registration. The setup takes a few minutes and is described in
-[docs/oauth-setup.md](docs/oauth-setup.md).
+Microsoft and Google sign-in need an OAuth client ID of your own. That is a
+consequence of being open source and it is genuinely an advantage: access to
+your mailbox stays under your control rather than routed through somebody
+else's app registration. Gmail also accepts an app password, which skips the
+client ID entirely; Microsoft stopped accepting passwords for IMAP, so its
+registration remains mandatory. The setup takes a few minutes and is described
+in [docs/oauth-setup.md](docs/oauth-setup.md).
 
 ## Architecture
 

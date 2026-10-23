@@ -7,6 +7,7 @@ import { Layout } from './components/Layout'
 import { MessageList } from './components/MessageList'
 import { MessageView } from './components/MessageView'
 import { ChangeFailureNotice } from './components/ChangeFailureNotice'
+import { DraftStrip } from './components/DraftStrip'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { SearchBox } from './components/SearchBox'
 import { UndoNotice } from './components/UndoNotice'
@@ -18,7 +19,9 @@ import {
   listMessages,
   openFolder,
   pendingChanges,
+  pendingMailto,
   searchMessages,
+  type MailtoDraft,
 } from './lib/api'
 import { EVENTS, type SyncEventPayload } from './lib/events'
 import { useMessageShortcuts } from './lib/keyboard'
@@ -58,6 +61,51 @@ export default function App() {
   const searching = useMailStore((s) => s.searching)
   const startSearch = useMailStore((s) => s.startSearch)
   const setSearchResults = useMailStore((s) => s.setSearchResults)
+
+  // A mailto: link this launch carried. Taken once, then opened when there is
+  // an account to send from; waiting for the account is the difference between
+  // a first-run link being remembered and being silently dropped.
+  const [mailto, setMailto] = useState<MailtoDraft | null>(null)
+  useEffect(() => {
+    pendingMailto()
+      .then((draft) => {
+        if (
+          draft.to !== '' || draft.cc !== '' || draft.bcc !== '' ||
+          draft.subject !== '' || draft.body !== ''
+        ) {
+          setMailto(draft)
+        }
+      })
+      .catch(() => {
+        // A malformed link is not a reason to fail to draw the window. The
+        // backend has already rejected it; nothing was opened.
+      })
+  }, [])
+
+  useEffect(() => {
+    if (mailto === null || accounts.length === 0 || adding || composing) return
+    const account = accounts[0]
+    openComposer({
+      accountId: account.id,
+      draft: {
+        id: 0,
+        accountId: account.id,
+        identityId: 0,
+        to: mailto.to,
+        cc: mailto.cc,
+        bcc: mailto.bcc,
+        subject: mailto.subject,
+        body: mailto.body,
+        html: '',
+        inReplyTo: mailto.inReplyTo,
+        references: [],
+        attachmentPaths: [],
+        inlineImages: [],
+        updatedAtUnix: 0,
+      },
+    })
+    setMailto(null)
+  }, [mailto, accounts, adding, composing, openComposer])
 
   useMessageShortcuts()
   // Applied from the shell rather than from the theme control, which can be
@@ -170,13 +218,28 @@ export default function App() {
 
   if (adding || accounts.length === 0) {
     return (
-      <AddAccount
-        onDone={() => {
-          setAdding(false)
-          refreshAccounts().catch(() => {})
-        }}
-        onCancel={accounts.length > 0 ? () => setAdding(false) : undefined}
-      />
+      <>
+        {/* Kept mounted while settings is open: the form may already hold an
+            address and a server name, and a round trip through settings is not
+            a reason to make somebody type them again. Hidden rather than
+            covered so its fields leave the tab order with it. */}
+        <div className={showingSettings ? 'hidden' : 'h-full'}>
+          <AddAccount
+            onDone={() => {
+              setAdding(false)
+              refreshAccounts().catch(() => {})
+            }}
+            onCancel={accounts.length > 0 ? () => setAdding(false) : undefined}
+            onOpenSettings={() => setShowingSettings(true)}
+          />
+        </div>
+        {showingSettings && (
+          <Settings
+            onClose={() => setShowingSettings(false)}
+            backLabel="Back to account setup"
+          />
+        )}
+      </>
     )
   }
 
@@ -198,7 +261,9 @@ export default function App() {
     return (
       <Composer
         accountId={composing.accountId}
+        draft={composing.draft}
         reply={composing.reply}
+        canDetach
         onClose={closeComposer}
       />
     )
@@ -262,6 +327,7 @@ export default function App() {
         <div className="flex h-full flex-col">
           <ChangeFailureNotice />
           <SearchBox />
+          <DraftStrip />
           <div className="min-h-0 flex-1">
             <MessageList onLoadMore={loadMore} />
           </div>

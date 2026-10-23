@@ -169,6 +169,31 @@ func TestAddPasswordAccountKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 	}
 }
 
+func TestAddPasswordAccountCreatesTheIdentityItSendsAs(t *testing.T) {
+	svc, _, _ := newTestService(t, stubBackend{})
+
+	acct, err := svc.AddPasswordAccount("u@example.com", "Test User",
+		"imap.example.com", 993, "tls", "smtp.example.com", 587, "pw")
+	if err != nil {
+		t.Fatalf("AddPasswordAccount() error: %v", err)
+	}
+
+	identities, err := svc.Identities(acct.ID)
+	if err != nil {
+		t.Fatalf("Identities() error: %v", err)
+	}
+	if len(identities) != 1 {
+		t.Fatalf("got %d identities, want the account's first one", len(identities))
+	}
+	got := identities[0]
+	if got.Email != "u@example.com" || got.DisplayName != "Test User" {
+		t.Errorf("identity = %+v", got)
+	}
+	if !got.IsDefault {
+		t.Error("the first identity is not the default; a composer would have nothing to send as")
+	}
+}
+
 func TestAddPasswordAccountUsesAPresetWhenTheHostIsBlank(t *testing.T) {
 	svc, _, _ := newTestService(t, stubBackend{})
 

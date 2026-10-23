@@ -18,8 +18,9 @@ bir taşın üzerine bir sonraki başlamaz.
 | **M3** | Durum yazma: işlem kuyruğu (okundu, yıldız, taşı, sil), çevrimdışı dayanıklı | Bitti |
 | **M4** | Tepsi, bildirimler, arka plan yaşam döngüsü | Bitti |
 | **M5** | Okuma deneyimini tamamla | Bitti |
-| **M6** | Gönderme | Sürüyor |
+| **M6** | Gönderme | Bitti |
 | **M7** | Kişiler | Yeni |
+| **M7b** | GNOME Online Accounts: Linux'ta hesap eklemeden hesap eklemek | Yeni |
 | **M8** | Organizasyon, arama olgunluğu, otomasyon | Yeni |
 | **M9** | Uçtan uca şifreleme + takvim | Yeni |
 | **M10** | Microsoft Graph / Exchange | Yeni |
@@ -30,6 +31,25 @@ bir taşın üzerine bir sonraki başlamaz.
 
 Thunderbird 25 yıllık bir ürün. Bu liste çok yıllık bir yük; değeri
 sıralamada ve neyin **bilerek dışarıda** bırakıldığında.
+
+Neyin bilerek dışarıda bırakıldığı — ortak posta kutusu, şirket içi Exchange,
+kurumsal masaüstü — ve bunun bedeli `docs/design/konumlandirma.md` içinde.
+Aşağıdaki sıralama değişiklikleri oradan geliyor.
+
+### Sıralaması değişenler
+
+Dışarıdan gelen bir rakip değerlendirmesi, bu yazılımı hedef kitlesi için bile
+kullanılamaz kılan üç şeyin M14'e (ürünleşme) yığılmış olduğunu gösterdi.
+Üçü de teknik değil ama ikisinin bir bölümü koddan çözülebiliyor:
+
+| İş | Neredeydi | Nerede | Neden taşındı |
+|---|---|---|---|
+| Uygulama parolası yolunun anlatılması | — | M6 sonu (bitti) | Bugün yazılabilir, kimseye bağlı değil, BYOK duvarını en ucuz aşan yol |
+| GNOME Online Accounts (`internal/auth/goa`) | — | M7 yanı | Linux/GNOME'da duvarı tamamen kaldırıyor; saf Go kaldığı ölçüldü |
+| İçerik taşımayan protokol günlüğü | M14 | M8 | Hata raporu alamadan uç durum yamalanamaz |
+| `.ics` davetinin okunabilir görünmesi | M9 | M8 | Tam CalDAV pahalı; davetin *ne olduğunu* göstermek değil |
+| İmzalı `.rpm`/`.deb` ve depo | M14 | M14'te ama erken | Linux paket imzası kimseden onay istemiyor |
+| Doğrulanmış OAuth istemcisi, Windows/macOS kod imzası | M14 | M14 | Tek kod dışı iş; tüzel kişilik ve para gerektiriyor |
 
 ---
 
@@ -54,6 +74,24 @@ Varsayılan posta istemcisi olarak kaydolmak M4'ün son maddesiydi. Bugün
 yapılsaydı **zararlı** olurdu: gönderme M6'da, yani bir `mailto:` bağlantısına
 tıklayan kişi Nexus Mail'i açar ve hiçbir şey olmaz. Outlook'u varsayılan
 bırakmaktan kötü bir sonuç.
+
+### `mailto:` işleyicisi
+
+Uygulama açılış argümanlarında bir `mailto:` arıyor ve RFC 6068'in alıcı,
+cc, bcc, konu, gövde ve `in-reply-to` alanlarını ayrıştırıyor. Parser
+`internal/mailto` içinde; URL ve gövde boyutu sınırlı, başlık alanlarında satır
+sonu reddediliyor, adres listeleri `net/mail` ile doğrulanıyor. Gövdedeki satır
+sonu serbest, çünkü paragraf gerçek bir satır sonudur.
+
+Pencere hazır olduğunda bağlantıyı **bir kez** `PendingMailto` ile alıyor.
+Hesap yoksa besteci açılmıyor; hesap eklendiğinde ilk hesapla açılıyor. Böylece
+ilk kurulumda gelen bir bağlantı sessizce kaybolmuyor.
+
+**İşletim sistemi kaydı bu turda değil.** Windows 10'dan beri bir uygulama
+kendini varsayılan yapamıyor: aday olarak kaydolup kullanıcıyı Ayarlar'a
+götürmek gerekiyor. Linux'ta `.desktop` içindeki `MimeType=x-scheme-handler/mailto`
+ve `xdg-mime`, macOS'ta `Info.plist` URL şeması istiyor. Bunlar paketleme işi;
+kod tarafı artık gelen bağlantıyı besteciye bağlıyor.
 
 Bir de işin Windows tarafı sanıldığı gibi değil: Windows 10'dan beri bir
 uygulama kendini programatik olarak varsayılan **yapamıyor**. Yapılabilecek
@@ -292,24 +330,58 @@ Salt okunur olmaktan çıkmak. Tek en büyük boşluk.
 - ~~Giden mesajı kurma (`internal/mailmime`)~~ — **bitti**: yapı, başlıklar,
   ekler, quoted-printable
 - ~~Hesap başına çoklu kimlik~~ — **bitti** (migration 004, `identities`)
-- **Varsayılan posta istemcisi (`mailto:`)** — M4'ten taşındı; compose penceresi
-  olmadan kaydolmak, tıklayana hiçbir şey yapmayan bir uygulama vaat etmek olurdu
+- ~~**Varsayılan posta istemcisi (`mailto:`)**~~ — kod tarafı bitti: açılış
+  argümanı ayrıştırılıp besteciye bağlanıyor; işletim sistemi kaydı paketleme
 - ~~İmzalar (kimlik başına metin/HTML)~~ — **bitti**; dosyadan imza yok
 - ~~`SendMessage` servisi~~ — **bitti**: adres ayrıştırma, imza, kur, kuyruğa al
 - ~~Compose ekranı~~ — **bitti** (düz metin)
 - ~~Yanıtla / tümünü yanıtla / ilet~~ — **bitti**; yönlendir (redirect) yok
-- Ayrı işletim sistemi penceresi — bugün ana pencerede tam ekran
-- Zengin metin editörü (`contenteditable`) ve düz metin kipi
+- ~~Ayrı işletim sistemi penceresi~~ — **bitti**: besteci *Open in a separate
+  window* ile kendi penceresine taşınıyor; varsayılan hâlâ ana pencere
+- ~~Zengin metin editörü (`contenteditable`) ve düz metin kipi~~ — **bitti**:
+  biçimli yazı HTML olarak saklanıyor, düz metin varsayılan kalıyor
 - ~~Alıntılama~~ — **bitti**; yanıt konumu seçeneği yok, üstten yazılıyor
-- Alıcı "pill" arayüzü + otomatik tamamlama (toplanan adreslerden başlar)
-- Ek ekleme, gömülü resim (`cid:`), **ek hatırlatıcı**
-- Taslak otomatik kaydetme
+- ~~Alıcı "pill" arayüzü + otomatik tamamlama~~ — **bitti**: öneriler bu
+  hesaba yazmış insanlardan, yerel veritabanından
+- ~~Ek ekleme~~ — **bitti**
+- ~~Gömülü resim (`cid:`)~~ — **bitti**: editörde önizleme, gönderimde
+  `multipart/related` ve `Content-ID`
+- ~~Ek hatırlatıcı~~ — **bitti**: gövde ek sözü verip dosya taşımıyorsa
+  göndermeden önce bir kez soruluyor
+- ~~Taslak otomatik kaydetme~~ — **bitti**
 - ~~**Outbox**~~ — **bitti**: ham MIME diske, kuyrukta referans, SMTP ile
   boşaltma, kalıcı/geçici hata ayrımı
 - ~~Fcc — gönderilen kopyayı Gönderilenler'e yazma~~ — **bitti**; UIDPLUS yoksa
   UID bilinmiyor ve bir sonraki senkron buluyor
-- Otomatik yapılandırma (ISPDB, DNS MX/SRV, tahmin) — hesap eklemeyi üç adımdan bire indirir
-- `mailto:` işleyicisi
+- ~~Otomatik yapılandırma (DNS SRV/MX, tahmin)~~ — **bitti**: hesap
+  ekranındaki *Find settings* IMAP ve SMTP'yi dolduruyor
+- ~~Uygulama parolası yolunun anlatılması~~ — **bitti**: Gmail'de OAuth
+  ekranından parola formuna tek adımda geçiş; Microsoft adresleri parolanın
+  kapandığını söyleyip girişe yönlendiriliyor
+- ~~`mailto:` işleyicisi~~ — **bitti** (açılış argümanı; OS kaydı paketleme)
+
+### Uygulama parolası: Gmail'de kısayol, Microsoft'ta kapalı kapı
+
+Gmail'in OAuth yolu kendi Cloud projesini istiyor. Bunu kurmak istemeyen
+okuyucu için hesap ekleme ekranında tek adımlık bir çıkış var: *Gmail* modunda
+**Use an app password**, adresi koruyup parola formuna geçiyor, sunucuyu
+(`imap.gmail.com`, 993) dolduruyor ve iki adımlı doğrulama ile uygulama
+parolası sayfalarına bağlantı veriyor.
+
+Bu, konumlandırma belgesindeki "Google ve Microsoft" ifadesini düzeltiyor.
+Microsoft'ta uygulama parolası IMAP için 2024'te kapandı; Outlook.com artık
+kabul etmiyor, Microsoft 365'te temel kimlik doğrulama zaten yok. Ekran bir
+Outlook adresi görürse parolanın çalışmayacağını söylüyor ve Microsoft
+girişine geri gönderiyor. O giriş hâlâ kendi Entra kaydını istiyor, yani duvar
+kapanmadı; yalan bir kısayol göstermemek bu turun kazancı.
+
+Kipin adı da değişti: *Other IMAP server* yerine **Password or app password**.
+Gmail kullanıcısı tam da "diğer" olmadığı için o seçeneği hiç açmıyordu.
+
+iCloud ve Yahoo da kendi uygulama parolalarını istiyor; ikisi için kısa
+yönlendirme aynı panelde. Kurumsal Exchange adreslerine ise hiçbir şey
+söylenmiyor: orada doğru cevap etki alanı parolası ve gereksiz bir uyarı formu
+yanlış yöne çekerdi.
 
 ### Outbox neden motoru değiştiriyor
 
@@ -365,12 +437,210 @@ Okuma panelinde ayrı bir "Reply-To" satırı yok: liste DTO'su `To`/`Cc`
 taşımıyor ve satır başına taşıması için bir sebep de yok. Okuyucu adresi
 yanıtı açtığında To satırında görüyor, ki karar vereceği an orası.
 
-### Composer neden önce düz metin
+### Taslaklar
 
-Zengin editör ve alıcı "pill" arayüzü listede duruyor ve yapılacak. Ama doğru
-mesaj gönderen bir `textarea`, bozuk mesaj gönderen yarım bir editörden iyi:
-arka uç zaten HTML kabul ediyor, dolayısıyla editör eklendiğinde değişecek olan
-tek şey `html` alanının dolması.
+Şimdiye kadar composer, içindekinin **tek kopyasını** tutuyordu. Pencereyi
+kapatmak ya da bir çökme mesajı da götürüyordu — bir mail istemcisinin
+yapabileceği en kötü şey, çünkü içindeki tek şey kullanıcının kendi yazdığı ve
+başka hiçbir yerden kurtarılamayacak olan şey.
+
+Yazma duraklamasında (2 sn) yerel `drafts` tablosuna yazılıyor. Her tuş vuruşu
+bir IMAP APPEND olamaz, ve yalnızca çevrimiçiyken taslak kaydedebilen bir
+istemci trende yazılan mesajı kaybeder — ki uzun mesajlar tam olarak orada
+yazılır. **Sunucunun Taslaklar kutusuna yüklemek bir sonraki adım** ve bu
+tablodan tek ihtiyacı, son yüklemenin ürettiği UID'yi hatırlayacak bir kolon.
+
+**Adres satırları yazıldığı gibi saklanıyor**, ayrıştırılmadan. Ayrıştırma tek
+yerde; ayrıştırılıp yeniden kurulmuş bir taslak yazılandan farklı geri gelirdi
+ve yarım yazılmış bir adres hiç hayatta kalmazdı — yarım yazılmış olmak ise
+taslağın normal hâli.
+
+**Nerede göründüğü.** Taslak, Taslaklar klasörüne ait; başka adlı ikinci bir
+yer, kimsenin hangisinde olduğunu bilemeyeceği ikinci bir Taslaklar olurdu. Ama
+bunlar henüz sunucuya ulaşmadı: UID'leri, bayrakları ve klasörün sıralamasında
+bir yerleri yok. Listeye satır olarak koymak, okuyucunun seçebildiği ama hiçbir
+şey yapamadığı bir satır demek olurdu. Şerit bunun dürüst biçimi: aynı klasör,
+gözle görülür biçimde henüz ona dahil değil. Yükleme geldiğinde alttaki listede
+belirecekler ve şeridin gösterecek bir şeyi kalmayacak.
+
+**Ekler ve izin listesi.** Taslak yeniden açıldığında ek yollarının izin
+listesine geri alınması listede bir delik değil, listenin amacı: bu yollar
+uygulamanın kendi veritabanından geliyor ve taslak yazılırken dosya
+diyaloğunda seçilmişlerdi. Listenin dışarıda tuttuğu şey pencerenin uydurduğu
+bir yol, ve bir taslak satırı pencere değil. Aradan silinmiş bir dosya taslağı
+açılamaz yapmıyor — içindeki kelimeler dosyadan değerli — ama adı söyleniyor;
+sessizce bir eksik dönen bir taslak, hakkında olduğu şey olmadan gönderilen bir
+mesajdır.
+
+Boş composer kaydedilmiyor: açıp vazgeçip kapatmak arkada bir şey bırakmamalı.
+
+### OAuth hesapları artık gönderebiliyor
+
+Bu eksik bir özellik değil, **bozuk bir yoldu**: Gmail veya Outlook hesabı
+eklenebiliyor, mail okunabiliyordu, ama gönderme açıkça "desteklenmiyor" diye
+hata veriyordu.
+
+Sebep mimari bir asimetriydi. `imapx.Dial` bir `auth.CredentialProvider`
+alıyordu — üç kimlik yolunu tek bir dikişte toplayan, IMAP'in Gmail mi Exchange
+mi konuştuğunu asla öğrenmemesini sağlayan arayüz. `smtpx.Dial` ise ham bir
+parola alıyordu, dolayısıyla token'la giren bir hesabın gönderecek hiçbir şeyi
+yoktu. `XOAUTH2` istemcisi `internal/auth` içinde zaten duruyordu.
+
+İki değişiklik: `smtpx.Dial` artık aynı arayüzü alıyor, ve hesabı sağlayıcıya
+çeviren `switch` tek bir `providerFor` fonksiyonunda. İki kopya olması, bir
+hesabın okuyup gönderememesinin sebebiydi.
+
+Mekanizma seçimi yalnızca parola varken sunucunun kararı: aynı parola PLAIN ya
+da LOGIN olarak sunulabilir, hangisinin açık olduğuna sunucu karar verir.
+Basılmış bir token'ın böyle bir serbestliği yok — yalnızca XOAUTH2 olarak
+sunulabilir, seçilecek bir şey yok.
+
+**Parola, taşıyabilecek bir mekanizma bulunmadan anahtarlıktan çıkmıyor.**
+Önce okumak, hiçbir zaman kabul etmeyecek bir sunucuyla konuşmak için parolayı
+bu sürece almak demekti.
+
+Sahte sunucu XOAUTH2'yi gerçekten çözüyor — `user=...auth=Bearer
+...` biçimi kontrol ediliyor. Baştan kabul etseydi, yanlış biçim
+gönderen bir istemci bu testi geçip Gmail'de patlardı.
+
+### Ek dosyalar
+
+`mailmime` ekleri baştan beri kurabiliyordu ve hiçbir yerden çağrılmıyordu.
+Şimdi çağrılıyor.
+
+**Pencereye bayt değil yol geçiyor.** Sekiz megabaytlık bir PDF'i IPC mesajına
+serileştirmek pencereyi görülecek kadar bloklar — mail gövdelerinin HTTP'den
+servis edilmesiyle aynı gerekçe.
+
+Bunun bedeli, arka ucun bir dosya yolunu okuması. O yüzden yalnızca **kendi
+dosya diyaloğunun verdiği** yollar okunuyor; başka bir yol "dosya bulunamadı"
+değil, "bunu diyalogda kimse seçmedi" diye reddediliyor. Bugün buna ulaşacak
+bir yol yok — mail HTML'i betiksiz bir sandbox iframe'inde çalışıyor — ama
+"pencere arka uçtan istediği dosyayı okumasını isteyebilir" bir deliğin şekli,
+ve liste bir map'e mal oluyor.
+
+Diyalog `main.go`'da kalıyor: `internal/app` bir arayüz görüyor, Wails'i
+görmüyor. `SetFilePicker` bir metod değil paket fonksiyonu, çünkü Wails her
+dışa açık metodu pencereye bağlar — metod olsaydı "dosya diyaloğunu değiştir"
+pencerenin API'sinde olurdu. Binding üreticisi de bunu uyarı olarak söyledi.
+
+Dosyalar **gönderme anında** okunuyor, seçildiklerinde değil: öğle arasında
+açık bırakılmış bir composer üç fotoğrafı üç saat bellekte tutmasın, ve giden
+şey Gönder'e basıldığındaki dosya olsun.
+
+Toplam 40 MB sınırı bir protokol sınırı değil — SMTP'de öyle bir şey yok ve
+sunucunun kendi `SIZE`'ı zaten `smtpx`'te işlem başlamadan kontrol ediliyor.
+Bu sınır bu sürecin belleğiyle ilgili: mesaj base64'üyle birlikte burada
+kuruluyor.
+
+### Ek hatırlatıcı
+
+Gönder'e basıldığında gövde "ekte/attached" gibi bir söz verip hiç dosya
+yoksa bir kez soruluyor. Amaç dosya denetlemek değil, bir saniye sonra fark
+edilecek hatayı bir saniye önce göstermek.
+
+Tarama yalnızca yazılan kısmı kapsıyor: yanıtta alıntının altında duran özgün
+mesaj kendi ekinden söz ediyorsa her yanıt aynı soruyu sormaz. Türkçe de
+taranıyor; `\b` sayesinde "ek" sözcüğü "ekmek" ve "ekran"ı yakalamıyor. Onay
+kırmızı değil uyarı tonunda: bu bir yıkım değil, ikinci bir bakış.
+
+### Alıcı pill ve tamamlama
+
+Kişiler M7'de. Bugün öneri kaynağı bu hesaba yazmış insanlar: yerel
+`messages` tablosundaki gönderenler, adres başına en son imzayla tek satır.
+Ağa çıkılmıyor ve olmayan bir adres uydurulmuyor. Kendi adresleri ve zaten
+satırda olanlar önerilmiyor.
+
+Adres satırı pill'lere ayrılırken yalnızca virgül ve noktalı virgül sınırı
+kullanılıyor; tırnak içindeki virgül ("Kabatepe, İsmet") ve `<...>` korunuyor.
+Ayrıştırmanın kendisi hâlâ backend'de: pill'ler satırın görünümü, ikinci bir
+adres modeli değil. Satırın backend'e giden hâli yine yazıldığı gibi.
+
+### Zengin metin ve düz metin
+
+Biçimli yazı M6'nın sonunda geldi ve **varsayılan değil**. Sebebi tarihsel
+değil: yanıtın altındaki alıntı düz metin ve mevcut taslakların hepsi düz
+metin. Yeni bir mesajı sessizce biçimli kipe açmak, yazmayı bilmediği bir
+editörle karşılaşan okuyucu demek olurdu. *Formatted text* düğmesi geçişi
+açıkça yapıyor; *Plain text* geri dönüyor ve biçimi düşürüyor.
+
+Editör `contenteditable` ve `execCommand` kullanıyor. `execCommand` kullanımdan
+kaldırılmış ama bu uygulamanın çalıştığı her WebView'de var; alternatifi kalın,
+liste ve bağlantı için elle bir Range motoru yazmak. Çıkan HTML bir izin
+listesinden geçiyor: `b/strong`, `i/em`, `u`, `p/div`, `br`, `a`, `ul/ol/li`,
+`blockquote`. Script, stil, olay özniteliği ve uzak `img` atılıyor; tanınmayan
+etiket metnine indiriliyor. Yapıştırma da aynı listeden geçtiği için panodan
+gelen bir `<script>` editöre hiç girmiyor.
+
+Biçimli gövde taslakta `body_html` sütununda duruyor (migration 007); düz metin
+taslaklarında boş kalıyor. Gönderirken yanına `htmlToText` ile üretilen düz
+metin alternatifi konuyor; düz metin kipinden gönderilen mesajda HTML parçası
+yok. Gömülü resim (`cid:`) bu temelden sonra geldi.
+
+### Gömülü resim
+
+Editördeki *Insert image* dosya seçiciden bir görsel alıyor ve gövdeye
+`<img src="cid:...">` olarak yerleştiriyor. Editörün gösterdiği adres
+`/compose-image/<cid>`: Wails'in varlık sunucusuna eklenen küçük bir handler,
+yalnızca kayıtlı cid'leri okuyor. Yol haritada değil, kayıt tablosunda; rastgele
+bir cid bilmeyen bir istek 404 alıyor. Bu, dosya yolunu WebView'e sızdırmadan
+önizleme vermenin en küçük yolu.
+
+Gönderirken önizleme adresi `cid:`e çevriliyor ve resim `multipart/related`
+içinde, HTML'in yanında gidiyor; sıradan ek varsa related, `multipart/mixed`
+içine yuvalanıyor. Görselin `Content-ID`'si HTML'deki cid ile aynı; cid
+backend'de desen ve tekillik açısından doğrulanıyor. SVG reddediliyor: içinde
+script taşıyabilen bir belge ve her okuyucu göstermiyor. Görsel başına 5 MB,
+toplamda eklerle aynı 40 MB sınırı var.
+
+Taslak `inline_images` sütununda yol, cid, ad ve MIME türünü saklıyor
+(migration 008). Yeniden açıldığında handler cid'i yeniden kaydediyor ve HTML
+`cid:`den önizleme adresine çevriliyor; dosya taşınmışsa adı eksik ekler
+listesinde görünüyor.
+
+### Sunucuyu DNS'ten bulmak
+
+Hesap ekranında *Find settings*, adresin alan adı için IMAP ve SMTP arıyor.
+Sıra kaynağın gücüne göre: yayınlanmış SRV kaydı (`_imaps._tcp`,
+`_submissions._tcp`), yoksa MX kaydının varlığından cesaret alıp
+`imap.<alan>` / `mail.<alan>` adlarının çözülmesi, yoksa hiçbir şey. Son iki
+durumda form bunun bir **tahmin** olduğunu söylüyor; SRV ile tahmin aynı
+güvenilirlikte gösterilmiyor.
+
+**ISPDB yok.** Mozilla'nın autoconfig servisine sormak, kimin hangi sağlayıcıyı
+kurduğunu üçüncü bir tarafa söylemek olurdu; favicon servisi kullanmama
+gerekçesinin aynısı. DNS sorgusu zaten alan adını resolver'a söylüyor, ama o
+sorgu hesabın kendi altyapısına gidiyor, bir üçüncü tarafın veritabanına değil.
+
+Beş saniye sınır var ve arama her tuşta değil, düğmeye basınca yapılıyor: yazım
+hatası DNS sorgusuna dönüşmemeli. SMTP alanları da bulunan değerlerle doluyor;
+gönderme sunucusu yayınlanmamışsa boş bırakılıyor ve elle girilebiliyor.
+
+### Ayrı besteci penceresi
+
+Besteci başlığındaki *Open in a separate window* düğmesi, ekrandaki taslağı
+(`to`, `cc`, `bcc`, konu, gövde, HTML, ekler, gömülü resimler, threading
+başlıkları) `OpenComposerWindow` ile arka uca veriyor. Arka uç taslağı rastgele
+bir pencere kimliğiyle bellekte tutuyor ve Wails'ten `composer.html?id=...`
+adresini yükleyen ikinci bir pencere açmasını istiyor. URL'de yalnızca kimlik
+var: gövde pencere başlığına, çökme raporuna veya kabuk geçmişine düşmüyor.
+
+Yeni pencere `TakeComposerWindow` ile taslağı **bir kez** alıyor; yeniden
+yükleme "bu pencere sona erdi" diyor, aynı taslağın ikinci kopyasını açmıyor.
+Kapatma `Window.Close()` ile o pencereyi kapatıyor; ana pencere açık kalıyor.
+Besteci bileşeni aynı: ayrı pencerede `canDetach` kapalı, çünkü zaten ayrı
+olan bir besteciyi tekrar taşımak onu kaybetmenin yolu.
+
+Varsayılan hâlâ ana pencerede tam ekran. Ayrı pencere isteğe bağlı, çünkü tek
+pencereli akış M6'nın kabul ettiği davranış ve tarayıcı önizlemesinde ikinci
+pencere yok. Varsayılanı değiştirmek ayrı bir ürün kararı; altyapı artık hazır.
+
+### Composer neden önce düz metinle başladı
+
+Zengin editör M6'nın sonuna kadar ertelendi: doğru mesaj gönderen bir
+`textarea`, bozuk mesaj gönderen yarım bir editörden iyi. Arka uç zaten HTML
+kabul ediyordu; editör geldiğinde değişen tek şey `html` alanının dolmaya
+başlaması oldu.
 
 Cc ve Bcc istenene kadar gizli. Mesajların çoğunda ikisi de yok, ve her compose
 penceresinin tepesindeki dört boş satır, yazanla yazmaya geldiği şey arasında

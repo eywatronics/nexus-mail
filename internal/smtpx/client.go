@@ -14,6 +14,7 @@ import (
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 
+	"nexusmail/internal/auth"
 	"nexusmail/internal/model"
 )
 
@@ -36,10 +37,16 @@ const ehloName = "localhost"
 
 // Dial opens a connection, upgrades it if asked, and authenticates.
 //
-// An empty secret means no authentication at all, which is only reachable on a
+// The credential arrives as a provider rather than a password, which is the
+// same seam imapx uses and for the same reason: submission must not learn
+// whether it is talking to Gmail, Exchange or a generic server. Taking a
+// password instead is what left every OAuth account able to read mail and
+// unable to send any.
+//
+// A nil provider means no authentication at all, which is only reachable on a
 // loopback server: checkSecurity refuses cleartext elsewhere, and a TLS server
 // wanting no credentials is not a configuration this client offers.
-func Dial(ctx context.Context, cfg Config, secret string) (*Client, error) {
+func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (*Client, error) {
 	if err := checkSecurity(cfg); err != nil {
 		return nil, err
 	}
@@ -57,8 +64,8 @@ func Dial(ctx context.Context, cfg Config, secret string) (*Client, error) {
 
 	client := &Client{c: c, caps: readCapabilities(c)}
 
-	if secret != "" {
-		if err := client.authenticate(cfg.Username, secret); err != nil {
+	if provider != nil {
+		if err := client.authenticate(ctx, provider); err != nil {
 			_ = c.Close()
 			return nil, err
 		}
@@ -191,16 +198,41 @@ func readCapabilities(c *smtp.Client) Capabilities {
 
 // authenticate picks a mechanism from what the server named.
 //
-// PLAIN first, then LOGIN, which is the order imapx uses and for the same
-// reason: PLAIN is the one every server implements the same way, and LOGIN is
-// the older thing to fall back to. Both send the secret, which is why neither
-// is reachable without encryption.
-func (c *Client) authenticate(username, secret string) error {
+// The choice is only the server's when the credential is a password: the same
+// password can be presented as PLAIN or as LOGIN, and which of those a
+// submission server offers is its own decision. A minted token has no such
+// freedom — it can only be presented as XOAUTH2 — so there is nothing to pick.
+func (c *Client) authenticate(ctx context.Context, provider auth.CredentialProvider) error {
+	if pw, ok := provider.(auth.PasswordCredential); ok {
+		return c.authenticateWithPassword(ctx, pw)
+	}
+
+	// Checked before minting, so that a server which cannot take a token says
+	// so instead of the token being fetched and then refused — and so the
+	// error names the real problem rather than arriving as a SASL failure.
+	//
+	// XOAUTH2 by name because it is the only mechanism a non-password provider
+	// produces today. A provider that minted something else would need this
+	// line changed, which is the right place for it to break.
+	if !c.offers("XOAUTH2") {
+		if len(c.caps.Auth) == 0 {
+			return errors.New("smtpx: this account signs in with a token, and this server " +
+				"advertised no authentication mechanisms; it may not be a submission port")
+		}
+		return fmt.Errorf("smtpx: this account signs in with a token, and this server "+
+			"offers only %s", strings.Join(c.caps.Auth, ", "))
+	}
+
+	client, err := provider.SASLClient(ctx)
+	if err != nil {
+		return fmt.Errorf("smtpx: obtaining a token to send with: %w", err)
+	}
+	return c.wrapAuth(c.c.Auth(client))
+}
+
+func (c *Client) authenticateWithPassword(ctx context.Context, pw auth.PasswordCredential) error {
 	switch {
-	case c.offers("PLAIN"):
-		return c.wrapAuth(c.c.Auth(sasl.NewPlainClient("", username, secret)))
-	case c.offers("LOGIN"):
-		return c.wrapAuth(c.c.Auth(sasl.NewLoginClient(username, secret)))
+	case c.offers("PLAIN"), c.offers("LOGIN"):
 	case len(c.caps.Auth) == 0:
 		return errors.New("smtpx: this server advertised no authentication mechanisms; " +
 			"it may not be a submission port")
@@ -208,6 +240,22 @@ func (c *Client) authenticate(username, secret string) error {
 		return fmt.Errorf("smtpx: this server offers only %s, none of which this client "+
 			"can use", strings.Join(c.caps.Auth, ", "))
 	}
+
+	// Read after the mechanism check, so a server this client cannot talk to
+	// never causes the secret to leave the keyring.
+	secret, err := pw.Password(ctx)
+	if err != nil {
+		return fmt.Errorf("smtpx: reading the password to send with: %w", err)
+	}
+
+	// PLAIN first, then LOGIN, which is the order imapx uses and for the same
+	// reason: PLAIN is the one every server implements the same way, and LOGIN
+	// is the older thing to fall back to. Both send the secret, which is why
+	// neither is reachable without encryption.
+	if c.offers("PLAIN") {
+		return c.wrapAuth(c.c.Auth(sasl.NewPlainClient("", pw.Username(), secret)))
+	}
+	return c.wrapAuth(c.c.Auth(sasl.NewLoginClient(pw.Username(), secret)))
 }
 
 func (c *Client) offers(mechanism string) bool {

@@ -14,6 +14,7 @@ import (
 
 	"nexusmail/internal/auth"
 	"nexusmail/internal/imapx"
+	"nexusmail/internal/mailto"
 	"nexusmail/internal/model"
 	"nexusmail/internal/smtpx"
 	"nexusmail/internal/store"
@@ -57,6 +58,33 @@ type MailService struct {
 	// dereferencing.
 	outbox *store.Outbox
 
+	// picker opens the operating system's file dialog, and attachable is every
+	// path it has handed back. SendMessage will read no path that is not in
+	// there, so that these two methods together are "attach what you chose"
+	// rather than "read any file on the machine".
+	//
+	// Their own lock: picking happens on the window's goroutine and the set is
+	// read again when the message is built, which is a different one.
+	attachMu   sync.RWMutex
+	picker     FilePicker
+	attachable map[string]bool
+
+	// inline serves the previews of images the composer is embedding. Nil in a
+	// build with no HTTP middleware, which PickInlineImage reports rather than
+	// dereferencing.
+	inline *InlineImages
+
+	// A mailto: link the launch carried. Parsed once and handed to the window
+	// on its first ask; see PendingMailto.
+	mailtoMu      sync.Mutex
+	pendingMailto *mailto.Draft
+	mailtoErr     error
+
+	// Composer requests waiting for their own window to ask for them. The key
+	// is the window's one-time id, not an account or a draft.
+	windowMu       sync.Mutex
+	composerWindow map[string]DraftRecordDTO
+
 	// The settings a person can change while the app is running, kept apart
 	// from cfg because cfg is read everywhere without a lock and these are
 	// written from the window while the watch goroutines read them.
@@ -74,12 +102,15 @@ func NewMailService(s *store.Store, secrets auth.SecretStore, eng *imapsync.Engi
 	if cfg.Emit == nil {
 		cfg.Emit = func(string, any) {}
 	}
+	pendingMailto, mailtoErr := parsePendingMailto(cfg.Mailto)
 	return &MailService{
 		store: s, secrets: secrets, engine: eng, cfg: cfg,
 		outbox:                  cfg.Outbox,
 		liveRetention:           cfg.Retention,
 		liveNotificationPreview: cfg.NotificationPreview,
 		liveUndoWindow:          cfg.UndoWindow,
+		pendingMailto:           pendingMailto,
+		mailtoErr:               mailtoErr,
 	}
 }
 
@@ -223,6 +254,18 @@ func (s *MailService) saveAccount(acct model.Account, secret string) (AccountDTO
 			}
 		}
 		return AccountDTO{}, fmt.Errorf("app: saving account: %w", err)
+	}
+
+	// Migration 004 gave the accounts that existed then an identity, but a new
+	// account has none until this row is written. Without it the account can
+	// receive mail but cannot open a composer: sending asks for the default
+	// identity and finds nothing.
+	if _, err := s.store.InsertIdentity(ctx, model.Identity{
+		AccountID:   id,
+		Email:       acct.Email,
+		DisplayName: acct.DisplayName,
+	}); err != nil {
+		return AccountDTO{}, fmt.Errorf("app: saving the account's identity: %w", err)
 	}
 
 	acct.ID = id
@@ -420,6 +463,38 @@ func (s *MailService) locateFolder(ctx context.Context, folderID int64) (model.F
 		fmt.Errorf("app: folder %d vanished between lookups", folderID)
 }
 
+// providerFor turns an account into something that can prove who it is.
+//
+// One function for both protocols. Reading mail and sending it are the same
+// credential, and two copies of this switch is how an account ends up able to
+// do one and not the other — which is exactly what happened: submission had
+// its own path that took a password and refused every OAuth account outright.
+func providerFor(acct model.Account, secrets auth.SecretStore, cfg Config) (
+	auth.CredentialProvider, error) {
+
+	switch acct.AuthKind {
+	case model.AuthPassword:
+		return auth.NewPasswordProvider(acct.Email, acct.SecretRef, secrets), nil
+	case model.AuthOAuth:
+		oauthCfg := auth.OAuthConfig{
+			ClientID: cfg.GoogleClientID,
+			Scopes:   auth.GoogleScopes(),
+			Endpoint: auth.GoogleEndpoint(),
+		}
+		if acct.Provider == model.ProviderMicrosoft {
+			oauthCfg = auth.OAuthConfig{
+				ClientID: cfg.MicrosoftClientID,
+				Scopes:   auth.MicrosoftScopes(),
+				Endpoint: auth.MicrosoftEndpoint(),
+			}
+		}
+		return auth.NewOAuthProvider(acct.Email, acct.SecretRef, secrets, oauthCfg), nil
+	default:
+		return nil, fmt.Errorf("app: unknown auth kind %q for account %d",
+			acct.AuthKind, acct.ID)
+	}
+}
+
 // DialerFor builds the sync engine's dialer: it resolves an account to a
 // credential provider and opens an IMAP connection.
 //
@@ -432,26 +507,9 @@ func DialerFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Di
 			return nil, err
 		}
 
-		var provider auth.CredentialProvider
-		switch acct.AuthKind {
-		case model.AuthPassword:
-			provider = auth.NewPasswordProvider(acct.Email, acct.SecretRef, secrets)
-		case model.AuthOAuth:
-			oauthCfg := auth.OAuthConfig{
-				ClientID: cfg.GoogleClientID,
-				Scopes:   auth.GoogleScopes(),
-				Endpoint: auth.GoogleEndpoint(),
-			}
-			if acct.Provider == model.ProviderMicrosoft {
-				oauthCfg = auth.OAuthConfig{
-					ClientID: cfg.MicrosoftClientID,
-					Scopes:   auth.MicrosoftScopes(),
-					Endpoint: auth.MicrosoftEndpoint(),
-				}
-			}
-			provider = auth.NewOAuthProvider(acct.Email, acct.SecretRef, secrets, oauthCfg)
-		default:
-			return nil, fmt.Errorf("app: unknown auth kind %q for account %d", acct.AuthKind, accountID)
+		provider, err := providerFor(acct, secrets, cfg)
+		if err != nil {
+			return nil, err
 		}
 
 		// Encryption is chosen between implicit TLS and STARTTLS, never
@@ -483,17 +541,9 @@ func SenderFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Se
 				"app: account %d has no submission server configured", accountID)
 		}
 
-		// Only a password for now. OAuth submission needs XOAUTH2, which
-		// go-sasl does not ship and imapx implements by hand for IMAP; sharing
-		// that implementation is its own piece of work and belongs with the
-		// rest of M6 rather than smuggled in here.
-		if acct.AuthKind != model.AuthPassword {
-			return nil, fmt.Errorf(
-				"app: sending from an OAuth account is not supported yet (account %d)", accountID)
-		}
-		secret, err := secrets.Get(acct.SecretRef)
+		provider, err := providerFor(acct, secrets, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("app: reading the password to send with: %w", err)
+			return nil, err
 		}
 
 		// Port 465 is implicit TLS and 587 is STARTTLS. Chosen from the port
@@ -510,6 +560,6 @@ func SenderFor(s *store.Store, secrets auth.SecretStore, cfg Config) imapsync.Se
 			Port:     acct.SMTPPort,
 			Security: security,
 			Username: acct.Email,
-		}, secret)
+		}, provider)
 	}
 }

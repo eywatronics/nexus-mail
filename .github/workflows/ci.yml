@@ -24,8 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # The CLI only parses the Go tree and writes bindings here. Building it
+      # with the server tag avoids pulling GTK into a job that never opens a
+      # window, and keeps this job from depending on the Ubuntu package mirror.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       # -ts -i, the same flags build/Taskfile.yml uses. Without them the
       # bindings come out as JavaScript, and because tsconfig sets
       # noImplicitAny to false the build still passes — with every call across
@@ -39,9 +44,15 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l . | grep -v node_modules)" || (gofmt -l . | grep -v node_modules && exit 1)
 
-      - uses: golangci/golangci-lint-action@v6
+      # main.go imports the Wails application package, and on Linux that pulls
+      # GTK through cgo. The build matrix compiles the real application; this
+      # job lints every package that holds the logic, none of which imports
+      # Wails. Linting only the root would buy a typecheck the build already
+      # does, at the cost of GTK in a job that opens no window.
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2
+          args: ./internal/...
 
       # fts_messages is maintained by triggers. Application code writing to it
       # directly is how the index silently drifts out of step; see design
@@ -68,8 +79,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # Same reason as the lint job: bindings generation does not need the
+      # GUI, so the CLI is built without GTK.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       - name: Generate bindings and build frontend
         run: |
           wails3 generate bindings -clean=true -ts -i
@@ -79,16 +94,24 @@ jobs:
       # not a contradiction of the cgo ban: the ban is about what the shipped
       # binary links, which the build matrix verifies. The race detector is a
       # test-time instrument.
+      #
+      # ./internal/... is where the tests are. main.go has no tests and imports
+      # Wails, whose Linux backend needs GTK; the build matrix compiles it.
       - name: Go tests with the race detector
-        run: go test -race ./...
+        run: go test -race ./internal/...
 
       # And once more on the pure-Go path, to prove the code the users actually
       # get behaves the same. Without this, a modernc.org/sqlite regression
       # under CGO_ENABLED=0 would only surface at build time, not in tests.
+      #
+      # -tags server leaves out the Linux GUI backend, which imports GTK
+      # through cgo. The application's own packages and all internal packages
+      # are still built and tested; this is the only way the pure-Go gate can
+      # cover a Linux runner at all.
       - name: Go tests on the pure-Go path
         env:
           CGO_ENABLED: "0"
-        run: go test ./...
+        run: go test -tags server ./...
 
       - name: Frontend tests
         run: cd frontend && npm test
@@ -100,16 +123,23 @@ jobs:
         include:
           # CGO_ENABLED=0 on these two is the guard proving our dependency tree
           # stays pure Go. Mark both as required status checks in branch
-          # protection — a cgo-dependent library added by mistake breaks here
+          # protection. A cgo-dependent library added by mistake breaks here
           # and nowhere else.
+          #
+          # The Linux GUI backend needs cgo for GTK, so the Ubuntu gate builds
+          # with -tags server. That excludes the GUI only; main.go and every
+          # internal package are still compiled on the pure-Go path.
           - os: windows-latest
             cgo: "0"
+            tags: ""
           - os: ubuntu-latest
             cgo: "0"
+            tags: server
           # macOS needs cgo: the Wails WebView binding requires it. This job
           # therefore cannot catch a cgo dependency creeping in.
           - os: macos-latest
             cgo: "1"
+            tags: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -120,20 +150,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # GTK 4 and WebKitGTK 6.0, which is what Wails v3 links against unless
-      # the legacy -tags gtk3 is passed. This job builds with CGO_ENABLED=0 and
-      # so does not strictly need them; they are installed anyway so that this
-      # workflow and the release workflow name the same stack. Two files
-      # disagreeing about which toolkit the app uses is how a release gets
-      # linked against one and packaged as depending on the other.
-      - name: Linux WebKit dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
-
+      # The CLI is only used to generate bindings. The application build below
+      # still uses the matrix's cgo and tags, so the GUI is not hidden from the
+      # gate; only the CLI's own GTK dependency is.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
       # A CLI newer or older than the library generates bindings the app does
       # not match, and the failure surfaces as confusing frontend type errors
@@ -162,4 +185,4 @@ jobs:
         run: |
           wails3 generate bindings -clean=true -ts -i
           cd frontend && npm ci && npm run build && cd ..
-          go build ./...
+          go build -tags "${{ matrix.tags }}" ./...

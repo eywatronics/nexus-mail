@@ -1,6 +1,6 @@
-import { Warning } from '@phosphor-icons/react'
+import { Paperclip, Warning } from '@phosphor-icons/react'
 import { useEffect, useRef } from 'react'
-import { BUTTON_DANGER, BUTTON_SECONDARY, RADIUS, SURFACE, TEXT } from '../lib/ui'
+import { BUTTON_DANGER, BUTTON_PRIMARY, BUTTON_SECONDARY, RADIUS, SURFACE, TEXT } from '../lib/ui'
 
 interface ConfirmDialogProps {
   title: string
@@ -8,10 +8,17 @@ interface ConfirmDialogProps {
   confirmLabel: string
   onConfirm: () => void
   onCancel: () => void
+  cancelLabel?: string
+  /**
+   * `danger` when the action destroys something, `warn` when it is only worth
+   * a second look. The icon and the confirming button follow, so the two stops
+   * do not look equally final.
+   */
+  tone?: 'danger' | 'warn'
 }
 
 /**
- * A stop before something that cannot be undone.
+ * A stop before an action that cannot be taken back.
  *
  * Used sparingly and on purpose. A client that asks "are you sure" about
  * ordinary actions teaches people to dismiss the question without reading it,
@@ -27,8 +34,12 @@ export function ConfirmDialog({
   confirmLabel,
   onConfirm,
   onCancel,
+  cancelLabel = 'Cancel',
+  tone = 'danger',
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const destructive = tone === 'danger'
+  const Icon = destructive ? Warning : Paperclip
 
   useEffect(() => {
     cancelRef.current?.focus()
@@ -61,11 +72,15 @@ export function ConfirmDialog({
         className={`w-full max-w-sm border p-5 shadow-xl ${RADIUS} ${SURFACE.divider} ${SURFACE.page}`}
       >
         <div className="flex gap-3">
-          <Warning
+          <Icon
             size={20}
             weight="fill"
             aria-hidden
-            className="mt-0.5 shrink-0 text-[var(--color-danger)] dark:text-[var(--color-danger-dark)]"
+            className={
+              destructive
+                ? 'mt-0.5 shrink-0 text-[var(--color-danger)] dark:text-[var(--color-danger-dark)]'
+                : 'mt-0.5 shrink-0 text-[var(--color-warn)] dark:text-[var(--color-warn-dark)]'
+            }
           />
           <div className="min-w-0">
             <h2 id="confirm-title" className={`text-sm font-semibold ${TEXT.primary}`}>
@@ -87,13 +102,13 @@ export function ConfirmDialog({
             onClick={onCancel}
             className={`${BUTTON_SECONDARY} py-1.5`}
           >
-            Cancel
+            {cancelLabel}
           </button>
           <button
             type="button"
             data-testid="confirm-accept"
             onClick={onConfirm}
-            className={`${BUTTON_DANGER} py-1.5`}
+            className={`${destructive ? BUTTON_DANGER : BUTTON_PRIMARY} py-1.5`}
           >
             {confirmLabel}
           </button>
