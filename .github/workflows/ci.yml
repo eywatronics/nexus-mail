@@ -24,15 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      # go install builds the CLI's Linux backend, and that needs the GTK
-      # pkg-config files even though this job never links the application.
-      # Without this, the CLI installation fails before lint or tests run.
-      - name: Linux WebKit dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      # The CLI only parses the Go tree and writes bindings here. Building it
+      # with the server tag avoids pulling GTK into a job that never opens a
+      # window, and keeps this job from depending on the Ubuntu package mirror.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       # -ts -i, the same flags build/Taskfile.yml uses. Without them the
       # bindings come out as JavaScript, and because tsconfig sets
       # noImplicitAny to false the build still passes — with every call across
@@ -75,14 +73,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      # Same reason as the lint job: the CLI is compiled on Linux and its
-      # desktop backend asks pkg-config for GTK before the tests start.
-      - name: Linux WebKit dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      # Same reason as the lint job: bindings generation does not need the
+      # GUI, so the CLI is built without GTK.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       - name: Generate bindings and build frontend
         run: |
           wails3 generate bindings -clean=true -ts -i
@@ -145,20 +141,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # GTK 4 and WebKitGTK 6.0, which is what Wails v3 links against unless
-      # the legacy -tags gtk3 is passed. This job builds with CGO_ENABLED=0 and
-      # so does not strictly need them; they are installed anyway so that this
-      # workflow and the release workflow name the same stack. Two files
-      # disagreeing about which toolkit the app uses is how a release gets
-      # linked against one and packaged as depending on the other.
-      - name: Linux WebKit dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
-
+      # The CLI is only used to generate bindings. The application build below
+      # still uses the matrix's cgo and tags, so the GUI is not hidden from the
+      # gate; only the CLI's own GTK dependency is.
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        env:
+          CGO_ENABLED: "0"
+        run: go install -tags server github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
       # A CLI newer or older than the library generates bindings the app does
       # not match, and the failure surfaces as confusing frontend type errors
