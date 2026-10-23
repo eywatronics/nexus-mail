@@ -910,6 +910,23 @@ func TestSpecialUseIsNotClaimedWhenTheServerDoesNotHaveIt(t *testing.T) {
 	}
 }
 
+func TestListFoldersDoesNotAskForStatusWithoutTheExtension(t *testing.T) {
+	addr, _ := startFakeServer(t, imap.CapSet{imap.CapIMAP4rev1: {}})
+
+	be := dialTestBackend(t, addr, testPass)
+	if be.Capabilities().ListStatus {
+		t.Fatal("ListStatus reported on a server that does not advertise it")
+	}
+
+	folders, err := be.ListFolders(context.Background())
+	if err != nil {
+		t.Fatalf("ListFolders() failed: %v", err)
+	}
+	if len(folders) == 0 {
+		t.Error("ListFolders() returned no folders")
+	}
+}
+
 // A Turkish mailbox name is not ASCII, so it cannot travel on an IMAP4rev1
 // connection as itself: it has to be encoded as modified UTF-7 on the way out
 // and decoded on the way back. Getting that wrong turns "Gönderilmiş Öğeler"

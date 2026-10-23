@@ -93,6 +93,10 @@ func Dial(ctx context.Context, cfg Config, provider auth.CredentialProvider) (Ma
 			Idle:       caps.Has(imap.CapIdle),
 			UIDPlus:    caps.Has(imap.CapUIDPlus),
 			SpecialUse: caps.Has(imap.CapSpecialUse),
+			// IMAP4rev2 includes the LIST-STATUS extension, so a rev2 server
+			// supports the RETURN clause even when it does not repeat the
+			// extension's own capability name.
+			ListStatus: caps.Has(imap.CapListStatus) || caps.Has(imap.CapIMAP4rev2),
 		},
 	}, nil
 }
@@ -107,17 +111,22 @@ func (cl *client) Close() error { return cl.c.Close() }
 // between one exchange and eighty.
 func (cl *client) ListFolders(_ context.Context) ([]model.Folder, error) {
 	opts := &imap.ListOptions{
-		ReturnStatus: &imap.StatusOptions{
-			NumMessages: true,
-			NumUnseen:   true,
-			UIDNext:     true,
-			UIDValidity: true,
-		},
 		// Asked for explicitly rather than hoped for. RFC 6154 only says a
 		// server SHOULD volunteer the special-use attributes in a plain LIST,
 		// and the ones that do not are precisely the ones where guessing from
 		// the folder name goes wrong.
 		ReturnSpecialUse: cl.caps.SpecialUse,
+	}
+	// LIST-STATUS is an extension. A server that does not advertise it
+	// rejects the RETURN clause outright, taking the whole folder list with
+	// it, so the counts are requested only where they can be delivered.
+	if cl.caps.ListStatus {
+		opts.ReturnStatus = &imap.StatusOptions{
+			NumMessages: true,
+			NumUnseen:   true,
+			UIDNext:     true,
+			UIDValidity: true,
+		}
 	}
 
 	mailboxes, err := cl.c.List("", "*", opts).Collect()
