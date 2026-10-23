@@ -24,6 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # go install builds the CLI's Linux backend, and that needs the GTK
+      # pkg-config files even though this job never links the application.
+      # Without this, the CLI installation fails before lint or tests run.
+      - name: Linux WebKit dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       # -ts -i, the same flags build/Taskfile.yml uses. Without them the
@@ -68,6 +75,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # Same reason as the lint job: the CLI is compiled on Linux and its
+      # desktop backend asks pkg-config for GTK before the tests start.
+      - name: Linux WebKit dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
       - name: Generate bindings and build frontend
