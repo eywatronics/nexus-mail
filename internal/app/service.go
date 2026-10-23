@@ -256,6 +256,18 @@ func (s *MailService) saveAccount(acct model.Account, secret string) (AccountDTO
 		return AccountDTO{}, fmt.Errorf("app: saving account: %w", err)
 	}
 
+	// Migration 004 gave the accounts that existed then an identity, but a new
+	// account has none until this row is written. Without it the account can
+	// receive mail but cannot open a composer: sending asks for the default
+	// identity and finds nothing.
+	if _, err := s.store.InsertIdentity(ctx, model.Identity{
+		AccountID:   id,
+		Email:       acct.Email,
+		DisplayName: acct.DisplayName,
+	}); err != nil {
+		return AccountDTO{}, fmt.Errorf("app: saving the account's identity: %w", err)
+	}
+
 	acct.ID = id
 	return accountToDTO(acct), nil
 }
